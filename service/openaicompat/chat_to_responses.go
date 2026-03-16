@@ -306,6 +306,9 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 				if len(m) == 0 {
 					m = map[string]any{"type": tool.Type}
 				}
+				// Remove leaked ToolCallRequest.Function field for non-function tools.
+				// Go's encoding/json omitempty does not omit zero-value structs.
+				delete(m, "function")
 				tools = append(tools, m)
 			}
 		}
