@@ -53,7 +53,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
-		strings.HasPrefix(request.Model, "claude-opus-4-6") {
+		(strings.HasPrefix(request.Model, "claude-opus-4-6") ||
+			strings.HasPrefix(request.Model, "claude-sonnet-4-6") ||
+			strings.HasPrefix(request.Model, "claude-opus-4-7")) {
 		request.Model = baseModel
 		request.Thinking = &dto.Thinking{
 			Type: "adaptive",
@@ -80,6 +82,19 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		if !model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) {
 			request.Model = strings.TrimSuffix(request.Model, "-thinking")
+		}
+		info.UpstreamModelName = request.Model
+	}
+
+	// Claude Opus 4.7: strip sampling params (non-default values return 400) and
+	// opt-in to summarized thinking display (omitted by default on 4.7).
+	// https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-opus-4-7
+	if strings.HasPrefix(request.Model, "claude-opus-4-7") {
+		request.Temperature = nil
+		request.TopP = nil
+		request.TopK = nil
+		if request.Thinking != nil && request.Thinking.Type == "adaptive" {
+			request.Thinking.Display = "summarized"
 		}
 		info.UpstreamModelName = request.Model
 	}

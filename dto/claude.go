@@ -448,6 +448,9 @@ func ProcessTools(tools []any) ([]*Tool, []*ClaudeWebSearchTool) {
 type Thinking struct {
 	Type         string `json:"type,omitempty"`
 	BudgetTokens *int   `json:"budget_tokens,omitempty"`
+	// Display controls whether thinking content is returned (e.g. "summarized").
+	// Claude Opus 4.7 omits thinking content by default; set to "summarized" to opt-in.
+	Display string `json:"display,omitempty"`
 }
 
 func (c *Thinking) GetBudgetTokens() int {
