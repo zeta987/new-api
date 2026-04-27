@@ -306,6 +306,9 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 				if len(m) == 0 {
 					m = map[string]any{"type": tool.Type}
 				}
+				// Go does not omit zero-value structs, so remove the chat-only
+				// function shape from built-in Responses tools.
+				delete(m, "function")
 				tools = append(tools, m)
 			}
 		}
