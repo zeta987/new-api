@@ -25,12 +25,16 @@ const DEFAULTS: Record<string, ModuleAccess> = {
 }
 
 function parseAccess(raw: unknown, fallback: ModuleAccess): ModuleAccess {
-  if (typeof raw === 'boolean') return { enabled: raw, requireAuth: fallback.requireAuth }
+  if (typeof raw === 'boolean')
+    return { enabled: raw, requireAuth: fallback.requireAuth }
   if (raw && typeof raw === 'object') {
     const r = raw as Record<string, unknown>
     return {
       enabled: typeof r.enabled === 'boolean' ? r.enabled : fallback.enabled,
-      requireAuth: typeof r.requireAuth === 'boolean' ? r.requireAuth : fallback.requireAuth,
+      requireAuth:
+        typeof r.requireAuth === 'boolean'
+          ? r.requireAuth
+          : fallback.requireAuth,
     }
   }
   return { ...fallback }
@@ -60,7 +64,10 @@ export function getModuleAccess(module: 'rankings' | 'pricing'): ModuleAccess {
   }
 }
 
-export function isSidebarModuleEnabled(section: string, module: string): boolean {
+export function isSidebarModuleEnabled(
+  section: string,
+  module: string
+): boolean {
   const status = getCachedStatus()
   if (!status) return true
 
@@ -68,7 +75,10 @@ export function isSidebarModuleEnabled(section: string, module: string): boolean
   if (!raw || String(raw).trim() === '') return true
 
   try {
-    const parsed = JSON.parse(String(raw)) as Record<string, Record<string, boolean>>
+    const parsed = JSON.parse(String(raw)) as Record<
+      string,
+      Record<string, boolean>
+    >
     const sectionConfig = parsed[section]
     if (!sectionConfig) return true
     if (sectionConfig.enabled === false) return false

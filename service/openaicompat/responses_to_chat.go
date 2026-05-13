@@ -73,9 +73,11 @@ func ResponsesResponseToChatCompletionsResponse(resp *dto.OpenAIResponsesRespons
 	}
 
 	msg := dto.Message{
-		Role:             "assistant",
-		Content:          text,
-		ReasoningContent: reasoningContent,
+		Role:    "assistant",
+		Content: text,
+	}
+	if reasoningContent != "" {
+		msg.ReasoningContent = &reasoningContent
 	}
 	if len(toolCalls) > 0 {
 		msg.SetToolCalls(toolCalls)

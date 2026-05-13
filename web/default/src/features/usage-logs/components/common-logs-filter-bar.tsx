@@ -92,6 +92,8 @@ export function CommonLogsFilterBar<TData>(
       next.upstreamRequestId = searchParams.upstreamRequestId
 
     if (Object.keys(next).length > 0) {
+      // Sync URL search params into the filter form.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFilters((prev) => ({ ...prev, ...next }))
     }
 
@@ -297,9 +299,7 @@ export function CommonLogsFilterBar<TData>(
           <Input
             placeholder={t('Upstream Request ID')}
             value={filters.upstreamRequestId || ''}
-            onChange={(e) =>
-              handleChange('upstreamRequestId', e.target.value)
-            }
+            onChange={(e) => handleChange('upstreamRequestId', e.target.value)}
             onKeyDown={handleKeyDown}
             className={inputClass}
           />

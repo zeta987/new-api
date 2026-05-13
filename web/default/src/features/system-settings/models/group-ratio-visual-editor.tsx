@@ -771,6 +771,8 @@ function GroupPricingTable({
       groupRatio,
       userUsableGroups
     )
+    // Sync external ratio edits into the table rows.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRows((currentRows) => {
       if (groupPricingSignature(currentRows) === incomingSignature) {
         return currentRows
@@ -999,6 +1001,7 @@ function SimpleGroupDialog({
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName('')
       setValue('')
       return
@@ -1087,6 +1090,7 @@ function GroupOverrideDialog({
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTargetGroup('')
       setRatio('')
       return

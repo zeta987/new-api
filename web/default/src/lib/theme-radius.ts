@@ -44,6 +44,7 @@ export function useThemeRadiusPx(
   const [radius, setRadius] = useState<number | undefined>()
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRadius(resolveThemeRadiusPx(cssVariable))
   }, [cssVariable, refreshKey])
 

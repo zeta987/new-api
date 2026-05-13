@@ -368,6 +368,7 @@ function DraftNumberInput({
 
   useEffect(() => {
     if (!focused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDraft(formatNumberDraft(value))
     }
   }, [focused, value])
@@ -594,6 +595,7 @@ function VisualTierCard({
   const [mediaOpen, setMediaOpen] = useState(hasMediaPricing)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (hasMediaPricing) setMediaOpen(true)
   }, [hasMediaPricing])
 

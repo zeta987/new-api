@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,6 +42,40 @@ func maybeMarkClaudeRefusal(c *gin.Context, stopReason string) {
 	}
 	if strings.EqualFold(stopReason, "refusal") {
 		common.SetContextKey(c, constant.ContextKeyAdminRejectReason, "claude_stop_reason=refusal")
+	}
+}
+
+func convertFileContentToClaudeMedia(file *dto.MessageFile) (dto.ClaudeMediaMessage, bool, error) {
+	if file == nil || file.FileData == "" {
+		return dto.ClaudeMediaMessage{}, false, nil
+	}
+
+	mimeType := ""
+	if idx := strings.LastIndex(file.FileName, "."); idx != -1 && idx+1 < len(file.FileName) {
+		mimeType = service.GetMimeTypeByExtension(file.FileName[idx+1:])
+	}
+
+	switch mimeType {
+	case "application/pdf":
+		return dto.ClaudeMediaMessage{
+			Type: "document",
+			Source: &dto.ClaudeMessageSource{
+				Type:      "base64",
+				MediaType: mimeType,
+				Data:      file.FileData,
+			},
+		}, true, nil
+	case "text/plain":
+		data, err := base64.StdEncoding.DecodeString(file.FileData)
+		if err != nil {
+			return dto.ClaudeMediaMessage{}, false, fmt.Errorf("decode text file data failed: %w", err)
+		}
+		return dto.ClaudeMediaMessage{
+			Type: "text",
+			Text: common.GetPointer[string](string(data)),
+		}, true, nil
+	default:
+		return dto.ClaudeMediaMessage{}, false, nil
 	}
 }
 
@@ -377,6 +412,14 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 								Type: "text",
 								Text: common.GetPointer[string](mediaMessage.Text),
 							})
+						}
+					case dto.ContentTypeFile:
+						claudeMediaMessage, ok, err := convertFileContentToClaudeMedia(mediaMessage.GetFile())
+						if err != nil {
+							return nil, err
+						}
+						if ok {
+							claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)
 						}
 					default:
 						source := mediaMessage.ToFileSource()
