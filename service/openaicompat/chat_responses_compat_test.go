@@ -79,5 +79,5 @@ func TestResponsesResponseToChatCompletionsResponsePreservesReasoningSummary(t *
 	require.NoError(t, err)
 	require.Len(t, out.Choices, 1)
 	require.Equal(t, "final answer", out.Choices[0].Message.Content)
-	require.Equal(t, "first thought\n\nsecond thought", out.Choices[0].Message.ReasoningContent)
+	require.Equal(t, "first thought\n\nsecond thought", out.Choices[0].Message.GetReasoningContent())
 }
