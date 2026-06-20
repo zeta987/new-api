@@ -149,6 +149,12 @@ var defaultModelRatio = map[string]float64{
 	"claude-opus-4-8-high":                      2.5,
 	"claude-opus-4-8-medium":                    2.5,
 	"claude-opus-4-8-low":                       2.5,
+	"claude-fable-5":                            2.5,
+	"claude-fable-5-max":                        2.5,
+	"claude-fable-5-xhigh":                      2.5,
+	"claude-fable-5-high":                       2.5,
+	"claude-fable-5-medium":                     2.5,
+	"claude-fable-5-low":                        2.5,
 	"claude-3-opus-20240229":                    7.5, // $15 / 1M tokens
 	"claude-opus-4-20250514":                    7.5,
 	"claude-opus-4-1-20250805":                  7.5,
