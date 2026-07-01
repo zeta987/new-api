@@ -154,20 +154,15 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	}
 
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
-		reasoning.IsClaudeAdaptiveThinkingModel(baseModel) {
+		reasoning.IsClaudeAdaptiveThinkingModel(baseModel) && reasoning.IsClaudeEffortLevel(effortLevel) {
 		claudeRequest.Model = baseModel
-		claudeRequest.Thinking = &dto.Thinking{
-			Type: "adaptive",
-		}
-		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
 		if reasoning.IsClaudePost46AdaptiveThinkingModel(baseModel) {
-			// Newer adaptive models reject non-default temperature/top_p/top_k with 400
-			// and defaults display to "omitted"; restore the 4.6 visible summary.
-			claudeRequest.Thinking.Display = "summarized"
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
+			service.SetClaudeAdaptiveEffort(&claudeRequest, effortLevel)
 		} else {
+			claudeRequest.Thinking = &dto.Thinking{
+				Type: "adaptive",
+			}
+			claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
 			claudeRequest.TopP = nil
 			claudeRequest.Temperature = common.GetPointer[float64](1.0)
 		}
@@ -177,11 +172,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
 		if reasoning.IsClaudePost46AdaptiveThinkingModel(trimmedModel) {
 			// Newer adaptive models reject thinking.type="enabled"; use adaptive at high effort.
-			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
+			service.SetClaudeAdaptiveEffort(&claudeRequest, "high")
 		} else {
 			// 因为BudgetTokens 必须大于1024
 			if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens < 1280 {
@@ -204,40 +195,51 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	}
 
 	if textRequest.ReasoningEffort != "" {
-		switch textRequest.ReasoningEffort {
-		case "low":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](1280),
-			}
-		case "medium":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](2048),
-			}
-		case "high":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](4096),
+		if reasoning.IsClaudePost46AdaptiveThinkingModel(claudeRequest.Model) {
+			service.SetClaudeAdaptiveEffort(&claudeRequest, textRequest.ReasoningEffort)
+		} else {
+			switch textRequest.ReasoningEffort {
+			case "low":
+				claudeRequest.Thinking = &dto.Thinking{
+					Type:         "enabled",
+					BudgetTokens: common.GetPointer[int](1280),
+				}
+			case "medium":
+				claudeRequest.Thinking = &dto.Thinking{
+					Type:         "enabled",
+					BudgetTokens: common.GetPointer[int](2048),
+				}
+			case "high":
+				claudeRequest.Thinking = &dto.Thinking{
+					Type:         "enabled",
+					BudgetTokens: common.GetPointer[int](4096),
+				}
 			}
 		}
 	}
 
 	// 指定了 reasoning 参数,覆盖 budgetTokens
 	if textRequest.Reasoning != nil {
-		var reasoning openrouter.RequestReasoning
-		if err := common.Unmarshal(textRequest.Reasoning, &reasoning); err != nil {
+		var requestReasoning openrouter.RequestReasoning
+		if err := common.Unmarshal(textRequest.Reasoning, &requestReasoning); err != nil {
 			return nil, err
 		}
 
-		budgetTokens := reasoning.MaxTokens
-		if budgetTokens > 0 {
+		budgetTokens := requestReasoning.MaxTokens
+		if reasoning.IsClaudePost46AdaptiveThinkingModel(claudeRequest.Model) {
+			if requestReasoning.Effort != "" {
+				service.SetClaudeAdaptiveEffort(&claudeRequest, requestReasoning.Effort)
+			} else if requestReasoning.Enabled || budgetTokens > 0 {
+				service.SetClaudeAdaptiveEffort(&claudeRequest, "high")
+			}
+		} else if budgetTokens > 0 {
 			claudeRequest.Thinking = &dto.Thinking{
 				Type:         "enabled",
 				BudgetTokens: &budgetTokens,
 			}
 		}
 	}
+	service.NormalizeClaudePost46AdaptiveRequest(&claudeRequest)
 
 	if textRequest.Stop != nil {
 		// stop maybe string/array string, convert to array string

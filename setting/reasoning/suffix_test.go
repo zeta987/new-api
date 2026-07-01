@@ -21,6 +21,10 @@ func TestIsClaudeAdaptiveThinkingModel(t *testing.T) {
 		{model: "claude-opus-4-10-max", want: true},
 		{model: "claude-fable-5", want: true},
 		{model: "claude-fable-5-xhigh", want: true},
+		{model: "claude-sonnet-5", want: true},
+		{model: "claude-opus-5-max", want: true},
+		{model: "claude-haiku-5-low", want: true},
+		{model: "claude-mythos-5-medium", want: true},
 		{model: "not-claude-fable-5", want: false},
 	}
 
@@ -43,6 +47,10 @@ func TestIsClaudePost46AdaptiveThinkingModel(t *testing.T) {
 		{model: "claude-opus-4-10-max", want: true},
 		{model: "claude-fable-5", want: true},
 		{model: "claude-fable-5-medium", want: true},
+		{model: "claude-sonnet-5", want: true},
+		{model: "claude-opus-5-max", want: true},
+		{model: "claude-haiku-5-low", want: true},
+		{model: "claude-mythos-5-medium", want: true},
 	}
 
 	for _, tt := range tests {
@@ -50,4 +58,15 @@ func TestIsClaudePost46AdaptiveThinkingModel(t *testing.T) {
 			require.Equal(t, tt.want, IsClaudePost46AdaptiveThinkingModel(tt.model))
 		})
 	}
+}
+
+func TestIsClaudeEffortLevel(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			require.True(t, IsClaudeEffortLevel(effort))
+		})
+	}
+
+	require.False(t, IsClaudeEffortLevel("minimal"))
+	require.False(t, IsClaudeEffortLevel(""))
 }

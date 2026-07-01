@@ -121,6 +121,110 @@ func TestRequestOpenAI2ClaudeMessageEnablesFable5AdaptiveThinking(t *testing.T) 
 	require.Nil(t, claudeReq.TopK)
 }
 
+func TestRequestOpenAI2ClaudeMessageOmitsSamplingForSonnet5(t *testing.T) {
+	topP := 0.8
+	topK := 4
+	temperature := 0.7
+	req := dto.GeneralOpenAIRequest{
+		Model:       "claude-sonnet-5",
+		TopP:        &topP,
+		TopK:        &topK,
+		Temperature: &temperature,
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	}
+
+	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	require.NoError(t, err)
+
+	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
+	require.Nil(t, claudeReq.Thinking)
+	require.Empty(t, claudeReq.OutputConfig)
+	require.Nil(t, claudeReq.Temperature)
+	require.Nil(t, claudeReq.TopP)
+	require.Nil(t, claudeReq.TopK)
+}
+
+func TestRequestOpenAI2ClaudeMessageEnablesSonnet5EffortSuffix(t *testing.T) {
+	topP := 0.8
+	topK := 4
+	temperature := 0.7
+	req := dto.GeneralOpenAIRequest{
+		Model:       "claude-sonnet-5-xhigh",
+		TopP:        &topP,
+		TopK:        &topK,
+		Temperature: &temperature,
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	}
+
+	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	require.NoError(t, err)
+
+	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
+	require.NotNil(t, claudeReq.Thinking)
+	require.Equal(t, "adaptive", claudeReq.Thinking.Type)
+	require.Equal(t, "summarized", claudeReq.Thinking.Display)
+	require.Equal(t, "xhigh", gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
+	require.Nil(t, claudeReq.Temperature)
+	require.Nil(t, claudeReq.TopP)
+	require.Nil(t, claudeReq.TopK)
+}
+
+func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningEffort(t *testing.T) {
+	req := dto.GeneralOpenAIRequest{
+		Model:           "claude-sonnet-5",
+		ReasoningEffort: "low",
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	}
+
+	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	require.NoError(t, err)
+
+	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
+	require.NotNil(t, claudeReq.Thinking)
+	require.Equal(t, "adaptive", claudeReq.Thinking.Type)
+	require.Equal(t, "summarized", claudeReq.Thinking.Display)
+	require.Nil(t, claudeReq.Thinking.BudgetTokens)
+	require.Equal(t, "low", gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
+}
+
+func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningBudgetToAdaptive(t *testing.T) {
+	req := dto.GeneralOpenAIRequest{
+		Model:     "claude-sonnet-5",
+		Reasoning: []byte(`{"max_tokens":32000}`),
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	}
+
+	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	require.NoError(t, err)
+
+	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
+	require.NotNil(t, claudeReq.Thinking)
+	require.Equal(t, "adaptive", claudeReq.Thinking.Type)
+	require.Equal(t, "summarized", claudeReq.Thinking.Display)
+	require.Nil(t, claudeReq.Thinking.BudgetTokens)
+	require.Equal(t, "high", gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
+}
+
 func TestRequestOpenAI2ClaudeMessageMapsOpus48ThinkingToAdaptiveHigh(t *testing.T) {
 	topP := 0.8
 	topK := 4

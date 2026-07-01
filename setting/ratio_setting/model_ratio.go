@@ -131,6 +131,13 @@ var defaultModelRatio = map[string]float64{
 	"claude-3-7-sonnet-20250219-thinking":       1.5,
 	"claude-sonnet-4-20250514":                  1.5,
 	"claude-sonnet-4-5-20250929":                1.5,
+	"claude-sonnet-5":                           1.5,
+	"claude-sonnet-5-thinking":                  1.5,
+	"claude-sonnet-5-max":                       1.5,
+	"claude-sonnet-5-xhigh":                     1.5,
+	"claude-sonnet-5-high":                      1.5,
+	"claude-sonnet-5-medium":                    1.5,
+	"claude-sonnet-5-low":                       1.5,
 	"claude-opus-4-5-20251101":                  2.5,
 	"claude-opus-4-6":                           2.5,
 	"claude-opus-4-6-max":                       2.5,
@@ -540,7 +547,7 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 
 	if strings.Contains(name, "claude-3") {
 		return 5, true
-	} else if strings.Contains(name, "claude-sonnet-4") || strings.Contains(name, "claude-opus-4") || strings.Contains(name, "claude-haiku-4") {
+	} else if strings.Contains(name, "claude-sonnet-4") || strings.Contains(name, "claude-sonnet-5") || strings.Contains(name, "claude-opus-4") || strings.Contains(name, "claude-haiku-4") {
 		return 5, true
 	}
 
@@ -725,6 +732,10 @@ func FormatMatchingModelName(name string) string {
 		name = handleThinkingBudgetModel(name, "gemini-2.5-flash", "gemini-2.5-flash-thinking-*")
 	} else if strings.HasPrefix(name, "gemini-2.5-pro") {
 		name = handleThinkingBudgetModel(name, "gemini-2.5-pro", "gemini-2.5-pro-thinking-*")
+	}
+
+	if name == "claude-sonnet-5" || strings.HasPrefix(name, "claude-sonnet-5-") {
+		name = "claude-sonnet-5"
 	}
 
 	if strings.HasPrefix(name, "gpt-4-gizmo") {

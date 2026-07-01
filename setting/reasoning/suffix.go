@@ -13,6 +13,15 @@ var OpenAIEffortSuffixes = []string{"-high", "-minimal", "-low", "-medium", "-no
 
 var DeepSeekV4EffortSuffixes = []string{"-none", "-max"}
 
+func IsClaudeEffortLevel(effort string) bool {
+	switch effort {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
+}
+
 // TrimEffortSuffix -> modelName level(low) exists
 func TrimEffortSuffix(modelName string) (string, string, bool) {
 	return TrimEffortSuffixWithSuffixes(modelName, EffortSuffixes)
