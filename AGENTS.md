@@ -136,6 +136,18 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 
 ### Project Governance
 
+**Release tag merge carry-forward:** This is a highest-priority release maintenance rule. When merging a newer upstream release tag into a new `release/v...` branch, the integrated release branch MUST preserve the two critical local feature areas:
+
+- OpenAI Chat Completions / Responses compatibility, including OpenAI and x.ai tool compatibility behavior.
+- Claude adaptive thinking / newer Claude model support.
+
+After the release branch has merged the new tag and all conflicts are resolved, ALWAYS pick these two feature areas out into reusable backup branches using the target version in the branch name:
+
+- `feat/v<target-version>/chatcompletions-responses-compat`
+- `feat/v<target-version>/claude-adaptive-thinking-models`
+
+The backup branches should be based on the upstream target tag and contain only their own feature area, so future release updates can reuse them directly. Keep the main `release/v...` branch as the fully integrated result, and verify the release branch plus both backup commits are signed. Do not carry forward the classic `zh-TW` locale translation split by default during these tag merges unless the user explicitly asks for it.
+
 **Protected project information:** The following project-related information is strictly protected and MUST NOT be modified, deleted, replaced, or removed under any circumstances:
 
 - Any references, mentions, branding, metadata, or attributions related to **nеw-аρi** (the project name/identity)
