@@ -10,10 +10,54 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestModelPriceHelperUsesPricingWildcard(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalPriceJSON := ratio_setting.ModelPrice2JSONString()
+	originalRatioJSON := ratio_setting.ModelRatio2JSONString()
+	originalGroupRatioJSON := ratio_setting.GroupRatio2JSONString()
+	savedConfig := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		savedConfig[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalPriceJSON))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalRatioJSON))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatioJSON))
+		require.NoError(t, config.GlobalConfig.LoadFromDB(savedConfig))
+	})
+
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"gpt-5.6-*":0.125}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{}`,
+		"billing_setting.billing_expr": `{}`,
+	}))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	ctx.Set("group", "default")
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.6-luna-pro-max",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 10, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.True(t, priceData.UsePrice)
+	require.Equal(t, 0.125, priceData.ModelPrice)
+	require.Equal(t, 62500, priceData.QuotaToPreConsume)
+}
 
 func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)

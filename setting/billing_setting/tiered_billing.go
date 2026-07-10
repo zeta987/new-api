@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/samber/lo"
 )
 
@@ -35,16 +36,26 @@ func init() {
 // Read accessors (hot path, must be fast)
 // ---------------------------------------------------------------------------
 
-func GetBillingMode(model string) string {
-	if mode, ok := billingSetting.BillingMode[model]; ok {
-		return mode
+func resolveBillingConfig(model string) (mode string, expr string, hasExpr bool) {
+	for _, candidate := range ratio_setting.ModelPricingCandidates(model) {
+		mode, hasMode := billingSetting.BillingMode[candidate]
+		if !hasMode {
+			continue
+		}
+		expr, hasExpr := billingSetting.BillingExpr[candidate]
+		return mode, expr, hasExpr
 	}
-	return BillingModeRatio
+	return BillingModeRatio, "", false
+}
+
+func GetBillingMode(model string) string {
+	mode, _, _ := resolveBillingConfig(model)
+	return mode
 }
 
 func GetBillingExpr(model string) (string, bool) {
-	expr, ok := billingSetting.BillingExpr[model]
-	return expr, ok
+	_, expr, hasExpr := resolveBillingConfig(model)
+	return expr, hasExpr
 }
 
 func GetBillingModeCopy() map[string]string {
