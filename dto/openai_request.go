@@ -960,8 +960,9 @@ func (r *OpenAIResponsesRequest) GetToolsMap() []map[string]any {
 }
 
 type Reasoning struct {
-	Effort  string `json:"effort,omitempty"`
-	Summary string `json:"summary,omitempty"`
+	Effort  string  `json:"effort,omitempty"`
+	Mode    *string `json:"mode,omitempty"`
+	Summary string  `json:"summary,omitempty"`
 }
 
 type Input struct {

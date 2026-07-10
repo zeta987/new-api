@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/samber/lo"
@@ -39,6 +40,14 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
+}
+
+func normalizeChannelTestModel(modelName string) string {
+	normalized := strings.TrimSpace(modelName)
+	if reasoning.IsGPT56ReasoningWildcard(normalized) {
+		return strings.TrimSuffix(normalized, "-*")
+	}
+	return normalized
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
@@ -109,6 +118,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			}
 		}
 	}
+	testModel = normalizeChannelTestModel(testModel)
 
 	endpointType = normalizeChannelTestEndpoint(channel, testModel, endpointType)
 

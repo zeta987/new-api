@@ -84,6 +84,12 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 	require.Equal(t, 2, userID)
 }
 
+func TestNormalizeChannelTestModelUsesConcreteGPT56Base(t *testing.T) {
+	require.Equal(t, "gpt-5.6-luna", normalizeChannelTestModel("gpt-5.6-luna-*"))
+	require.Equal(t, "gpt-5.6-terra", normalizeChannelTestModel(" gpt-5.6-terra-* "))
+	require.Equal(t, "gpt-5.6-luna-pro-max", normalizeChannelTestModel("gpt-5.6-luna-pro-max"))
+}
+
 func TestSelectChannelsForAutomaticTestPassiveRecoveryOnlyUsesAutoDisabled(t *testing.T) {
 	channels := []*model.Channel{
 		{Id: 1, Status: common.ChannelStatusEnabled},

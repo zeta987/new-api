@@ -60,78 +60,62 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func getPriority(group string, model string, retry int) (int, error) {
-
-	var priorities []int
-	err := DB.Model(&Ability{}).
-		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("priority DESC").              // 按优先级降序排序
-		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
-
-	if err != nil {
-		// 处理错误
-		return 0, err
-	}
-
-	if len(priorities) == 0 {
-		// 如果没有查询到优先级，则返回错误
-		return 0, errors.New("数据库一致性被破坏")
-	}
-
-	// 确定要使用的优先级
-	var priorityToUse int
-	if retry >= len(priorities) {
-		// 如果重试次数大于优先级数，则使用最小的优先级
-		priorityToUse = priorities[len(priorities)-1]
-	} else {
-		priorityToUse = priorities[retry]
-	}
-	return priorityToUse, nil
-}
-
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
-	if retry != 0 {
-		priority, err := getPriority(group, model, retry)
+func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	for _, modelCandidate := range ModelMatchCandidates(model) {
+		var priorities []int64
+		err := DB.Model(&Ability{}).
+			Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, modelCandidate, true).
+			Distinct("priority").
+			Order("priority DESC").
+			Pluck("priority", &priorities).Error
 		if err != nil {
 			return nil, err
-		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
 		}
-	}
+		if len(priorities) == 0 {
+			continue
+		}
 
-	return channelQuery, nil
-}
+		if requestPath == "" {
+			priorityIndex := retry
+			if priorityIndex >= len(priorities) {
+				priorityIndex = len(priorities) - 1
+			}
+			priorities = priorities[priorityIndex : priorityIndex+1]
+		}
 
-func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
-	var abilities []Ability
+		var targetAbilities []Ability
+		supportedPriorityIndex := 0
+		for _, priority := range priorities {
+			var abilities []Ability
+			err = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, modelCandidate, true, priority).
+				Order("weight DESC").
+				Find(&abilities).Error
+			if err != nil {
+				return nil, err
+			}
+			abilities = filterAbilitiesByRequestPath(abilities, requestPath)
+			if len(abilities) == 0 {
+				continue
+			}
+			targetAbilities = abilities
+			if supportedPriorityIndex >= retry || requestPath == "" {
+				break
+			}
+			supportedPriorityIndex++
+		}
+		if len(targetAbilities) == 0 {
+			continue
+		}
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
-	if err != nil {
-		return nil, err
-	}
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	}
-	if err != nil {
-		return nil, err
-	}
-	abilities = filterAbilitiesByRequestPath(abilities, requestPath)
-	channel := Channel{}
-	if len(abilities) > 0 {
+		channel := Channel{}
 		// Randomly choose one
 		weightSum := uint(0)
-		for _, ability_ := range abilities {
+		for _, ability_ := range targetAbilities {
 			weightSum += ability_.Weight + 10
 		}
 		// Randomly choose one
 		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
+		for _, ability_ := range targetAbilities {
 			weight -= int(ability_.Weight) + 10
 			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
 			if weight <= 0 {
@@ -139,11 +123,10 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 				break
 			}
 		}
-	} else {
-		return nil, nil
+		err = DB.First(&channel, "id = ?", channel.Id).Error
+		return &channel, err
 	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
-	return &channel, err
+	return nil, nil
 }
 
 // filterAbilitiesByRequestPath restricts candidates by request path for the DB

@@ -588,17 +588,28 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	//  转换模型推理力度后缀
-	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)
-	if effort != "" {
+	// Convert model suffixes into Responses reasoning fields.
+	originModel, mode, effort, hasReasoningSuffix := reasoning.ParseOpenAIReasoningModelSuffix(request.Model)
+	suffixCameFromRequestModel := hasReasoningSuffix
+	if !hasReasoningSuffix && info != nil {
+		_, mode, effort, hasReasoningSuffix = reasoning.ParseOpenAIReasoningModelSuffix(info.OriginModelName)
+	}
+	if hasReasoningSuffix {
 		if request.Reasoning == nil {
-			request.Reasoning = &dto.Reasoning{
-				Effort: effort,
-			}
-		} else {
+			request.Reasoning = &dto.Reasoning{}
+		}
+		if effort != "" {
 			request.Reasoning.Effort = effort
 		}
-		request.Model = originModel
+		if mode != "" {
+			request.Reasoning.Mode = common.GetPointer(mode)
+		}
+		if suffixCameFromRequestModel {
+			request.Model = originModel
+			if info != nil && info.ChannelMeta != nil {
+				info.UpstreamModelName = originModel
+			}
+		}
 	}
 	if info != nil && request.Reasoning != nil && request.Reasoning.Effort != "" {
 		info.ReasoningEffort = request.Reasoning.Effort

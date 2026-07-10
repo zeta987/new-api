@@ -2,7 +2,6 @@ package model
 
 import (
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 func IsChannelEnabledForGroupModel(group string, modelName string, channelID int) bool {
@@ -20,12 +19,10 @@ func IsChannelEnabledForGroupModel(group string, modelName string, channelID int
 		return false
 	}
 
-	if isChannelIDInList(group2model2channels[group][modelName], channelID) {
-		return true
-	}
-	normalized := ratio_setting.FormatMatchingModelName(modelName)
-	if normalized != "" && normalized != modelName {
-		return isChannelIDInList(group2model2channels[group][normalized], channelID)
+	for _, candidate := range ModelMatchCandidates(modelName) {
+		if isChannelIDInList(group2model2channels[group][candidate], channelID) {
+			return true
+		}
 	}
 	return false
 }
@@ -45,18 +42,7 @@ func IsChannelEnabledForAnyGroupModel(groups []string, modelName string, channel
 func isChannelEnabledForGroupModelDB(group string, modelName string, channelID int) bool {
 	var count int64
 	err := DB.Model(&Ability{}).
-		Where(commonGroupCol+" = ? and model = ? and channel_id = ? and enabled = ?", group, modelName, channelID, true).
-		Count(&count).Error
-	if err == nil && count > 0 {
-		return true
-	}
-	normalized := ratio_setting.FormatMatchingModelName(modelName)
-	if normalized == "" || normalized == modelName {
-		return false
-	}
-	count = 0
-	err = DB.Model(&Ability{}).
-		Where(commonGroupCol+" = ? and model = ? and channel_id = ? and enabled = ?", group, normalized, channelID, true).
+		Where(commonGroupCol+" = ? and model IN ? and channel_id = ? and enabled = ?", group, ModelMatchCandidates(modelName), channelID, true).
 		Count(&count).Error
 	return err == nil && count > 0
 }
