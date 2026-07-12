@@ -3,6 +3,7 @@ package oaichat
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
@@ -35,6 +36,43 @@ func TestChatCompletionsRequestToResponsesRequestInstructionsAndTools(t *testing
 	assert.Equal(t, "function_call", gjson.GetBytes(got.Input, "2.type").String())
 	assert.Equal(t, "call_1", gjson.GetBytes(got.Input, "2.call_id").String())
 	assert.Equal(t, "function_call_output", gjson.GetBytes(got.Input, "3.type").String())
+}
+
+func TestChatCompletionsRequestToResponsesRequestPreservesBuiltInToolShape(t *testing.T) {
+	raw := []byte(`{
+		"model": "gpt-test",
+		"messages": [
+			{"role": "user", "content": "search the docs"}
+		],
+		"tools": [
+			{
+				"type": "web_search_preview",
+				"filters": {
+					"allowed_domains": ["example.com"]
+				}
+			},
+			{
+				"type": "code_interpreter",
+				"container": {
+					"type": "auto"
+				}
+			}
+		]
+	}`)
+
+	var req dto.GeneralOpenAIRequest
+	require.NoError(t, common.Unmarshal(raw, &req))
+
+	out, err := ChatCompletionsRequestToResponsesRequest(&req)
+	require.NoError(t, err)
+
+	tools := gjson.ParseBytes(out.Tools)
+	assert.Equal(t, "web_search_preview", tools.Get("0.type").String())
+	assert.False(t, tools.Get("0.function").Exists())
+	assert.Equal(t, "example.com", tools.Get("0.filters.allowed_domains.0").String())
+	assert.Equal(t, "code_interpreter", tools.Get("1.type").String())
+	assert.False(t, tools.Get("1.function").Exists())
+	assert.Equal(t, "auto", tools.Get("1.container.type").String())
 }
 
 func TestChatCompletionsRequestToResponsesRequestRejectsMultipleChoices(t *testing.T) {
