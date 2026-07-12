@@ -4,11 +4,12 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/service/relayconvert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
 
-func TestRequestOpenAI2ClaudeMessageEnablesSonnet46AdaptiveThinking(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesEnablesSonnet46AdaptiveThinking(t *testing.T) {
 	req := dto.GeneralOpenAIRequest{
 		Model: "claude-sonnet-4-6-high",
 		Messages: []dto.Message{
@@ -19,7 +20,7 @@ func TestRequestOpenAI2ClaudeMessageEnablesSonnet46AdaptiveThinking(t *testing.T
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-4-6", claudeReq.Model)
@@ -31,7 +32,7 @@ func TestRequestOpenAI2ClaudeMessageEnablesSonnet46AdaptiveThinking(t *testing.T
 	require.Nil(t, claudeReq.TopP)
 }
 
-func TestRequestOpenAI2ClaudeMessageKeepsOpus47AdaptiveThinkingRestrictions(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesKeepsOpus47AdaptiveThinkingRestrictions(t *testing.T) {
 	topP := 0.8
 	topK := 4
 	temperature := 0.7
@@ -48,7 +49,7 @@ func TestRequestOpenAI2ClaudeMessageKeepsOpus47AdaptiveThinkingRestrictions(t *t
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-opus-4-7", claudeReq.Model)
@@ -61,7 +62,7 @@ func TestRequestOpenAI2ClaudeMessageKeepsOpus47AdaptiveThinkingRestrictions(t *t
 	require.Nil(t, claudeReq.TopK)
 }
 
-func TestRequestOpenAI2ClaudeMessageKeepsOpus48AdaptiveThinkingRestrictions(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesKeepsOpus48AdaptiveThinkingRestrictions(t *testing.T) {
 	topP := 0.8
 	topK := 4
 	temperature := 0.7
@@ -78,7 +79,7 @@ func TestRequestOpenAI2ClaudeMessageKeepsOpus48AdaptiveThinkingRestrictions(t *t
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-opus-4-8", claudeReq.Model)
@@ -91,7 +92,7 @@ func TestRequestOpenAI2ClaudeMessageKeepsOpus48AdaptiveThinkingRestrictions(t *t
 	require.Nil(t, claudeReq.TopK)
 }
 
-func TestRequestOpenAI2ClaudeMessageEnablesFable5AdaptiveThinking(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesEnablesFable5AdaptiveThinking(t *testing.T) {
 	topP := 0.8
 	topK := 4
 	temperature := 0.7
@@ -108,7 +109,7 @@ func TestRequestOpenAI2ClaudeMessageEnablesFable5AdaptiveThinking(t *testing.T) 
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-fable-5", claudeReq.Model)
@@ -121,7 +122,7 @@ func TestRequestOpenAI2ClaudeMessageEnablesFable5AdaptiveThinking(t *testing.T) 
 	require.Nil(t, claudeReq.TopK)
 }
 
-func TestRequestOpenAI2ClaudeMessageOmitsSamplingForSonnet5(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesOmitsSamplingForSonnet5(t *testing.T) {
 	topP := 0.8
 	topK := 4
 	temperature := 0.7
@@ -138,7 +139,7 @@ func TestRequestOpenAI2ClaudeMessageOmitsSamplingForSonnet5(t *testing.T) {
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -149,7 +150,7 @@ func TestRequestOpenAI2ClaudeMessageOmitsSamplingForSonnet5(t *testing.T) {
 	require.Nil(t, claudeReq.TopK)
 }
 
-func TestRequestOpenAI2ClaudeMessageEnablesSonnet5EffortSuffix(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesEnablesSonnet5EffortSuffix(t *testing.T) {
 	topP := 0.8
 	topK := 4
 	temperature := 0.7
@@ -166,7 +167,7 @@ func TestRequestOpenAI2ClaudeMessageEnablesSonnet5EffortSuffix(t *testing.T) {
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -179,7 +180,7 @@ func TestRequestOpenAI2ClaudeMessageEnablesSonnet5EffortSuffix(t *testing.T) {
 	require.Nil(t, claudeReq.TopK)
 }
 
-func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningEffort(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesMapsSonnet5ReasoningEffort(t *testing.T) {
 	req := dto.GeneralOpenAIRequest{
 		Model:           "claude-sonnet-5",
 		ReasoningEffort: "low",
@@ -191,7 +192,7 @@ func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningEffort(t *testing.T) {
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -202,7 +203,7 @@ func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningEffort(t *testing.T) {
 	require.Equal(t, "low", gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
 }
 
-func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningBudgetToAdaptive(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesMapsSonnet5ReasoningBudgetToAdaptive(t *testing.T) {
 	req := dto.GeneralOpenAIRequest{
 		Model:     "claude-sonnet-5",
 		Reasoning: []byte(`{"max_tokens":32000}`),
@@ -214,7 +215,7 @@ func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningBudgetToAdaptive(t *test
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -225,7 +226,7 @@ func TestRequestOpenAI2ClaudeMessageMapsSonnet5ReasoningBudgetToAdaptive(t *test
 	require.Equal(t, "high", gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
 }
 
-func TestRequestOpenAI2ClaudeMessageMapsOpus48ThinkingToAdaptiveHigh(t *testing.T) {
+func TestOpenAIChatRequestToClaudeMessagesMapsOpus48ThinkingToAdaptiveHigh(t *testing.T) {
 	topP := 0.8
 	topK := 4
 	temperature := 0.7
@@ -242,7 +243,7 @@ func TestRequestOpenAI2ClaudeMessageMapsOpus48ThinkingToAdaptiveHigh(t *testing.
 		},
 	}
 
-	claudeReq, err := RequestOpenAI2ClaudeMessage(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-opus-4-8", claudeReq.Model)

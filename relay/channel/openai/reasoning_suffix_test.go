@@ -32,7 +32,7 @@ func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) 
 			name: "body mode works without a suffix",
 			request: dto.OpenAIResponsesRequest{
 				Model:     "gpt-5.6-luna",
-				Reasoning: &dto.Reasoning{Mode: common.GetPointer("pro"), Summary: "auto"},
+				Reasoning: &dto.Reasoning{Mode: []byte(`"pro"`), Summary: "auto"},
 			},
 			wantModel:     "gpt-5.6-luna",
 			wantMode:      "pro",
@@ -51,7 +51,7 @@ func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) 
 			name: "effort suffix preserves body mode",
 			request: dto.OpenAIResponsesRequest{
 				Model:     "gpt-5.6-luna-high",
-				Reasoning: &dto.Reasoning{Mode: common.GetPointer("pro"), Effort: "low", Summary: "auto"},
+				Reasoning: &dto.Reasoning{Mode: []byte(`"pro"`), Effort: "low", Summary: "auto"},
 			},
 			wantModel:     "gpt-5.6-luna",
 			wantMode:      "pro",
@@ -63,7 +63,7 @@ func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) 
 			name: "explicit standard suffix overrides body mode",
 			request: dto.OpenAIResponsesRequest{
 				Model:     "gpt-5.6-luna-standard-medium",
-				Reasoning: &dto.Reasoning{Mode: common.GetPointer("pro"), Effort: "low"},
+				Reasoning: &dto.Reasoning{Mode: []byte(`"pro"`), Effort: "low"},
 			},
 			wantModel:     "gpt-5.6-luna",
 			wantMode:      "standard",
@@ -117,7 +117,7 @@ func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) 
 				assert.Nil(t, got.Reasoning.Mode)
 			} else {
 				require.NotNil(t, got.Reasoning.Mode)
-				assert.Equal(t, tt.wantMode, *got.Reasoning.Mode)
+				assert.Equal(t, `"`+tt.wantMode+`"`, string(got.Reasoning.Mode))
 			}
 			assert.Equal(t, tt.wantEffort, got.Reasoning.Effort)
 			assert.Equal(t, tt.wantSummary, got.Reasoning.Summary)
@@ -150,7 +150,7 @@ func TestConvertOpenAIResponsesRequestUsesOriginalModelSuffixAfterMapping(t *tes
 	assert.Equal(t, "gpt-5.6-terra", got.Model)
 	assert.Equal(t, "gpt-5.6-terra", info.UpstreamModelName)
 	require.NotNil(t, got.Reasoning.Mode)
-	assert.Equal(t, "pro", *got.Reasoning.Mode)
+	assert.Equal(t, `"pro"`, string(got.Reasoning.Mode))
 	assert.Equal(t, "max", got.Reasoning.Effort)
 }
 
