@@ -137,17 +137,16 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 
 ### Project Governance
 
-**Release tag merge carry-forward:** This is a highest-priority release maintenance rule. When merging a newer upstream release tag into a new `release/v...` branch, the integrated release branch MUST preserve the two critical local feature areas:
+**Release tag merge carry-forward:** This is a highest-priority release maintenance rule. For every rc update, before finalizing the new `release/v...` branch, inventory every custom feature branch represented in the prior target version, whether it was created for that version or inherited from an earlier version and remained integrated into the prior release. Determine the complete carry-forward set from the custom branch history and the prior integrated release; a fixed short list is not exhaustive.
+
+The mandatory minimum always includes:
 
 - OpenAI Chat Completions / Responses compatibility, including OpenAI and x.ai tool compatibility behavior.
 - Claude adaptive thinking / newer Claude model support.
 
-After the release branch has merged the new tag and all conflicts are resolved, ALWAYS pick these two feature areas out into reusable backup branches using the target version in the branch name:
+These two feature areas MUST be preserved on every rc update, but they are only the minimum. If the prior integrated release still contains any other custom branch's feature implementation—including the classic `zh-TW` locale translation branch—that feature MUST also be preserved and recreated for the new target version.
 
-- `feat/v<target-version>/chatcompletions-responses-compat`
-- `feat/v<target-version>/claude-adaptive-thinking-models`
-
-The backup branches should be based on the upstream target tag and contain only their own feature area, so future release updates can reuse them directly. Keep the main `release/v...` branch as the fully integrated result, and verify the release branch plus both backup commits are signed. Do not carry forward the classic `zh-TW` locale translation split by default during these tag merges unless the user explicitly asks for it.
+After the new upstream tag is merged and all conflicts are resolved, recreate a reusable backup branch for every carried custom feature using `feat/v<target-version>/<feature-name>`. Each backup branch MUST be based on the new upstream target tag and contain only that feature's implementation as it exists in the fully merged `release/v...` branch. Keep the release branch as the fully integrated result, and verify the release merge commit and every recreated backup commit are signed.
 
 **Protected project information:** The following project-related information is strictly protected and MUST NOT be modified, deleted, replaced, or removed under any circumstances:
 
