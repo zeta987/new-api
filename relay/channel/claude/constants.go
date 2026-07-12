@@ -26,6 +26,13 @@ var ModelList = []string{
 	"claude-opus-4-6-medium",
 	"claude-opus-4-6-low",
 	"claude-sonnet-4-6",
+	"claude-sonnet-5",
+	"claude-sonnet-5-max",
+	"claude-sonnet-5-xhigh",
+	"claude-sonnet-5-high",
+	"claude-sonnet-5-medium",
+	"claude-sonnet-5-low",
+	"claude-sonnet-5-thinking",
 	"claude-opus-4-7",
 	"claude-opus-4-7-max",
 	"claude-opus-4-7-xhigh",
@@ -40,6 +47,12 @@ var ModelList = []string{
 	"claude-opus-4-8-medium",
 	"claude-opus-4-8-low",
 	"claude-opus-4-8-thinking",
+	"claude-fable-5",
+	"claude-fable-5-max",
+	"claude-fable-5-xhigh",
+	"claude-fable-5-high",
+	"claude-fable-5-medium",
+	"claude-fable-5-low",
 }
 
 var ChannelName = "claude"

@@ -7,9 +7,11 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service/claudeadaptive"
 	relaymedia "github.com/QuantumNous/new-api/service/relayconvert/internal/media"
 	sharedclaude "github.com/QuantumNous/new-api/service/relayconvert/internal/shared/claude"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,11 +40,15 @@ func OpenAIResponsesRequestToClaudeMessages(c *gin.Context, req *dto.OpenAIRespo
 		TopP:        req.TopP,
 		Stream:      req.Stream,
 	}
+	if !claudeadaptive.ApplyEffortSuffix(claudeRequest) &&
+		model_setting.GetClaudeSettings().ThinkingAdapterEnabled {
+		claudeadaptive.ApplyPost46ThinkingSuffix(claudeRequest)
+	}
 	if req.MaxOutputTokens != nil && *req.MaxOutputTokens > 0 {
 		claudeRequest.MaxTokens = common.GetPointer(*req.MaxOutputTokens)
 	}
 	if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens == 0 {
-		defaultMaxTokens := uint(model_setting.GetClaudeSettings().GetDefaultMaxTokens(req.Model))
+		defaultMaxTokens := uint(model_setting.GetClaudeSettings().GetDefaultMaxTokens(claudeRequest.Model))
 		claudeRequest.MaxTokens = &defaultMaxTokens
 	}
 
@@ -62,6 +68,7 @@ func OpenAIResponsesRequestToClaudeMessages(c *gin.Context, req *dto.OpenAIRespo
 		claudeRequest.ToolChoice = sharedclaude.MapOpenAIToolChoice(toolChoice, ParallelToolCalls(req.ParallelToolCalls))
 	}
 	applyResponsesReasoningToClaude(req, claudeRequest)
+	claudeadaptive.Normalize(claudeRequest)
 
 	systemMessages := make([]dto.ClaudeMediaMessage, 0)
 	if RawJSONPresent(req.Instructions) {
@@ -156,6 +163,12 @@ func responsesFunctionParametersToClaudeInputSchema(parameters any) map[string]i
 
 func applyResponsesReasoningToClaude(req *dto.OpenAIResponsesRequest, claudeRequest *dto.ClaudeRequest) {
 	effort := ReasoningEffort(req)
+	if reasoning.IsClaudePost46AdaptiveThinkingModel(claudeRequest.Model) {
+		if effort != "" {
+			claudeadaptive.SetEffort(claudeRequest, effort)
+		}
+		return
+	}
 	switch effort {
 	case "low":
 		claudeRequest.Thinking = &dto.Thinking{

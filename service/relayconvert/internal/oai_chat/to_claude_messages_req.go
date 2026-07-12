@@ -1,12 +1,12 @@
 package oaichat
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/service/claudeadaptive"
 	relaymedia "github.com/QuantumNous/new-api/service/relayconvert/internal/media"
 	sharedclaude "github.com/QuantumNous/new-api/service/relayconvert/internal/shared/claude"
 	"github.com/QuantumNous/new-api/setting/model_setting"
@@ -127,36 +127,13 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 		claudeRequest.MaxTokens = &defaultMaxTokens
 	}
 
-	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
-		(strings.HasPrefix(textRequest.Model, "claude-opus-4-6") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-7") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-8")) {
-		claudeRequest.Model = baseModel
-		claudeRequest.Thinking = &dto.Thinking{
-			Type: "adaptive",
-		}
-		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
-		if strings.HasPrefix(baseModel, "claude-opus-4-7") ||
-			strings.HasPrefix(baseModel, "claude-opus-4-8") {
-			claudeRequest.Thinking.Display = "summarized"
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
-		} else {
-			claudeRequest.TopP = nil
-			claudeRequest.Temperature = common.GetPointer[float64](1.0)
-		}
-	} else if model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
+	if !claudeadaptive.ApplyEffortSuffix(&claudeRequest) &&
+		model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
 		strings.HasSuffix(textRequest.Model, "-thinking") {
 
 		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
-		if strings.HasPrefix(trimmedModel, "claude-opus-4-7") ||
-			strings.HasPrefix(trimmedModel, "claude-opus-4-8") {
-			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
+		if reasoning.IsClaudePost46AdaptiveThinkingModel(trimmedModel) {
+			claudeadaptive.SetEffort(&claudeRequest, "high")
 		} else {
 			if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens < 1280 {
 				claudeRequest.MaxTokens = common.GetPointer[uint](1280)
@@ -175,21 +152,25 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 	}
 
 	if textRequest.ReasoningEffort != "" {
-		switch textRequest.ReasoningEffort {
-		case "low":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](1280),
-			}
-		case "medium":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](2048),
-			}
-		case "high":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](4096),
+		if reasoning.IsClaudePost46AdaptiveThinkingModel(claudeRequest.Model) {
+			claudeadaptive.SetEffort(&claudeRequest, textRequest.ReasoningEffort)
+		} else {
+			switch textRequest.ReasoningEffort {
+			case "low":
+				claudeRequest.Thinking = &dto.Thinking{
+					Type:         "enabled",
+					BudgetTokens: common.GetPointer[int](1280),
+				}
+			case "medium":
+				claudeRequest.Thinking = &dto.Thinking{
+					Type:         "enabled",
+					BudgetTokens: common.GetPointer[int](2048),
+				}
+			case "high":
+				claudeRequest.Thinking = &dto.Thinking{
+					Type:         "enabled",
+					BudgetTokens: common.GetPointer[int](4096),
+				}
 			}
 		}
 	}
@@ -201,13 +182,20 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 		}
 
 		budgetTokens := reasoningConfig.MaxTokens
-		if budgetTokens > 0 {
+		if reasoning.IsClaudePost46AdaptiveThinkingModel(claudeRequest.Model) {
+			if reasoningConfig.Effort != "" {
+				claudeadaptive.SetEffort(&claudeRequest, reasoningConfig.Effort)
+			} else if reasoningConfig.Enabled || budgetTokens > 0 {
+				claudeadaptive.SetEffort(&claudeRequest, "high")
+			}
+		} else if budgetTokens > 0 {
 			claudeRequest.Thinking = &dto.Thinking{
 				Type:         "enabled",
 				BudgetTokens: &budgetTokens,
 			}
 		}
 	}
+	claudeadaptive.Normalize(&claudeRequest)
 
 	if textRequest.Stop != nil {
 		switch stop := textRequest.Stop.(type) {

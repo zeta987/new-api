@@ -53,23 +53,15 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
-		(strings.HasPrefix(request.Model, "claude-opus-4-6") ||
-			strings.HasPrefix(request.Model, "claude-opus-4-7") ||
-			strings.HasPrefix(request.Model, "claude-opus-4-8")) {
+		reasoning.IsClaudeAdaptiveThinkingModel(baseModel) && reasoning.IsClaudeEffortLevel(effortLevel) {
 		request.Model = baseModel
-		request.Thinking = &dto.Thinking{
-			Type: "adaptive",
-		}
-		request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
-		if strings.HasPrefix(request.Model, "claude-opus-4-7") ||
-			strings.HasPrefix(request.Model, "claude-opus-4-8") {
-			// Opus 4.7/4.8 reject non-default temperature/top_p/top_k with 400
-			// and defaults display to "omitted"; restore the 4.6 visible summary.
-			request.Thinking.Display = "summarized"
-			request.Temperature = nil
-			request.TopP = nil
-			request.TopK = nil
+		if reasoning.IsClaudePost46AdaptiveThinkingModel(request.Model) {
+			service.SetClaudeAdaptiveEffort(request, effortLevel)
 		} else {
+			request.Thinking = &dto.Thinking{
+				Type: "adaptive",
+			}
+			request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
 			request.Temperature = common.GetPointer[float64](1.0)
 		}
 		info.UpstreamModelName = request.Model
@@ -77,14 +69,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		strings.HasSuffix(request.Model, "-thinking") {
 		if request.Thinking == nil {
 			baseModel := strings.TrimSuffix(request.Model, "-thinking")
-			if strings.HasPrefix(baseModel, "claude-opus-4-7") ||
-				strings.HasPrefix(baseModel, "claude-opus-4-8") {
-				// Opus 4.7/4.8 reject thinking.type="enabled"; use adaptive at high effort.
-				request.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-				request.OutputConfig = json.RawMessage(`{"effort":"high"}`)
-				request.Temperature = nil
-				request.TopP = nil
-				request.TopK = nil
+			if reasoning.IsClaudePost46AdaptiveThinkingModel(baseModel) {
+				// Newer adaptive models reject thinking.type="enabled"; use adaptive at high effort.
+				service.SetClaudeAdaptiveEffort(request, "high")
 			} else {
 				// 因为BudgetTokens 必须大于1024
 				if request.MaxTokens == nil || *request.MaxTokens < 1280 {
@@ -106,6 +93,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		info.UpstreamModelName = request.Model
 	}
+	service.NormalizeClaudePost46AdaptiveRequest(request)
 
 	if info.ChannelSetting.SystemPrompt != "" {
 		if request.System == nil {
