@@ -38,7 +38,15 @@ func TestKimiK3ReasoningEffortConversion(t *testing.T) {
 	})
 
 	t.Run("moonshot converts max suffix to official payload", func(t *testing.T) {
-		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3-max"}
+		request := &dto.GeneralOpenAIRequest{
+			Model:            "kimi-k3-max",
+			Temperature:      common.GetPointer[float64](0.7),
+			TopP:             common.GetPointer[float64](1),
+			TopK:             common.GetPointer(40),
+			N:                common.GetPointer(2),
+			FrequencyPenalty: common.GetPointer[float64](0),
+			PresencePenalty:  common.GetPointer[float64](0),
+		}
 		info := &relaycommon.RelayInfo{
 			OriginModelName: "kimi-k3-max",
 			ChannelMeta: &relaycommon.ChannelMeta{
@@ -54,7 +62,17 @@ func TestKimiK3ReasoningEffortConversion(t *testing.T) {
 		assert.Equal(t, "max", got.ReasoningEffort)
 		assert.Equal(t, "kimi-k3", info.UpstreamModelName)
 		assert.Equal(t, "max", info.ReasoningEffort)
-		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"max"}`, payload)
+		assert.Nil(t, got.Temperature)
+		assert.Nil(t, got.TopP)
+		assert.Nil(t, got.TopK)
+		assert.Nil(t, got.N)
+		if assert.NotNil(t, got.FrequencyPenalty) {
+			assert.Zero(t, *got.FrequencyPenalty)
+		}
+		if assert.NotNil(t, got.PresencePenalty) {
+			assert.Zero(t, *got.PresencePenalty)
+		}
+		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"max","frequency_penalty":0,"presence_penalty":0}`, payload)
 	})
 
 	t.Run("moonshot converts none suffix to disabled thinking payload", func(t *testing.T) {

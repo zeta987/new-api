@@ -9,7 +9,6 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/moonshot"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestKimiK26ThinkingSuffixConversion(t *testing.T) {
@@ -30,10 +29,28 @@ func TestKimiK26ThinkingSuffixConversion(t *testing.T) {
 
 	assert.Equal(t, "kimi-k2.6", got.Model)
 	assert.JSONEq(t, `{"type":"enabled"}`, string(got.THINKING))
-	require.NotNil(t, got.Temperature)
-	assert.Equal(t, 1.0, *got.Temperature)
+	assert.Nil(t, got.Temperature)
 	assert.Equal(t, "kimi-k2.6", info.UpstreamModelName)
-	assert.JSONEq(t, `{"model":"kimi-k2.6","temperature":1,"thinking":{"type":"enabled"}}`, payload)
+	assert.JSONEq(t, `{"model":"kimi-k2.6","thinking":{"type":"enabled"}}`, payload)
+}
+
+func TestKimiK26ThinkingSuffixConversionAfterModelMapping(t *testing.T) {
+	request := &dto.GeneralOpenAIRequest{Model: "kimi-k2.6"}
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "kimi-k2.6-thinking",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeMoonshot,
+			UpstreamModelName: "kimi-k2.6",
+		},
+	}
+
+	converted, err := (&moonshot.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+	got, payload := requireConvertedOpenAIRequest(t, converted, err)
+
+	assert.Equal(t, "kimi-k2.6", got.Model)
+	assert.JSONEq(t, `{"type":"enabled"}`, string(got.THINKING))
+	assert.Equal(t, "kimi-k2.6", info.UpstreamModelName)
+	assert.JSONEq(t, `{"model":"kimi-k2.6","thinking":{"type":"enabled"}}`, payload)
 }
 
 func TestMoonshotModelListIncludesKimiK26ThinkingVariants(t *testing.T) {

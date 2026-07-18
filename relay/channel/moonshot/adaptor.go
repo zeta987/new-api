@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/QuantumNous/new-api/common"
 	channelconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -83,13 +82,17 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
 	upstreamModelName := getUpstreamModelName(info, request.Model)
-	if upstreamModelName == "kimi-k2.6-thinking" {
+	isKimiK26ThinkingAlias := upstreamModelName == "kimi-k2.6-thinking" ||
+		(info != nil && info.OriginModelName == "kimi-k2.6-thinking")
+	if isKimiK26ThinkingAlias {
 		request.Model = "kimi-k2.6"
 		request.THINKING = json.RawMessage(`{"type":"enabled"}`)
 		upstreamModelName = request.Model
 		if info != nil && info.ChannelMeta != nil {
 			info.UpstreamModelName = request.Model
 		}
+	} else if upstreamModelName == "kimi-k2.6" && len(request.THINKING) == 0 {
+		request.THINKING = json.RawMessage(`{"type":"disabled"}`)
 	}
 	reasoningEffort := ""
 	switch upstreamModelName {
@@ -109,8 +112,17 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			}
 		}
 	}
-	if request.Temperature != nil && isTemperatureOneOnlyModel(upstreamModelName) && *request.Temperature != 1.0 {
-		request.Temperature = common.GetPointer[float64](1.0)
+	if usesFixedSamplingParameters(upstreamModelName) {
+		request.Temperature = nil
+		request.TopP = nil
+		request.TopK = nil
+		request.N = nil
+		if request.FrequencyPenalty != nil {
+			*request.FrequencyPenalty = 0
+		}
+		if request.PresencePenalty != nil {
+			*request.PresencePenalty = 0
+		}
 	}
 	return request, nil
 }
@@ -122,8 +134,8 @@ func getUpstreamModelName(info *relaycommon.RelayInfo, fallback string) string {
 	return fallback
 }
 
-func isTemperatureOneOnlyModel(model string) bool {
-	return strings.EqualFold(model, "kimi-k2.6")
+func usesFixedSamplingParameters(model string) bool {
+	return strings.EqualFold(model, "kimi-k2.6") || strings.EqualFold(model, "kimi-k3")
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
