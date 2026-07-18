@@ -81,7 +81,19 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 }
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
-	if request.Temperature != nil && isTemperatureOneOnlyModel(getUpstreamModelName(info, request.Model)) && *request.Temperature != 1.0 {
+	upstreamModelName := getUpstreamModelName(info, request.Model)
+	if upstreamModelName == "kimi-k3-max" {
+		request.Model = "kimi-k3"
+		request.ReasoningEffort = "max"
+		upstreamModelName = request.Model
+		if info != nil {
+			info.ReasoningEffort = request.ReasoningEffort
+			if info.ChannelMeta != nil {
+				info.UpstreamModelName = request.Model
+			}
+		}
+	}
+	if request.Temperature != nil && isTemperatureOneOnlyModel(upstreamModelName) && *request.Temperature != 1.0 {
 		request.Temperature = common.GetPointer[float64](1.0)
 	}
 	return request, nil

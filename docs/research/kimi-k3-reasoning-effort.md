@@ -1,0 +1,128 @@
+# Kimi K3 reasoning effort 研究筆記
+
+調查日期：2026-07-18。本文記錄 Kimi 官方 API 契約、固定基底的程式碼診斷，以及本 feature branch 的實作結果。
+
+官方資料只採用 Kimi API Platform；基底診斷固定在 `dev/v1.0.0-rc.21` 的 `3e55e6428489f0528681dec8f919d015d1cf26ef`，實作結果則採用本 feature branch 的原始碼。官方頁面可能持續更新，因此所有官方敘述都附上可點擊來源。
+
+## 官方 API 契約
+
+### 支援值與欄位位置
+
+Kimi K3 永遠執行推理。目前 `reasoning_effort` 唯一支援的字串值是 `"max"`；欄位可省略，API reference 將預設值列為 `max`。官方也說明未來才會增加較低的 effort level，因此 `low`、`medium`、`high`、`xhigh` 等值目前都不是 K3 的有效選項。來源：[Kimi K3 Pricing](https://platform.kimi.ai/docs/pricing/chat-k3)、[Thinking Effort](https://platform.kimi.ai/docs/guide/use-thinking-effort)、[Create Chat Completion API reference](https://platform.kimi.ai/docs/api/chat)。
+
+`reasoning_effort` 位於 request body 頂層，與 `model`、`messages` 同層。它不位於 `thinking` 物件內；K3 quickstart 明確要求不要對 K3 使用 K2.x 的 `thinking` 參數，而 Model Parameter Reference 將 `thinking` 定義為 K2.x 專用。來源：[Kimi K3 quickstart](https://platform.kimi.ai/docs/guide/kimi-k3-quickstart)、[Model Parameter Reference](https://platform.kimi.ai/docs/api/models-overview)。
+
+合法的最小 body 形狀如下：
+
+```json
+{
+  "model": "kimi-k3",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Derive the general formula for this sequence: 1, 4, 9, 25, 64, ..."
+    }
+  ],
+  "reasoning_effort": "max"
+}
+```
+
+這個欄位位置與值直接對應官方 Thinking Effort 範例及 API reference 的 K3 request schema。來源：[Thinking Effort request example](https://platform.kimi.ai/docs/guide/use-thinking-effort)、[Create Chat Completion request schema](https://platform.kimi.ai/docs/api/chat)。
+
+### Chat Completions 正式端點與完整請求
+
+正式端點是 `POST https://api.moonshot.ai/v1/chat/completions`。完整 HTTP request 可寫成：
+
+```http
+POST /v1/chat/completions HTTP/1.1
+Host: api.moonshot.ai
+Authorization: Bearer $MOONSHOT_API_KEY
+Content-Type: application/json
+
+{
+  "model": "kimi-k3",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Derive the general formula for this sequence: 1, 4, 9, 25, 64, ..."
+    }
+  ],
+  "reasoning_effort": "max"
+}
+```
+
+官方 curl 範例使用相同 URL、Authorization header、Content-Type header 與 body。來源：[Thinking Effort curl example](https://platform.kimi.ai/docs/guide/use-thinking-effort)、[Create Chat Completion API reference](https://platform.kimi.ai/docs/api/chat)。
+
+### reasoning_content 行為要求
+
+| 情境 | K3 契約 | 官方來源 |
+| --- | --- | --- |
+| 一般單輪對話 | K3 永遠推理，但官方使用「may return」描述 `reasoning_content`，所以 client 應把它視為可能存在的 response 欄位。非 streaming response 中，它位於 `choices[0].message.reasoning_content`，與 `content` 同層。單輪請求沒有下一次 request，因此沒有歷史回傳動作。Structured Output 只解析最終 `message.content`，不要把 `reasoning_content` 當成結構化答案。 | [Thinking Effort](https://platform.kimi.ai/docs/guide/use-thinking-effort)、[Create Chat Completion response schema](https://platform.kimi.ai/docs/api/chat)、[Kimi K3 structured output note](https://platform.kimi.ai/docs/guide/kimi-k3-quickstart) |
+| Streaming 對話 | `reasoning_content` 與最終答案 `content` 使用分開的 delta。官方 K3 quickstart 示範分別讀取兩者；Thinking Mode 文件指出 reasoning delta 先於 final-answer content。 | [Kimi K3 streaming example](https://platform.kimi.ai/docs/guide/kimi-k3-quickstart)、[Thinking Mode](https://platform.kimi.ai/docs/guide/use-kimi-k2-thinking-model) |
+| 工具呼叫 | 下一次 request 必須先放回 API 回傳的完整 assistant message，包含 `reasoning_content` 與 `tool_calls`，再加入每個 `role: "tool"` 結果；tool result 的 `tool_call_id` 必須對應 assistant message 內的 call id。不可只保留 `content`。 | [Thinking Effort fields note](https://platform.kimi.ai/docs/guide/use-thinking-effort)、[Kimi K3 tool example](https://platform.kimi.ai/docs/guide/kimi-k3-quickstart)、[Tool Calls troubleshooting](https://platform.kimi.ai/docs/guide/use-kimi-api-to-complete-tool-calls) |
+| 多輪對話 | Kimi API 本身無狀態，client 必須維護 `messages`。對 K3 而言，每一個歷史 assistant message 都要使用 API 回傳的完整物件原樣加入下一次 request，包含任何 `reasoning_content`；只重建 `{role, content}` 不符合 K3 的明文要求。 | [Thinking Effort fields note](https://platform.kimi.ai/docs/guide/use-thinking-effort)、[Kimi K3 important limits](https://platform.kimi.ai/docs/guide/kimi-k3-quickstart)、[Thinking Mode FAQ](https://platform.kimi.ai/docs/guide/use-kimi-k2-thinking-model) |
+
+Create Chat Completion API reference 另有一段使用 `kimi-k2.6` 的通用 multi-turn 範例，只追加 `{role, content}`。該範例的模型是 K2.6；K3 專頁、Thinking Effort 與 Model Parameter Reference 都對 K3 明確要求完整 assistant message，因此 K3 應採用較具體的 K3 契約。來源：[Create Chat Completion multi-turn section](https://platform.kimi.ai/docs/api/chat)、[Model Parameter Reference FAQ](https://platform.kimi.ai/docs/api/models-overview)。
+
+### kimi-k3-max 官方狀態
+
+截至調查日期，官方 Model List 只列 `kimi-k3`，Create Chat Completion 的 K3 `model` enum 也只列 `kimi-k3`；官方文件沒有把 `kimi-k3-max` 定義為 model ID。`max` 是 top-level `reasoning_effort` 的值，並不是官方 model name 的一部分。來源：[Model List](https://platform.kimi.ai/docs/models)、[Create Chat Completion K3 schema](https://platform.kimi.ai/docs/api/chat)、[Kimi K3 Pricing](https://platform.kimi.ai/docs/pricing/chat-k3)。
+
+因此，`kimi-k3-max` 在 new-api 範圍內只能標記為本地便利 suffix 語法。它表達的 upstream API 語意是 `model: "kimi-k3"` 加上 `reasoning_effort: "max"`；Kimi 官方端點沒有承諾接受帶 suffix 的 model ID。來源：[Thinking Effort request example](https://platform.kimi.ai/docs/guide/use-thinking-effort)、[Model List](https://platform.kimi.ai/docs/models)。
+
+## new-api 固定基底診斷
+
+本節保留實作前的可重複診斷結果，所有「缺少」或「不支援」描述都只代表上述固定基底，不代表本 feature branch 的實作後狀態。
+
+### Moonshot Chat Completions adaptor
+
+Moonshot adaptor 會依 relay mode 組出 `/v1/chat/completions` URL；一般 Chat Completions 分支位於 [`relay/channel/moonshot/adaptor.go:49-73`](../../relay/channel/moonshot/adaptor.go#L49-L73)。
+
+固定基底的 `ConvertOpenAIRequest` 只會把 `kimi-k2.6` 的非 1.0 temperature 正規化成 1.0，隨後原樣回傳 request。該版本沒有呼叫 reasoning suffix parser，也沒有 K3 專用分支，因此 `kimi-k3-max` 不會在 Moonshot adaptor 被轉成 `kimi-k3` 與 `reasoning_effort: "max"`。
+
+Moonshot adaptor 的 Responses 轉換目前回傳 `not implemented`，所以這個 channel 現有的 Kimi Chat 路徑是 Chat Completions。來源：[`relay/channel/moonshot/adaptor.go:101-104`](../../relay/channel/moonshot/adaptor.go#L101-L104)。
+
+### OpenAI adaptor
+
+OpenAI Chat Completions adaptor 只在 upstream model 被判定為 `o1`、`o3`、`o4` 或 `gpt-5` family 時執行 `ParseOpenAIReasoningEffortFromModelSuffix`。`kimi-k3-max` 不符合這些 family gate，因此不會進入 suffix 解析區塊。來源：[`relay/channel/openai/adaptor.go:321-348`](../../relay/channel/openai/adaptor.go#L321-L348)、[`dto/openai_request.go:216-224`](../../dto/openai_request.go#L216-L224)。
+
+如果 client 已經直接送 top-level `reasoning_effort`，OpenAI Chat Completions adaptor 沒有刪除該欄位；固定基底缺少的是從 `kimi-k3-max` 推導欄位的 Kimi path。欄位本身由 General OpenAI request DTO 提供，來源：[`dto/openai_request.go:29-44`](../../dto/openai_request.go#L29-L44)。
+
+OpenAI Responses adaptor 會在 request model 或 origin model 上呼叫 `ParseOpenAIReasoningModelSuffix`，並把解析結果寫入 nested `reasoning.effort` 或 `reasoning.mode`。不過目前 parser 對非 GPT-5.6 model 使用的通用 OpenAI suffix 清單不含 `-max`，所以這條路徑也不會辨識 `kimi-k3-max`。來源：[`relay/channel/openai/adaptor.go:597-628`](../../relay/channel/openai/adaptor.go#L597-L628)、[`setting/reasoning/suffix.go:99-119`](../../setting/reasoning/suffix.go#L99-L119)。
+
+### Request DTO
+
+Chat Completions 使用的 `GeneralOpenAIRequest` 已有 top-level `ReasoningEffort string`，JSON key 是 `reasoning_effort`。這與 K3 官方欄位位置一致。來源：[`dto/openai_request.go:29-44`](../../dto/openai_request.go#L29-L44)。
+
+Chat message DTO 可以表示 K3 歷史 assistant message 需要的 `reasoning_content` 與 `tool_calls`，兩者分別是 `ReasoningContent *string` 與 `ToolCalls json.RawMessage`。來源：[`dto/openai_request.go:289-298`](../../dto/openai_request.go#L289-L298)。
+
+Responses API 使用不同 shape：`OpenAIResponsesRequest` 內是 `Reasoning *Reasoning`，其 JSON key 為 `reasoning`；`Reasoning` 物件再包含 `effort`、`summary`、`mode` 與 `context`。這個 nested shape 不等同於 K3 Chat Completions 的 top-level `reasoning_effort`。來源：[`dto/openai_request.go:842-872`](../../dto/openai_request.go#L842-L872)、[`dto/openai_request.go:967-972`](../../dto/openai_request.go#L967-L972)。
+
+### Reasoning suffix parser
+
+`setting/reasoning/suffix.go` 內有多組不同用途的 suffix。廣義 `EffortSuffixes` 包含 `-max`，但是 OpenAI parser 實際使用的 `OpenAIEffortSuffixes` 只有 `-high`、`-minimal`、`-low`、`-medium`、`-none` 與 `-xhigh`。因此只看到全域 `-max` 常數，不能代表 OpenAI Chat 或 Responses 已支援 `kimi-k3-max`。來源：[`setting/reasoning/suffix.go:10-16`](../../setting/reasoning/suffix.go#L10-L16)、[`setting/reasoning/suffix.go:99-119`](../../setting/reasoning/suffix.go#L99-L119)。
+
+固定基底的 `max` 在 `ParseOpenAIReasoningModelSuffix` 特殊處理中只屬於 GPT-5.6 grammar；另外 DeepSeek V4 也有獨立的 `max` 行為。兩者都沒有涵蓋 Kimi model family。來源：[`setting/reasoning/suffix.go:107-119`](../../setting/reasoning/suffix.go#L107-L119)、[`setting/reasoning/suffix.go:193-213`](../../setting/reasoning/suffix.go#L193-L213)。
+
+### Model list
+
+固定基底的 Moonshot `ModelList` 只有 `kimi-k2.5`、數個已棄用的 `kimi-k2-*` model，沒有 `kimi-k3` 或 `kimi-k3-max`。
+
+Moonshot adaptor 的 `GetModelList` 直接回傳上述清單，而 controller 初始化公開 model 集合時也會加入 `moonshot.ModelList`，所以固定基底的內建 model discovery 不會列出 K3。來源：[`relay/channel/moonshot/adaptor.go:129-134`](../../relay/channel/moonshot/adaptor.go#L129-L134)、[`controller/model.go:33-65`](../../controller/model.go#L33-L65)。
+
+## 規格與固定基底對照
+
+| 項目 | Kimi 官方契約 | new-api 固定基底狀態 |
+| --- | --- | --- |
+| 正式 model ID | `kimi-k3` | Moonshot 內建 model list 尚未列出 |
+| reasoning effort | request 頂層 `reasoning_effort: "max"` | Chat DTO 可以表示並轉送此欄位 |
+| `kimi-k3-max` | 沒有定義為官方 model ID | Moonshot 與 OpenAI Chat adaptor 都不會解析；它只能被視為 new-api 本地便利 suffix |
+| K3 歷史 assistant message | 多輪與工具呼叫必須完整原樣回傳，包含 `reasoning_content` 與 `tool_calls` | Message DTO 可以表示這兩個欄位 |
+
+## 本分支實作結果
+
+Moonshot Chat Completions adaptor 現在只辨識精確的本地便利名稱 `kimi-k3-max`，並把 upstream request 轉成官方 `model: "kimi-k3"` 與 top-level `reasoning_effort: "max"`。轉換同時更新 request model、`RelayInfo.UpstreamModelName` 與 `RelayInfo.ReasoningEffort`；未支援的 `kimi-k3-high` 等名稱保持原樣。來源：[`relay/channel/moonshot/adaptor.go`](../../relay/channel/moonshot/adaptor.go)。
+
+顯式傳入 `model: "kimi-k3"` 與 `reasoning_effort: "max"` 的 request 仍會保留原本 payload；OpenAI channel 的 `kimi-k3-max` 行為沒有被擴大，其他 provider 的 suffix parser 也沒有修改。相關 public adaptor regression coverage 位於 [`relay/channel/moonshot/kimi_k3_reasoning_effort_test.go`](../../relay/channel/moonshot/kimi_k3_reasoning_effort_test.go)。
+
+Moonshot model discovery 現在加入官方 `kimi-k3`，但不把本地便利名稱 `kimi-k3-max` 列為官方 model ID。來源：[`relay/channel/moonshot/constants.go`](../../relay/channel/moonshot/constants.go)。
