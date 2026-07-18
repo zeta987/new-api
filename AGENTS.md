@@ -6,6 +6,24 @@ DO NOT send optional commentary
 
 This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI providers (OpenAI, Claude, Gemini, Azure, AWS Bedrock, etc.) behind a unified API, with user management, billing, rate limiting, and an admin dashboard.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in this fork's GitHub Issues. Pull requests are
+allowed for owner-managed development, but are not treated as triage requests.
+See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five canonical triage labels defined in
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. Read the root `CONTEXT.md` and applicable
+ADRs under `docs/adr/` when they exist. See `docs/agents/domain.md`.
+
 ## Tech Stack
 
 - **Backend**: Go 1.22+, Gin web framework, GORM v2 ORM
