@@ -57,6 +57,26 @@ func TestKimiK3ReasoningEffortConversion(t *testing.T) {
 		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"max"}`, payload)
 	})
 
+	t.Run("moonshot converts none suffix to disabled thinking payload", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3-none"}
+		info := &relaycommon.RelayInfo{
+			OriginModelName: "kimi-k3-none",
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType:       constant.ChannelTypeMoonshot,
+				UpstreamModelName: "kimi-k3-none",
+			},
+		}
+
+		converted, err := (&moonshot.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+		got, payload := requireConvertedOpenAIRequest(t, converted, err)
+
+		assert.Equal(t, "kimi-k3", got.Model)
+		assert.Equal(t, "none", got.ReasoningEffort)
+		assert.Equal(t, "kimi-k3", info.UpstreamModelName)
+		assert.Equal(t, "none", info.ReasoningEffort)
+		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"none"}`, payload)
+	})
+
 	t.Run("openai leaves kimi suffix unchanged", func(t *testing.T) {
 		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3-max"}
 		info := &relaycommon.RelayInfo{
@@ -108,6 +128,11 @@ func requireConvertedOpenAIRequest(t *testing.T, converted any, conversionErr er
 	return request, string(payload)
 }
 
-func TestMoonshotModelListIncludesKimiK3(t *testing.T) {
-	assert.Contains(t, (&moonshot.Adaptor{}).GetModelList(), "kimi-k3")
+func TestMoonshotModelListIncludesKimiK3Variants(t *testing.T) {
+	modelList := (&moonshot.Adaptor{}).GetModelList()
+	for _, model := range []string{"kimi-k3", "kimi-k3-max", "kimi-k3-none"} {
+		t.Run(model, func(t *testing.T) {
+			assert.Contains(t, modelList, model)
+		})
+	}
 }

@@ -1,6 +1,7 @@
 package moonshot
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -82,9 +83,24 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
 	upstreamModelName := getUpstreamModelName(info, request.Model)
-	if upstreamModelName == "kimi-k3-max" {
+	if upstreamModelName == "kimi-k2.6-thinking" {
+		request.Model = "kimi-k2.6"
+		request.THINKING = json.RawMessage(`{"type":"enabled"}`)
+		upstreamModelName = request.Model
+		if info != nil && info.ChannelMeta != nil {
+			info.UpstreamModelName = request.Model
+		}
+	}
+	reasoningEffort := ""
+	switch upstreamModelName {
+	case "kimi-k3-max":
+		reasoningEffort = "max"
+	case "kimi-k3-none":
+		reasoningEffort = "none"
+	}
+	if reasoningEffort != "" {
 		request.Model = "kimi-k3"
-		request.ReasoningEffort = "max"
+		request.ReasoningEffort = reasoningEffort
 		upstreamModelName = request.Model
 		if info != nil {
 			info.ReasoningEffort = request.ReasoningEffort
