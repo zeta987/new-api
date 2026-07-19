@@ -14,6 +14,26 @@ import (
 )
 
 func TestKimiK3ReasoningEffortConversion(t *testing.T) {
+	t.Run("moonshot defaults base model to none effort", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3"}
+		info := &relaycommon.RelayInfo{
+			OriginModelName: "kimi-k3",
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType:       constant.ChannelTypeMoonshot,
+				UpstreamModelName: "kimi-k3",
+			},
+		}
+
+		converted, err := (&moonshot.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+		got, payload := requireConvertedOpenAIRequest(t, converted, err)
+
+		assert.Equal(t, "kimi-k3", got.Model)
+		assert.Equal(t, "none", got.ReasoningEffort)
+		assert.Equal(t, "kimi-k3", info.UpstreamModelName)
+		assert.Equal(t, "none", info.ReasoningEffort)
+		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"none"}`, payload)
+	})
+
 	t.Run("moonshot passes explicit top-level effort", func(t *testing.T) {
 		request := &dto.GeneralOpenAIRequest{
 			Model:           "kimi-k3",
@@ -75,7 +95,7 @@ func TestKimiK3ReasoningEffortConversion(t *testing.T) {
 		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"max","frequency_penalty":0,"presence_penalty":0}`, payload)
 	})
 
-	t.Run("moonshot converts none suffix to disabled thinking payload", func(t *testing.T) {
+	t.Run("moonshot no longer converts none suffix", func(t *testing.T) {
 		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3-none"}
 		info := &relaycommon.RelayInfo{
 			OriginModelName: "kimi-k3-none",
@@ -88,11 +108,11 @@ func TestKimiK3ReasoningEffortConversion(t *testing.T) {
 		converted, err := (&moonshot.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 		got, payload := requireConvertedOpenAIRequest(t, converted, err)
 
-		assert.Equal(t, "kimi-k3", got.Model)
-		assert.Equal(t, "none", got.ReasoningEffort)
-		assert.Equal(t, "kimi-k3", info.UpstreamModelName)
-		assert.Equal(t, "none", info.ReasoningEffort)
-		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"none"}`, payload)
+		assert.Equal(t, "kimi-k3-none", got.Model)
+		assert.Empty(t, got.ReasoningEffort)
+		assert.Equal(t, "kimi-k3-none", info.UpstreamModelName)
+		assert.Empty(t, info.ReasoningEffort)
+		assert.JSONEq(t, `{"model":"kimi-k3-none"}`, payload)
 	})
 
 	t.Run("openai leaves kimi suffix unchanged", func(t *testing.T) {
@@ -148,9 +168,10 @@ func requireConvertedOpenAIRequest(t *testing.T, converted any, conversionErr er
 
 func TestMoonshotModelListIncludesKimiK3Variants(t *testing.T) {
 	modelList := (&moonshot.Adaptor{}).GetModelList()
-	for _, model := range []string{"kimi-k3", "kimi-k3-max", "kimi-k3-none"} {
+	for _, model := range []string{"kimi-k3", "kimi-k3-max"} {
 		t.Run(model, func(t *testing.T) {
 			assert.Contains(t, modelList, model)
 		})
 	}
+	assert.NotContains(t, modelList, "kimi-k3-none")
 }
