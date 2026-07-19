@@ -28,6 +28,7 @@ import {
 
 import { useIsAdmin } from '@/hooks/use-admin'
 
+import { subscribeUsageLogStream } from '../lib/log-stream'
 import { subscribeUsageLogsChanged } from '../lib/refresh-events'
 import type { ChannelAffinityInfo } from '../types'
 
@@ -62,18 +63,23 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
   const [viewScope, setViewScope] = useState<LogsViewScope>('all')
 
-  useEffect(
-    () =>
-      subscribeUsageLogsChanged(() => {
-        queryClient
-          .invalidateQueries({ queryKey: ['logs'] })
-          .catch(() => undefined)
-        queryClient
-          .invalidateQueries({ queryKey: ['usage-logs-stats'] })
-          .catch(() => undefined)
-      }),
-    [queryClient]
-  )
+  useEffect(() => {
+    const refreshLogs = () => {
+      queryClient
+        .invalidateQueries({ queryKey: ['logs'] })
+        .catch(() => undefined)
+      queryClient
+        .invalidateQueries({ queryKey: ['usage-logs-stats'] })
+        .catch(() => undefined)
+    }
+    const unsubscribeBrowserEvents = subscribeUsageLogsChanged(refreshLogs)
+    const unsubscribeServerEvents = subscribeUsageLogStream(refreshLogs)
+
+    return () => {
+      unsubscribeBrowserEvents()
+      unsubscribeServerEvents()
+    }
+  }, [queryClient])
 
   return (
     <UsageLogsContext.Provider
