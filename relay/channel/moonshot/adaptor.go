@@ -99,6 +99,10 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		reasoningEffort = "none"
 	}
 	switch upstreamModelName {
+	case "kimi-k3-low":
+		reasoningEffort = "low"
+	case "kimi-k3-high":
+		reasoningEffort = "high"
 	case "kimi-k3-max":
 		reasoningEffort = "max"
 	}
