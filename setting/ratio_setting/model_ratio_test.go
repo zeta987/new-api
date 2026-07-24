@@ -28,12 +28,36 @@ func TestDefaultModelRatioIncludesFable5SeriesMatchingOpus48(t *testing.T) {
 	}
 }
 
+func TestOpus5RatiosMatchOpus48Pricing(t *testing.T) {
+	InitRatioSettings()
+	defaultRatios := GetDefaultModelRatioMap()
+
+	for _, suffix := range []string{"", "-low", "-medium", "-high", "-xhigh", "-max"} {
+		model := "claude-opus-5" + suffix
+		require.Contains(t, defaultRatios, model)
+
+		modelRatio, ok, _ := GetModelRatio(model)
+		require.True(t, ok)
+		require.Equal(t, 2.5, modelRatio)
+		require.Equal(t, 5.0, GetCompletionRatio(model))
+
+		cacheRatio, ok := GetCacheRatio(model)
+		require.True(t, ok)
+		require.Equal(t, 0.1, cacheRatio)
+
+		createCacheRatio, ok := GetCreateCacheRatio(model)
+		require.True(t, ok)
+		require.Equal(t, 1.25, createCacheRatio)
+	}
+}
+
 func TestDefaultModelRatioIncludesSonnet5SeriesMatchingSonnet4(t *testing.T) {
 	defaultRatios := GetDefaultModelRatioMap()
 
-	for _, suffix := range []string{"", "-thinking", "-low", "-medium", "-high", "-xhigh", "-max"} {
+	for _, suffix := range []string{"", "-low", "-medium", "-high", "-xhigh", "-max"} {
 		require.Equal(t, defaultRatios["claude-sonnet-4-20250514"], defaultRatios["claude-sonnet-5"+suffix])
 	}
+	require.NotContains(t, defaultRatios, "claude-sonnet-5-thinking")
 }
 
 func TestSonnet5RatiosMatchThreeDollarInputFifteenDollarOutput(t *testing.T) {
@@ -67,10 +91,12 @@ func TestDefaultCacheRatiosIncludeOpus48SeriesMatchingOpus47(t *testing.T) {
 }
 
 func TestDefaultCacheRatiosIncludeSonnet5SeriesMatchingSonnet4(t *testing.T) {
-	for _, suffix := range []string{"", "-thinking", "-low", "-medium", "-high", "-xhigh", "-max"} {
+	for _, suffix := range []string{"", "-low", "-medium", "-high", "-xhigh", "-max"} {
 		require.Equal(t, defaultCacheRatio["claude-sonnet-4-20250514"], defaultCacheRatio["claude-sonnet-5"+suffix])
 		require.Equal(t, defaultCreateCacheRatio["claude-sonnet-4-20250514"], defaultCreateCacheRatio["claude-sonnet-5"+suffix])
 	}
+	require.NotContains(t, defaultCacheRatio, "claude-sonnet-5-thinking")
+	require.NotContains(t, defaultCreateCacheRatio, "claude-sonnet-5-thinking")
 }
 
 func TestDefaultCacheRatiosIncludeFable5SeriesMatchingOpus48(t *testing.T) {
