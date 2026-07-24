@@ -9,6 +9,22 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func TestClaudeModelListIncludesOpus5EffortSeriesAndOmitsSonnet5Thinking(t *testing.T) {
+	models := (&Adaptor{}).GetModelList()
+
+	for _, model := range []string{
+		"claude-opus-5",
+		"claude-opus-5-low",
+		"claude-opus-5-medium",
+		"claude-opus-5-high",
+		"claude-opus-5-xhigh",
+		"claude-opus-5-max",
+	} {
+		require.Contains(t, models, model)
+	}
+	require.NotContains(t, models, "claude-sonnet-5-thinking")
+}
+
 func TestOpenAIChatRequestToClaudeMessagesEnablesSonnet46AdaptiveThinking(t *testing.T) {
 	req := dto.GeneralOpenAIRequest{
 		Model: "claude-sonnet-4-6-high",
