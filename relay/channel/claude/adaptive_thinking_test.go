@@ -1,10 +1,12 @@
 package claude
 
 import (
+	"context"
 	"testing"
 
-	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/service/relayconvert"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -36,7 +38,7 @@ func TestOpenAIChatRequestToClaudeMessagesEnablesSonnet46AdaptiveThinking(t *tes
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-4-6", claudeReq.Model)
@@ -65,7 +67,7 @@ func TestOpenAIChatRequestToClaudeMessagesKeepsOpus47AdaptiveThinkingRestriction
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-opus-4-7", claudeReq.Model)
@@ -95,7 +97,7 @@ func TestOpenAIChatRequestToClaudeMessagesKeepsOpus48AdaptiveThinkingRestriction
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-opus-4-8", claudeReq.Model)
@@ -125,7 +127,7 @@ func TestOpenAIChatRequestToClaudeMessagesEnablesFable5AdaptiveThinking(t *testi
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-fable-5", claudeReq.Model)
@@ -155,7 +157,7 @@ func TestOpenAIChatRequestToClaudeMessagesOmitsSamplingForSonnet5(t *testing.T) 
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -183,7 +185,7 @@ func TestOpenAIChatRequestToClaudeMessagesEnablesSonnet5EffortSuffix(t *testing.
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -208,7 +210,7 @@ func TestOpenAIChatRequestToClaudeMessagesMapsSonnet5ReasoningEffort(t *testing.
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -231,7 +233,7 @@ func TestOpenAIChatRequestToClaudeMessagesMapsSonnet5ReasoningBudgetToAdaptive(t
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-sonnet-5", claudeReq.Model)
@@ -259,7 +261,7 @@ func TestOpenAIChatRequestToClaudeMessagesMapsOpus48ThinkingToAdaptiveHigh(t *te
 		},
 	}
 
-	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(nil, req)
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
 	require.NoError(t, err)
 
 	require.Equal(t, "claude-opus-4-8", claudeReq.Model)
@@ -270,4 +272,14 @@ func TestOpenAIChatRequestToClaudeMessagesMapsOpus48ThinkingToAdaptiveHigh(t *te
 	require.Nil(t, claudeReq.Temperature)
 	require.Nil(t, claudeReq.TopP)
 	require.Nil(t, claudeReq.TopK)
+}
+
+func adaptiveThinkingTestMeta() convmeta.Meta {
+	return &convmeta.Values{Options: &convmeta.Options{
+		Claude: convmeta.ClaudeOptions{
+			ThinkingAdapterEnabled:                true,
+			ThinkingAdapterBudgetTokensPercentage: 0.8,
+			DefaultMaxTokens:                      func(string) int { return 8192 },
+		},
+	}}
 }

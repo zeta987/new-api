@@ -3,8 +3,8 @@ package service
 import (
 	"testing"
 
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,7 +39,7 @@ func TestNormalizeClaudePost46AdaptiveRequestConvertsManualBudget(t *testing.T) 
 		TopK:        &topK,
 		Thinking: &dto.Thinking{
 			Type:         "enabled",
-			BudgetTokens: common.GetPointer(32000),
+			BudgetTokens: kitutil.GetPointer(32000),
 		},
 	}
 

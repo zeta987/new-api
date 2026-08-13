@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/service/claudeadaptive"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/claudeadaptive"
 )
 
 func SetClaudeAdaptiveEffort(request *dto.ClaudeRequest, effort string) bool {
