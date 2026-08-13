@@ -17,10 +17,14 @@ func TestGLM52ReasoningEffortAliasesOverrideBody(t *testing.T) {
 	for _, effort := range []string{"none", "high", "max"} {
 		t.Run(effort, func(t *testing.T) {
 			alias := "glm-5.2-" + effort
+			bodyEffort := "high"
+			if effort == bodyEffort {
+				bodyEffort = "max"
+			}
 			request := &dto.GeneralOpenAIRequest{
 				Model:           alias,
 				Messages:        []dto.Message{{Role: "user", Content: "hi"}},
-				ReasoningEffort: "high",
+				ReasoningEffort: bodyEffort,
 				THINKING:        json.RawMessage(`{"type":"enabled"}`),
 			}
 			info := &relaycommon.RelayInfo{
@@ -42,6 +46,21 @@ func TestGLM52ReasoningEffortAliasesOverrideBody(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestGLM52AliasConvertsWithoutChannelMeta(t *testing.T) {
+	request := &dto.GeneralOpenAIRequest{Model: "glm-5.2-max"}
+	info := &relaycommon.RelayInfo{OriginModelName: "glm-5.2-max"}
+
+	require.NotPanics(t, func() {
+		converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+		require.NoError(t, err)
+		got := requireGLM52Request(t, converted)
+		assert.Equal(t, "glm-5.2", got.Model)
+		assert.Equal(t, "max", got.ReasoningEffort)
+		assert.Equal(t, "max", info.ReasoningEffort)
+		assert.JSONEq(t, `{"model":"glm-5.2","reasoning_effort":"max","stop":null}`, marshalRequest(t, got))
+	})
 }
 
 func TestGLM52BareModelPreservesExplicitReasoningEffort(t *testing.T) {

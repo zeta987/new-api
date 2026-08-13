@@ -97,7 +97,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 
 func applyGLM52ReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
 	upstreamModel := request.Model
-	if info != nil && info.UpstreamModelName != "" {
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName != "" {
 		upstreamModel = info.UpstreamModelName
 	}
 
@@ -109,8 +109,10 @@ func applyGLM52ReasoningEffort(info *relaycommon.RelayInfo, request *dto.General
 	if ok {
 		request.Model = baseModel
 		request.ReasoningEffort = effort
-		if info != nil {
+		if info != nil && info.ChannelMeta != nil {
 			info.UpstreamModelName = baseModel
+		}
+		if info != nil {
 			info.ReasoningEffort = effort
 		}
 		return
