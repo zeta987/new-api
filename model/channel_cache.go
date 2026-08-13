@@ -208,11 +208,13 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 
 // filterChannelsByRequestPathAndModel restricts candidates by request path and
 // model. Only Advanced Custom (type 58) channels are path-checked: they are kept
-// only when one of their configured routes matches requestPath and model. All
-// other channel types always pass. When requestPath is empty, filtering is skipped.
+// only when one of their configured routes matches requestPath and model. Valid
+// GLM-5.2 effort aliases additionally require Zhipu V4. For other models,
+// filtering is skipped when requestPath is empty.
 // Caller must hold channelSyncLock (read lock). The cached slice is never mutated.
 func filterChannelsByRequestPathAndModel(channels []int, requestPath string, model string) []int {
-	if requestPath == "" || len(channels) == 0 {
+	requiresZhipuV4 := requiresZhipuV4Channel(model)
+	if len(channels) == 0 || (requestPath == "" && !requiresZhipuV4) {
 		return channels
 	}
 	filtered := make([]int, 0, len(channels))
@@ -221,6 +223,9 @@ func filterChannelsByRequestPathAndModel(channels []int, requestPath string, mod
 		if !ok {
 			// keep it so the downstream consistency error is raised as before
 			filtered = append(filtered, channelId)
+			continue
+		}
+		if requiresZhipuV4 && channel.Type != constant.ChannelTypeZhipu_v4 {
 			continue
 		}
 		if channel.Type != constant.ChannelTypeAdvancedCustom {

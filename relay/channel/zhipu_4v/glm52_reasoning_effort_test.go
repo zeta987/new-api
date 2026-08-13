@@ -159,6 +159,51 @@ func TestGLM52InvalidAliasesRemainUnchanged(t *testing.T) {
 	}
 }
 
+func TestGLM52ZhipuV4OmitsReasoningEffortForNonGLMAndInvalidModels(t *testing.T) {
+	for _, model := range []string{"glm-4.7", "glm-5.2-low", "custom-model"} {
+		t.Run(model, func(t *testing.T) {
+			request := &dto.GeneralOpenAIRequest{Model: model, ReasoningEffort: "high"}
+			info := &relaycommon.RelayInfo{
+				OriginModelName: model,
+				ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: model},
+			}
+
+			converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+			require.NoError(t, err)
+			got := requireGLM52Request(t, converted)
+
+			assert.Empty(t, got.ReasoningEffort)
+			assert.Empty(t, info.ReasoningEffort)
+			assert.JSONEq(t, `{"model":"`+model+`","stop":null}`, marshalRequest(t, got))
+		})
+	}
+}
+
+func TestGLM52ZhipuV4ClearsReusedReasoningEffortMetadata(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "glm-5.2-max",
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "glm-5.2-max"},
+	}
+
+	converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, &dto.GeneralOpenAIRequest{Model: "glm-5.2-max"})
+	require.NoError(t, err)
+	assert.Equal(t, "max", requireGLM52Request(t, converted).ReasoningEffort)
+	require.Equal(t, "max", info.ReasoningEffort)
+
+	info.OriginModelName = "glm-4.7"
+	info.UpstreamModelName = "glm-4.7"
+	converted, err = (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, &dto.GeneralOpenAIRequest{
+		Model:           "glm-4.7",
+		ReasoningEffort: "high",
+	})
+	require.NoError(t, err)
+	got := requireGLM52Request(t, converted)
+
+	assert.Empty(t, got.ReasoningEffort)
+	assert.Empty(t, info.ReasoningEffort)
+	assert.JSONEq(t, `{"model":"glm-4.7","stop":null}`, marshalRequest(t, got))
+}
+
 func TestZhipu4VModelListIncludesGLM52AliasesOnly(t *testing.T) {
 	modelList := (&zhipu_4v.Adaptor{}).GetModelList()
 	for _, model := range []string{"glm-5.2", "glm-5.2-none", "glm-5.2-high", "glm-5.2-max"} {

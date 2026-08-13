@@ -42,16 +42,18 @@ func requestOpenAI2Zhipu(request dto.GeneralOpenAIRequest) *dto.GeneralOpenAIReq
 		Stop, _ = request.Stop.([]string)
 	}
 	out := &dto.GeneralOpenAIRequest{
-		Model:           request.Model,
-		Stream:          request.Stream,
-		Messages:        messages,
-		Temperature:     request.Temperature,
-		TopP:            request.TopP,
-		Stop:            Stop,
-		Tools:           request.Tools,
-		ToolChoice:      request.ToolChoice,
-		ReasoningEffort: request.ReasoningEffort,
-		THINKING:        request.THINKING,
+		Model:       request.Model,
+		Stream:      request.Stream,
+		Messages:    messages,
+		Temperature: request.Temperature,
+		TopP:        request.TopP,
+		Stop:        Stop,
+		Tools:       request.Tools,
+		ToolChoice:  request.ToolChoice,
+		THINKING:    request.THINKING,
+	}
+	if request.Model == "glm-5.2" {
+		out.ReasoningEffort = request.ReasoningEffort
 	}
 	if request.MaxTokens != nil || request.MaxCompletionTokens != nil {
 		maxTokens := request.GetMaxTokens()

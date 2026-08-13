@@ -51,9 +51,10 @@ implicitly. The caller's `thinking` field is transmitted unchanged.
 
 ## Request conversion
 
-For the V4 channel, preserve `ReasoningEffort` when rebuilding the existing
-OpenAI-compatible whitelist payload. The existing `thinking` copy remains
-unchanged.
+For the V4 channel, copy `ReasoningEffort` into the rebuilt
+OpenAI-compatible whitelist payload only after the outgoing model is
+`glm-5.2`. The existing `thinking` copy remains unchanged. This keeps body
+effort omitted for unrelated and invalid GLM model names.
 
 Add `glm-5.2` and its three aliases to the Zhipu V4 model list. Normalize only
 these three exact aliases to `glm-5.2` in model matching and pricing fallback,
@@ -70,6 +71,11 @@ client alias
   -> reasoning_effort becomes none, high, or max
   -> V4 request is sent to the configured Base URL
 ```
+
+Every validated GLM-5.2 alias is restricted to a Zhipu V4 channel in database
+selection, memory-cache selection, and channel-affinity checks. Exact V4 alias
+configuration still takes precedence over a V4 base-model fallback. Bare
+`glm-5.2` retains its existing cross-channel selection behavior.
 
 ## Alternatives considered
 
