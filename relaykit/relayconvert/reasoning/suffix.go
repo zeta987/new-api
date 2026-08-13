@@ -11,7 +11,7 @@ var EffortSuffixes = []string{"-max", "-xhigh", "-high", "-medium", "-low", "-mi
 
 var OpenAIEffortSuffixes = []string{"-high", "-minimal", "-low", "-medium", "-none", "-xhigh"}
 
-var DeepSeekV4EffortSuffixes = []string{"-none", "-max"}
+var DeepSeekV4EffortSuffixes = []string{"-none", "-low", "-max"}
 
 var gpt56Models = []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
 
@@ -207,6 +207,8 @@ func ParseDeepSeekV4ThinkingSuffix(modelName string) (baseModel string, thinking
 	switch suffix {
 	case "none":
 		return baseModel, "disabled", "", true
+	case "low":
+		return baseModel, "enabled", "low", true
 	case "max":
 		return baseModel, "enabled", "max", true
 	default:
