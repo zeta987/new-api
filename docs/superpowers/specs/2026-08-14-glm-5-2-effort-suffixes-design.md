@@ -13,8 +13,8 @@ The China and international GLM-5.2 documentation both define top-level
 scope here. When thinking is enabled and the field is omitted, the provider
 uses `max`. Both official request examples use the V4 Chat Completions
 protocol, so this feature applies only to the `Zhipu V4` channel. The legacy
-V3 `Zhipu` channel remains unchanged even though runtime probing found that
-its upstream endpoint currently accepts the same fields.
+V3 `Zhipu` channel remains unchanged because the official GLM-5.2 request
+contract and examples use the V4 Chat Completions protocol.
 
 Grok effort suffixes are already integrated into `dev/v1.0.0-rc.24`. The GLM
 work starts from that development commit and remains in an independent topic

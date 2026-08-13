@@ -142,6 +142,116 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 	}
 }
 
+func TestGLM52AliasRetryUsesNextZhipuV4Priority(t *testing.T) {
+	previousMemoryCacheEnabled := common.MemoryCacheEnabled
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = previousMemoryCacheEnabled
+		clearGLM52RoutingTables(t)
+	})
+
+	for _, memoryCacheEnabled := range []bool{false, true} {
+		name := "database"
+		if memoryCacheEnabled {
+			name = "memory cache"
+		}
+		t.Run(name, func(t *testing.T) {
+			clearGLM52RoutingTables(t)
+
+			highPriority := int64(100)
+			lowPriority := int64(0)
+			highPriorityChannel := &Channel{
+				Id:       525205,
+				Type:     constant.ChannelTypeZhipu_v4,
+				Key:      "v4-high-priority-key",
+				Status:   common.ChannelStatusEnabled,
+				Name:     "v4-high-priority",
+				Models:   "glm-5.2",
+				Group:    "default",
+				Priority: &highPriority,
+			}
+			lowPriorityChannel := &Channel{
+				Id:       525206,
+				Type:     constant.ChannelTypeZhipu_v4,
+				Key:      "v4-low-priority-key",
+				Status:   common.ChannelStatusEnabled,
+				Name:     "v4-low-priority",
+				Models:   "glm-5.2",
+				Group:    "default",
+				Priority: &lowPriority,
+			}
+			for _, channel := range []*Channel{highPriorityChannel, lowPriorityChannel} {
+				require.NoError(t, DB.Create(channel).Error)
+				require.NoError(t, channel.AddAbilities(nil))
+			}
+
+			common.MemoryCacheEnabled = memoryCacheEnabled
+			if memoryCacheEnabled {
+				InitChannelCache()
+			}
+
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 1, "")
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, lowPriorityChannel.Id, got.Id)
+		})
+	}
+}
+
+func TestGLM52ExactZhipuV4AliasPrecedesBaseCandidate(t *testing.T) {
+	previousMemoryCacheEnabled := common.MemoryCacheEnabled
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = previousMemoryCacheEnabled
+		clearGLM52RoutingTables(t)
+	})
+
+	for _, memoryCacheEnabled := range []bool{false, true} {
+		name := "database"
+		if memoryCacheEnabled {
+			name = "memory cache"
+		}
+		t.Run(name, func(t *testing.T) {
+			clearGLM52RoutingTables(t)
+
+			basePriority := int64(100)
+			exactPriority := int64(0)
+			baseChannel := &Channel{
+				Id:       525207,
+				Type:     constant.ChannelTypeZhipu_v4,
+				Key:      "v4-base-key",
+				Status:   common.ChannelStatusEnabled,
+				Name:     "v4-base",
+				Models:   "glm-5.2",
+				Group:    "default",
+				Priority: &basePriority,
+			}
+			exactChannel := &Channel{
+				Id:       525208,
+				Type:     constant.ChannelTypeZhipu_v4,
+				Key:      "v4-exact-key",
+				Status:   common.ChannelStatusEnabled,
+				Name:     "v4-exact",
+				Models:   "glm-5.2-high",
+				Group:    "default",
+				Priority: &exactPriority,
+			}
+			for _, channel := range []*Channel{baseChannel, exactChannel} {
+				require.NoError(t, DB.Create(channel).Error)
+				require.NoError(t, channel.AddAbilities(nil))
+			}
+
+			common.MemoryCacheEnabled = memoryCacheEnabled
+			if memoryCacheEnabled {
+				InitChannelCache()
+			}
+
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, "")
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, exactChannel.Id, got.Id)
+		})
+	}
+}
+
 func clearGLM52RoutingTables(t *testing.T) {
 	t.Helper()
 	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)

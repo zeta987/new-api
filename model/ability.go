@@ -99,7 +99,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 				continue
 			}
 			targetAbilities = abilities
-			if supportedPriorityIndex >= retry || requestPath == "" {
+			if supportedPriorityIndex >= retry {
 				break
 			}
 			supportedPriorityIndex++
