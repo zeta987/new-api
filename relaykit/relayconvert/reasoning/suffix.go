@@ -166,6 +166,22 @@ func ParseGPT56ReasoningModelSuffix(modelName string) (baseModel string, mode st
 	return modelName, "", "", false
 }
 
+func ParseGLM52ReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
+	const base = "glm-5.2"
+	prefix := base + "-"
+	if !strings.HasPrefix(modelName, prefix) {
+		return modelName, "", false
+	}
+
+	effort = strings.TrimPrefix(modelName, prefix)
+	switch effort {
+	case "none", "high", "max":
+		return base, effort, true
+	default:
+		return modelName, "", false
+	}
+}
+
 func splitGPT56Model(modelName string) (baseModel string, suffix string, ok bool) {
 	for _, candidate := range gpt56Models {
 		if modelName == candidate {

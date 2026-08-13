@@ -61,6 +61,7 @@ func GetAllEnableAbilities() []Ability {
 }
 
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	requiresZhipuV4 := requiresZhipuV4Channel(model)
 	for _, modelCandidate := range ModelMatchCandidates(model) {
 		var priorities []int64
 		err := DB.Model(&Ability{}).
@@ -75,7 +76,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 			continue
 		}
 
-		if requestPath == "" {
+		if requestPath == "" && !requiresZhipuV4 {
 			priorityIndex := retry
 			if priorityIndex >= len(priorities) {
 				priorityIndex = len(priorities) - 1
@@ -98,7 +99,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 				continue
 			}
 			targetAbilities = abilities
-			if supportedPriorityIndex >= retry || requestPath == "" {
+			if supportedPriorityIndex >= retry {
 				break
 			}
 			supportedPriorityIndex++
@@ -132,10 +133,12 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 // filterAbilitiesByRequestPathAndModel restricts candidates by request path and
 // model for the DB (non-memory-cache) selection path. Only Advanced Custom
 // (type 58) channels are path-checked: kept only when one of their routes matches
-// requestPath and model; all other channel types always pass. When requestPath is
-// empty, filtering is skipped.
+// requestPath and model; valid GLM-5.2 effort aliases additionally require a
+// Zhipu V4 channel. For other models, filtering is skipped when requestPath is
+// empty.
 func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) []Ability {
-	if requestPath == "" || len(abilities) == 0 {
+	requiresZhipuV4 := requiresZhipuV4Channel(model)
+	if len(abilities) == 0 || (requestPath == "" && !requiresZhipuV4) {
 		return abilities
 	}
 
@@ -151,12 +154,16 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		// On error, fall back to unfiltered candidates to avoid blocking selection
+		if requiresZhipuV4 {
+			return nil
+		}
 		return abilities
 	}
 
+	channelsByID := make(map[int]*Channel, len(channels))
 	advancedConfigs := make(map[int]*dto.AdvancedCustomConfig)
 	for _, channel := range channels {
+		channelsByID[channel.Id] = channel
 		if channel.Type == constant.ChannelTypeAdvancedCustom {
 			advancedConfigs[channel.Id] = channel.GetOtherSettings().AdvancedCustom
 		}
@@ -164,6 +171,10 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
+		channel := channelsByID[ability.ChannelId]
+		if requiresZhipuV4 && (channel == nil || channel.Type != constant.ChannelTypeZhipu_v4) {
+			continue
+		}
 		config, isAdvancedCustom := advancedConfigs[ability.ChannelId]
 		if !isAdvancedCustom {
 			filtered = append(filtered, ability)

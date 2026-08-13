@@ -37,3 +37,8 @@ func ModelMatchCandidates(modelName string) []string {
 	}
 	return candidates
 }
+
+func requiresZhipuV4Channel(modelName string) bool {
+	_, _, ok := reasoning.ParseGLM52ReasoningEffortSuffix(modelName)
+	return ok
+}

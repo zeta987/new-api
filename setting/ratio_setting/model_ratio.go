@@ -789,6 +789,9 @@ func FormatMatchingModelName(name string) string {
 	if baseModel, _, _, ok := reasoning.ParseGPT56ReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
+	if baseModel, _, ok := reasoning.ParseGLM52ReasoningEffortSuffix(name); ok {
+		name = baseModel
+	}
 
 	if strings.HasPrefix(name, "gemini-2.5-flash-lite") {
 		name = handleThinkingBudgetModel(name, "gemini-2.5-flash-lite", "gemini-2.5-flash-lite-thinking-*")

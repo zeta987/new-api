@@ -2,6 +2,7 @@ package model
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 )
 
 func IsChannelEnabledForGroupModel(group string, modelName string, channelID int) bool {
@@ -17,6 +18,12 @@ func IsChannelEnabledForGroupModel(group string, modelName string, channelID int
 
 	if group2model2channels == nil {
 		return false
+	}
+	if requiresZhipuV4Channel(modelName) {
+		channel, ok := channelsIDM[channelID]
+		if !ok || channel.Type != constant.ChannelTypeZhipu_v4 {
+			return false
+		}
 	}
 
 	for _, candidate := range ModelMatchCandidates(modelName) {
@@ -41,9 +48,16 @@ func IsChannelEnabledForAnyGroupModel(groups []string, modelName string, channel
 
 func isChannelEnabledForGroupModelDB(group string, modelName string, channelID int) bool {
 	var count int64
-	err := DB.Model(&Ability{}).
+	query := DB.Model(&Ability{}).
 		Where(commonGroupCol+" = ? and model IN ? and channel_id = ? and enabled = ?", group, ModelMatchCandidates(modelName), channelID, true).
-		Count(&count).Error
+		Count(&count)
+	if requiresZhipuV4Channel(modelName) {
+		query = DB.Model(&Ability{}).
+			Joins("JOIN channels ON channels.id = abilities.channel_id").
+			Where("abilities."+commonGroupCol+" = ? and abilities.model IN ? and abilities.channel_id = ? and abilities.enabled = ? and channels.type = ?", group, ModelMatchCandidates(modelName), channelID, true, constant.ChannelTypeZhipu_v4).
+			Count(&count)
+	}
+	err := query.Error
 	return err == nil && count > 0
 }
 

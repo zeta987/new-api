@@ -52,6 +52,9 @@ func requestOpenAI2Zhipu(request dto.GeneralOpenAIRequest) *dto.GeneralOpenAIReq
 		ToolChoice:  request.ToolChoice,
 		THINKING:    request.THINKING,
 	}
+	if request.Model == "glm-5.2" {
+		out.ReasoningEffort = request.ReasoningEffort
+	}
 	if request.MaxTokens != nil || request.MaxCompletionTokens != nil {
 		maxTokens := request.GetMaxTokens()
 		out.MaxTokens = &maxTokens
