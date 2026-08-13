@@ -14,6 +14,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
@@ -87,10 +88,40 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
+	applyGLM52ReasoningEffort(info, request)
 	if lo.FromPtrOr(request.TopP, 0) >= 1 {
 		request.TopP = lo.ToPtr(0.99)
 	}
 	return requestOpenAI2Zhipu(*request), nil
+}
+
+func applyGLM52ReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+	upstreamModel := request.Model
+	if info != nil && info.UpstreamModelName != "" {
+		upstreamModel = info.UpstreamModelName
+	}
+
+	baseModel, effort, ok := reasoning.ParseGLM52ReasoningEffortSuffix(upstreamModel)
+	if !ok && upstreamModel == "glm-5.2" && info != nil {
+		baseModel, effort, ok = reasoning.ParseGLM52ReasoningEffortSuffix(info.OriginModelName)
+	}
+
+	if ok {
+		request.Model = baseModel
+		request.ReasoningEffort = effort
+		if info != nil {
+			info.UpstreamModelName = baseModel
+			info.ReasoningEffort = effort
+		}
+		return
+	}
+
+	if upstreamModel == "glm-5.2" {
+		request.Model = upstreamModel
+		if info != nil {
+			info.ReasoningEffort = request.ReasoningEffort
+		}
+	}
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {
