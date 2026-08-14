@@ -95,10 +95,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		request.THINKING = json.RawMessage(`{"type":"disabled"}`)
 	}
 	reasoningEffort := ""
-	if upstreamModelName == "kimi-k3" && request.ReasoningEffort == "" {
-		reasoningEffort = "none"
-	}
 	switch upstreamModelName {
+	case "kimi-k3-none":
+		reasoningEffort = "none"
 	case "kimi-k3-low":
 		reasoningEffort = "low"
 	case "kimi-k3-high":
