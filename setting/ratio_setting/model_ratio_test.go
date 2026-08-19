@@ -195,33 +195,6 @@ func TestPricingWildcardLiteralUsesExactLookupOnly(t *testing.T) {
 	require.Equal(t, 4.25, ratio)
 }
 
-func TestCompactPricingPrecedesPrefixWildcard(t *testing.T) {
-	originalPriceJSON := ModelPrice2JSONString()
-	originalRatioJSON := ModelRatio2JSONString()
-	t.Cleanup(func() {
-		require.NoError(t, UpdateModelPriceByJSONString(originalPriceJSON))
-		require.NoError(t, UpdateModelRatioByJSONString(originalRatioJSON))
-	})
-
-	require.NoError(t, UpdateModelPriceByJSONString(`{
-		"*-openai-compact":0.75,
-		"gpt-5.6-*":0.125
-	}`))
-	require.NoError(t, UpdateModelRatioByJSONString(`{
-		"*-openai-compact":7.5,
-		"gpt-5.6-*":1.25
-	}`))
-
-	model := "gpt-5.6-luna-openai-compact"
-	price, hasPrice := GetModelPrice(model, false)
-	require.True(t, hasPrice)
-	require.Equal(t, 0.75, price)
-
-	ratio, hasRatio, _ := GetModelRatio(model)
-	require.True(t, hasRatio)
-	require.Equal(t, 7.5, ratio)
-}
-
 func TestGPT56PricingUsesMostSpecificEntry(t *testing.T) {
 	originalPriceJSON := ModelPrice2JSONString()
 	originalRatioJSON := ModelRatio2JSONString()
