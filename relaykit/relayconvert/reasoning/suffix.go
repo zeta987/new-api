@@ -1,6 +1,7 @@
 package reasoning
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,14 @@ var OpenAIEffortSuffixes = []string{"-high", "-minimal", "-low", "-medium", "-no
 var DeepSeekV4EffortSuffixes = []string{"-none", "-low", "-max"}
 
 var gpt56Models = []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
+
+// glmReasoningEffortLevels lists the exact reasoning effort values each GLM base
+// model accepts as a model name suffix. GLM-5.2 can disable reasoning with
+// "none", while GLM-5.3 always reasons and offers "low" instead.
+var glmReasoningEffortLevels = map[string][]string{
+	"glm-5.2": {"none", "high", "max"},
+	"glm-5.3": {"low", "high", "max"},
+}
 
 func IsClaudeEffortLevel(effort string) bool {
 	switch effort {
@@ -166,20 +175,27 @@ func ParseGPT56ReasoningModelSuffix(modelName string) (baseModel string, mode st
 	return modelName, "", "", false
 }
 
-func ParseGLM52ReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
-	const base = "glm-5.2"
-	prefix := base + "-"
-	if !strings.HasPrefix(modelName, prefix) {
-		return modelName, "", false
-	}
+// IsGLMReasoningEffortModel reports whether modelName is a GLM base model that
+// exposes its reasoning effort through model name suffixes.
+func IsGLMReasoningEffortModel(modelName string) bool {
+	_, ok := glmReasoningEffortLevels[modelName]
+	return ok
+}
 
-	effort = strings.TrimPrefix(modelName, prefix)
-	switch effort {
-	case "none", "high", "max":
-		return base, effort, true
-	default:
-		return modelName, "", false
+// ParseGLMReasoningEffortSuffix splits an exact GLM reasoning effort alias into
+// its base model and effort. Each base model accepts only the effort values it
+// documents, so a name is returned unchanged unless it matches exactly.
+func ParseGLMReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
+	for base, levels := range glmReasoningEffortLevels {
+		prefix := base + "-"
+		if !strings.HasPrefix(modelName, prefix) {
+			continue
+		}
+		if candidate := strings.TrimPrefix(modelName, prefix); slices.Contains(levels, candidate) {
+			return base, candidate, true
+		}
 	}
+	return modelName, "", false
 }
 
 func splitGPT56Model(modelName string) (baseModel string, suffix string, ok bool) {

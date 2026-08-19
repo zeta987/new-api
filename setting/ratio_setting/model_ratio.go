@@ -771,7 +771,7 @@ func FormatMatchingModelName(name string) string {
 	if baseModel, _, _, ok := reasoning.ParseGPT56ReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
-	if baseModel, _, ok := reasoning.ParseGLM52ReasoningEffortSuffix(name); ok {
+	if baseModel, _, ok := reasoning.ParseGLMReasoningEffortSuffix(name); ok {
 		name = baseModel
 	}
 

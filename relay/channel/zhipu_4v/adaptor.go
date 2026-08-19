@@ -88,14 +88,14 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
-	applyGLM52ReasoningEffort(info, request)
+	applyGLMReasoningEffort(info, request)
 	if lo.FromPtrOr(request.TopP, 0) >= 1 {
 		request.TopP = lo.ToPtr(0.99)
 	}
 	return requestOpenAI2Zhipu(*request), nil
 }
 
-func applyGLM52ReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+func applyGLMReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
 	if info != nil {
 		info.ReasoningEffort = ""
 	}
@@ -105,9 +105,16 @@ func applyGLM52ReasoningEffort(info *relaycommon.RelayInfo, request *dto.General
 		upstreamModel = info.UpstreamModelName
 	}
 
-	baseModel, effort, ok := reasoning.ParseGLM52ReasoningEffortSuffix(upstreamModel)
-	if !ok && upstreamModel == "glm-5.2" && info != nil {
-		baseModel, effort, ok = reasoning.ParseGLM52ReasoningEffortSuffix(info.OriginModelName)
+	baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(upstreamModel)
+	if !ok && info != nil && reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		// Model matching already replaced the alias with its base model, so the
+		// requested effort is only recoverable from the client model name. A
+		// recovered alias of another base model documents a different effort
+		// set and must not be forwarded.
+		originBase, originEffort, originOk := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+		if originOk && originBase == upstreamModel {
+			baseModel, effort, ok = originBase, originEffort, true
+		}
 	}
 
 	if ok {
@@ -122,7 +129,7 @@ func applyGLM52ReasoningEffort(info *relaycommon.RelayInfo, request *dto.General
 		return
 	}
 
-	if upstreamModel == "glm-5.2" {
+	if reasoning.IsGLMReasoningEffortModel(upstreamModel) {
 		request.Model = upstreamModel
 		if info != nil {
 			info.ReasoningEffort = request.ReasoningEffort

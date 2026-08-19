@@ -34,7 +34,7 @@ func TestGLM52ReasoningEffortAliasesOverrideBody(t *testing.T) {
 
 			converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 			require.NoError(t, err)
-			got := requireGLM52Request(t, converted)
+			got := requireZhipuRequest(t, converted)
 
 			assert.Equal(t, "glm-5.2", got.Model)
 			assert.Equal(t, effort, got.ReasoningEffort)
@@ -55,7 +55,7 @@ func TestGLM52AliasConvertsWithoutChannelMeta(t *testing.T) {
 	require.NotPanics(t, func() {
 		converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 		require.NoError(t, err)
-		got := requireGLM52Request(t, converted)
+		got := requireZhipuRequest(t, converted)
 		assert.Equal(t, "glm-5.2", got.Model)
 		assert.Equal(t, "max", got.ReasoningEffort)
 		assert.Equal(t, "max", info.ReasoningEffort)
@@ -72,7 +72,7 @@ func TestGLM52BareModelPreservesExplicitReasoningEffort(t *testing.T) {
 
 	converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 	require.NoError(t, err)
-	got := requireGLM52Request(t, converted)
+	got := requireZhipuRequest(t, converted)
 
 	assert.Equal(t, "glm-5.2", got.Model)
 	assert.Equal(t, "high", got.ReasoningEffort)
@@ -90,7 +90,7 @@ func TestGLM52BareModelOmitsEmptyReasoningEffort(t *testing.T) {
 
 	converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 	require.NoError(t, err)
-	got := requireGLM52Request(t, converted)
+	got := requireZhipuRequest(t, converted)
 
 	assert.Equal(t, "glm-5.2", got.Model)
 	assert.Empty(t, got.ReasoningEffort)
@@ -109,7 +109,7 @@ func TestGLM52RecoversOriginAliasOnlyForBaseMappedUpstreamModel(t *testing.T) {
 
 		converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 		require.NoError(t, err)
-		got := requireGLM52Request(t, converted)
+		got := requireZhipuRequest(t, converted)
 
 		assert.Equal(t, "glm-5.2", got.Model)
 		assert.Equal(t, "max", got.ReasoningEffort)
@@ -127,7 +127,7 @@ func TestGLM52RecoversOriginAliasOnlyForBaseMappedUpstreamModel(t *testing.T) {
 
 		converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 		require.NoError(t, err)
-		got := requireGLM52Request(t, converted)
+		got := requireZhipuRequest(t, converted)
 
 		assert.Equal(t, "custom-glm-5.2", got.Model)
 		assert.Empty(t, got.ReasoningEffort)
@@ -148,7 +148,7 @@ func TestGLM52InvalidAliasesRemainUnchanged(t *testing.T) {
 
 			converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 			require.NoError(t, err)
-			got := requireGLM52Request(t, converted)
+			got := requireZhipuRequest(t, converted)
 
 			assert.Equal(t, model, got.Model)
 			assert.Empty(t, got.ReasoningEffort)
@@ -170,7 +170,7 @@ func TestGLM52ZhipuV4OmitsReasoningEffortForNonGLMAndInvalidModels(t *testing.T)
 
 			converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
 			require.NoError(t, err)
-			got := requireGLM52Request(t, converted)
+			got := requireZhipuRequest(t, converted)
 
 			assert.Empty(t, got.ReasoningEffort)
 			assert.Empty(t, info.ReasoningEffort)
@@ -187,7 +187,7 @@ func TestGLM52ZhipuV4ClearsReusedReasoningEffortMetadata(t *testing.T) {
 
 	converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, &dto.GeneralOpenAIRequest{Model: "glm-5.2-max"})
 	require.NoError(t, err)
-	assert.Equal(t, "max", requireGLM52Request(t, converted).ReasoningEffort)
+	assert.Equal(t, "max", requireZhipuRequest(t, converted).ReasoningEffort)
 	require.Equal(t, "max", info.ReasoningEffort)
 
 	info.OriginModelName = "glm-4.7"
@@ -197,7 +197,7 @@ func TestGLM52ZhipuV4ClearsReusedReasoningEffortMetadata(t *testing.T) {
 		ReasoningEffort: "high",
 	})
 	require.NoError(t, err)
-	got := requireGLM52Request(t, converted)
+	got := requireZhipuRequest(t, converted)
 
 	assert.Empty(t, got.ReasoningEffort)
 	assert.Empty(t, info.ReasoningEffort)
@@ -221,7 +221,7 @@ func TestZhipuV3ModelListExcludesGLM52Models(t *testing.T) {
 	}
 }
 
-func requireGLM52Request(t *testing.T, converted any) *dto.GeneralOpenAIRequest {
+func requireZhipuRequest(t *testing.T, converted any) *dto.GeneralOpenAIRequest {
 	t.Helper()
 	require.IsType(t, &dto.GeneralOpenAIRequest{}, converted)
 	request, ok := converted.(*dto.GeneralOpenAIRequest)
