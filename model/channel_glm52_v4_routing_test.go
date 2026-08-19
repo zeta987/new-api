@@ -13,7 +13,7 @@ func TestGLM52AliasesRequireZhipuV4Channels(t *testing.T) {
 	previousMemoryCacheEnabled := common.MemoryCacheEnabled
 	t.Cleanup(func() {
 		common.MemoryCacheEnabled = previousMemoryCacheEnabled
-		clearGLM52RoutingTables(t)
+		clearGLMRoutingTables(t)
 	})
 
 	for _, memoryCacheEnabled := range []bool{false, true} {
@@ -22,7 +22,7 @@ func TestGLM52AliasesRequireZhipuV4Channels(t *testing.T) {
 			name = "memory cache"
 		}
 		t.Run(name, func(t *testing.T) {
-			clearGLM52RoutingTables(t)
+			clearGLMRoutingTables(t)
 
 			v3Priority := int64(100)
 			v4Priority := int64(0)
@@ -77,7 +77,7 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 	previousMemoryCacheEnabled := common.MemoryCacheEnabled
 	t.Cleanup(func() {
 		common.MemoryCacheEnabled = previousMemoryCacheEnabled
-		clearGLM52RoutingTables(t)
+		clearGLMRoutingTables(t)
 	})
 
 	for _, memoryCacheEnabled := range []bool{false, true} {
@@ -86,7 +86,7 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 			name = "memory cache"
 		}
 		t.Run(name, func(t *testing.T) {
-			clearGLM52RoutingTables(t)
+			clearGLMRoutingTables(t)
 
 			v3Priority := int64(100)
 			v4Priority := int64(0)
@@ -127,7 +127,7 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 			assert.False(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v3Exact.Id))
 			assert.True(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v4Base.Id))
 
-			clearGLM52RoutingTables(t)
+			clearGLMRoutingTables(t)
 			require.NoError(t, DB.Create(v3Exact).Error)
 			require.NoError(t, v3Exact.AddAbilities(nil))
 			if memoryCacheEnabled {
@@ -146,7 +146,7 @@ func TestGLM52AliasRetryUsesNextZhipuV4Priority(t *testing.T) {
 	previousMemoryCacheEnabled := common.MemoryCacheEnabled
 	t.Cleanup(func() {
 		common.MemoryCacheEnabled = previousMemoryCacheEnabled
-		clearGLM52RoutingTables(t)
+		clearGLMRoutingTables(t)
 	})
 
 	for _, memoryCacheEnabled := range []bool{false, true} {
@@ -155,7 +155,7 @@ func TestGLM52AliasRetryUsesNextZhipuV4Priority(t *testing.T) {
 			name = "memory cache"
 		}
 		t.Run(name, func(t *testing.T) {
-			clearGLM52RoutingTables(t)
+			clearGLMRoutingTables(t)
 
 			highPriority := int64(100)
 			lowPriority := int64(0)
@@ -201,7 +201,7 @@ func TestGLM52ExactZhipuV4AliasPrecedesBaseCandidate(t *testing.T) {
 	previousMemoryCacheEnabled := common.MemoryCacheEnabled
 	t.Cleanup(func() {
 		common.MemoryCacheEnabled = previousMemoryCacheEnabled
-		clearGLM52RoutingTables(t)
+		clearGLMRoutingTables(t)
 	})
 
 	for _, memoryCacheEnabled := range []bool{false, true} {
@@ -210,7 +210,7 @@ func TestGLM52ExactZhipuV4AliasPrecedesBaseCandidate(t *testing.T) {
 			name = "memory cache"
 		}
 		t.Run(name, func(t *testing.T) {
-			clearGLM52RoutingTables(t)
+			clearGLMRoutingTables(t)
 
 			basePriority := int64(100)
 			exactPriority := int64(0)
@@ -252,7 +252,7 @@ func TestGLM52ExactZhipuV4AliasPrecedesBaseCandidate(t *testing.T) {
 	}
 }
 
-func clearGLM52RoutingTables(t *testing.T) {
+func clearGLMRoutingTables(t *testing.T) {
 	t.Helper()
 	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
 	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
