@@ -17,11 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
 
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { subscribeUsageLogStream } from '../lib/log-stream'
+import { subscribeUsageLogsChanged } from '../lib/refresh-events'
 import type { ChannelAffinityInfo } from '../types'
 
 export type LogsViewScope = 'all' | 'self'
@@ -55,6 +64,7 @@ const UsageLogsContext = createContext<UsageLogsContextValue | undefined>(
 )
 
 export function UsageLogsProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [userInfoDialogOpen, setUserInfoDialogOpen] = useState(false)
   const [affinityTarget, setAffinityTarget] =
@@ -62,6 +72,24 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
   const [affinityDialogOpen, setAffinityDialogOpen] = useState(false)
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
   const [viewScope, setViewScope] = useState<LogsViewScope>('all')
+
+  useEffect(() => {
+    const refreshLogs = () => {
+      queryClient
+        .invalidateQueries({ queryKey: ['logs'] })
+        .catch(() => undefined)
+      queryClient
+        .invalidateQueries({ queryKey: ['usage-logs-stats'] })
+        .catch(() => undefined)
+    }
+    const unsubscribeBrowserEvents = subscribeUsageLogsChanged(refreshLogs)
+    const unsubscribeServerEvents = subscribeUsageLogStream(refreshLogs)
+
+    return () => {
+      unsubscribeBrowserEvents()
+      unsubscribeServerEvents()
+    }
+  }, [queryClient])
 
   return (
     <UsageLogsContext.Provider

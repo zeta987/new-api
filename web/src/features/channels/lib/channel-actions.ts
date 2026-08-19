@@ -20,6 +20,8 @@ import type { QueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 
+import { notifyUsageLogsChanged } from '@/features/usage-logs/lib/refresh-events'
+
 import {
   copyChannel,
   deleteChannel,
@@ -294,6 +296,7 @@ export async function handleTestChannel(
 
   try {
     const response = await testChannel(id, payload)
+    notifyUsageLogsChanged()
     const responseTime = getChannelTestResponseTime(response)
     const duration = formatChannelTestDuration(responseTime)
     const target = getChannelTestLabel(options)
