@@ -1,7 +1,24 @@
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+/*
+Copyright (C) 2023-2026 QuantumNous
 
-import { subscribeUsageLogStream } from './log-stream.ts'
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { describe, expect, test } from 'vitest'
+
+import { subscribeUsageLogStream } from './log-stream'
 
 class FakeUsageLogStream extends EventTarget {
   started = false
@@ -27,14 +44,14 @@ describe('usage log stream', () => {
       () => stream
     )
 
-    assert.equal(stream.started, true)
+    expect(stream.started).toBe(true)
 
     stream.dispatchEvent(new Event('ready'))
     stream.dispatchEvent(new Event('log'))
 
-    assert.equal(notifications, 2)
+    expect(notifications).toBe(2)
 
     unsubscribe()
-    assert.equal(stream.closed, true)
+    expect(stream.closed).toBe(true)
   })
 })
