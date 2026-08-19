@@ -429,27 +429,9 @@ func getModelPricingValue(settings *types.RWMap[string, float64], name string) (
 	return 0, false
 }
 
-func getModelPricingValueWithCompactFallback(settings *types.RWMap[string, float64], name string) (float64, bool) {
-	normalizedName := FormatMatchingModelName(name)
-	if strings.HasSuffix(normalizedName, CompactModelSuffix) {
-		if value, ok := settings.Get(name); ok {
-			return value, true
-		}
-		if normalizedName != name {
-			if value, ok := settings.Get(normalizedName); ok {
-				return value, true
-			}
-		}
-		if value, ok := settings.Get(CompactWildcardModelKey); ok {
-			return value, true
-		}
-	}
-	return getModelPricingValue(settings, name)
-}
-
 // GetModelPrice 返回模型的价格，如果模型不存在则返回-1，false
 func GetModelPrice(name string, printErr bool) (float64, bool) {
-	if price, ok := getModelPricingValueWithCompactFallback(modelPriceMap, name); ok {
+	if price, ok := getModelPricingValue(modelPriceMap, name); ok {
 		return price, true
 	}
 
@@ -475,7 +457,7 @@ func handleThinkingBudgetModel(name, prefix, wildcard string) string {
 func GetModelRatio(name string) (float64, bool, string) {
 	normalizedName := FormatMatchingModelName(name)
 
-	ratio, ok := getModelPricingValueWithCompactFallback(modelRatioMap, name)
+	ratio, ok := getModelPricingValue(modelRatioMap, name)
 	if !ok {
 		return 37.5, operation_setting.SelfUseModeEnabled, normalizedName
 	}

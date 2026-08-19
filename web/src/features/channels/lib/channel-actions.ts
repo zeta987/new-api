@@ -21,7 +21,6 @@ import i18next from 'i18next'
 import { toast } from 'sonner'
 
 import { notifyUsageLogsChanged } from '@/features/usage-logs/lib/refresh-events'
-import { formatCurrencyFromUSD } from '@/lib/currency'
 
 import {
   copyChannel,
@@ -39,7 +38,6 @@ import {
   editTagChannels,
   testAllChannels,
   updateAllChannelsBalance,
-  updateChannelBalance,
 } from '../api'
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import type { ChannelTestResponse, CopyChannelParams } from '../types'
@@ -361,41 +359,6 @@ export async function handleCopyChannel(
     }
   } catch {
     toast.error(i18next.t('Failed to copy channel'))
-  }
-}
-
-/**
- * Update channel balance
- */
-export async function handleUpdateChannelBalance(
-  id: number,
-  queryClient?: QueryClient,
-  onSuccess?: (balance: number) => void
-): Promise<void> {
-  try {
-    const response = await updateChannelBalance(id)
-    if (response.success && response.balance !== undefined) {
-      const balance = response.balance
-      toast.success(
-        i18next.t('Balance updated: {{balance}}', {
-          balance: formatCurrencyFromUSD(balance, {
-            digitsLarge: 2,
-            digitsSmall: 4,
-            abbreviate: false,
-          }),
-        })
-      )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      onSuccess?.(balance)
-    } else {
-      toast.error(response.message || i18next.t('Failed to update balance'))
-    }
-  } catch (_error: unknown) {
-    toast.error(
-      _error instanceof Error
-        ? _error.message
-        : i18next.t('Failed to update balance')
-    )
   }
 }
 
