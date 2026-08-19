@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 )
 
 func requestOpenAI2Zhipu(request dto.GeneralOpenAIRequest) *dto.GeneralOpenAIRequest {
@@ -52,7 +53,7 @@ func requestOpenAI2Zhipu(request dto.GeneralOpenAIRequest) *dto.GeneralOpenAIReq
 		ToolChoice:  request.ToolChoice,
 		THINKING:    request.THINKING,
 	}
-	if request.Model == "glm-5.2" {
+	if reasoning.IsGLMReasoningEffortModel(request.Model) {
 		out.ReasoningEffort = request.ReasoningEffort
 	}
 	if request.MaxTokens != nil || request.MaxCompletionTokens != nil {

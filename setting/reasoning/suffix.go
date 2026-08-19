@@ -22,6 +22,7 @@ var (
 	GPT56ReasoningWildcardModel               = kitreasoning.GPT56ReasoningWildcardModel
 	IsGPT56ReasoningWildcard                  = kitreasoning.IsGPT56ReasoningWildcard
 	ParseGPT56ReasoningModelSuffix            = kitreasoning.ParseGPT56ReasoningModelSuffix
-	ParseGLM52ReasoningEffortSuffix           = kitreasoning.ParseGLM52ReasoningEffortSuffix
+	ParseGLMReasoningEffortSuffix             = kitreasoning.ParseGLMReasoningEffortSuffix
+	IsGLMReasoningEffortModel                 = kitreasoning.IsGLMReasoningEffortModel
 	ParseDeepSeekV4ThinkingSuffix             = kitreasoning.ParseDeepSeekV4ThinkingSuffix
 )
