@@ -110,13 +110,17 @@ type RelayInfo struct {
 	IsFirstRequest         bool
 	AudioUsage             bool
 	ReasoningEffort        string
-	UserSetting            dto.UserSetting
-	UserEmail              string
-	UserQuota              int
-	RelayFormat            types.RelayFormat
-	SendResponseCount      int
-	ReceivedResponseCount  int
-	FinalPreConsumedQuota  int // 最终预消耗的配额
+	// ModelSuffixReasoningEffort carries the reasoning effort recovered from a
+	// model name suffix before channel model redirection rewrote the model name.
+	// Adaptors use it when the upstream model no longer carries the suffix.
+	ModelSuffixReasoningEffort string
+	UserSetting                dto.UserSetting
+	UserEmail                  string
+	UserQuota                  int
+	RelayFormat                types.RelayFormat
+	SendResponseCount          int
+	ReceivedResponseCount      int
+	FinalPreConsumedQuota      int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。

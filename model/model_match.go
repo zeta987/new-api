@@ -38,7 +38,10 @@ func ModelMatchCandidates(modelName string) []string {
 	return candidates
 }
 
-func requiresZhipuV4Channel(modelName string) bool {
+// requiresGLMEffortChannel reports whether modelName is a validated GLM
+// reasoning effort alias, which only channel types that translate the alias
+// into an upstream reasoning effort may serve.
+func requiresGLMEffortChannel(modelName string) bool {
 	_, _, ok := reasoning.ParseGLMReasoningEffortSuffix(modelName)
 	return ok
 }

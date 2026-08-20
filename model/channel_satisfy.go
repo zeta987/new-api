@@ -19,9 +19,9 @@ func IsChannelEnabledForGroupModel(group string, modelName string, channelID int
 	if group2model2channels == nil {
 		return false
 	}
-	if requiresZhipuV4Channel(modelName) {
+	if requiresGLMEffortChannel(modelName) {
 		channel, ok := channelsIDM[channelID]
-		if !ok || channel.Type != constant.ChannelTypeZhipu_v4 {
+		if !ok || !constant.SupportsGLMReasoningEffortAlias(channel.Type) {
 			return false
 		}
 	}
@@ -51,10 +51,10 @@ func isChannelEnabledForGroupModelDB(group string, modelName string, channelID i
 	query := DB.Model(&Ability{}).
 		Where(commonGroupCol+" = ? and model IN ? and channel_id = ? and enabled = ?", group, ModelMatchCandidates(modelName), channelID, true).
 		Count(&count)
-	if requiresZhipuV4Channel(modelName) {
+	if requiresGLMEffortChannel(modelName) {
 		query = DB.Model(&Ability{}).
 			Joins("JOIN channels ON channels.id = abilities.channel_id").
-			Where("abilities."+commonGroupCol+" = ? and abilities.model IN ? and abilities.channel_id = ? and abilities.enabled = ? and channels.type = ?", group, ModelMatchCandidates(modelName), channelID, true, constant.ChannelTypeZhipu_v4).
+			Where("abilities."+commonGroupCol+" = ? and abilities.model IN ? and abilities.channel_id = ? and abilities.enabled = ? and channels.type IN ?", group, ModelMatchCandidates(modelName), channelID, true, constant.GLMReasoningEffortAliasChannelTypes).
 			Count(&count)
 	}
 	err := query.Error

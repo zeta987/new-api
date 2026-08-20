@@ -248,6 +248,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure {
 		request.StreamOptions = nil
 	}
+	// Must run before the OpenRouter block below, which consumes ReasoningEffort
+	// and rewrites it into OpenRouter's reasoning object.
+	applyGLMReasoningEffortAlias(info, request)
 	if info.ChannelType == constant.ChannelTypeOpenRouter {
 		if len(request.Usage) == 0 {
 			request.Usage = json.RawMessage(`{"include":true}`)
@@ -281,6 +284,15 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 					}
 					if request.ReasoningEffort != "none" {
 						reasoning["effort"] = request.ReasoningEffort
+						marshal, err := common.Marshal(reasoning)
+						if err != nil {
+							return nil, fmt.Errorf("error marshalling reasoning: %w", err)
+						}
+						request.Reasoning = marshal
+					} else if info.ModelSuffixReasoningEffort == "none" {
+						// A GLM "none" alias disables reasoning; omitting the
+						// field would leave the upstream default in place.
+						reasoning["enabled"] = false
 						marshal, err := common.Marshal(reasoning)
 						if err != nil {
 							return nil, fmt.Errorf("error marshalling reasoning: %w", err)
@@ -364,6 +376,29 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	}
 
 	return request, nil
+}
+
+// applyGLMReasoningEffortAlias resolves a GLM reasoning effort alias for the
+// OpenAI-compatible channel types that serve one. The alias reaches this adaptor
+// either as the upstream model name, when the channel configures no redirect, or
+// as an effort already recovered by model redirection. The suffix wins over an
+// effort the request body carried, matching the Zhipu V4 precedence rule.
+func applyGLMReasoningEffortAlias(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+	if info == nil || request == nil || !constant.SupportsGLMReasoningEffortAlias(info.ChannelType) {
+		return
+	}
+	if baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(info.UpstreamModelName); ok {
+		info.UpstreamModelName = baseModel
+		request.Model = baseModel
+		request.ReasoningEffort = effort
+		info.ModelSuffixReasoningEffort = effort
+		info.SetReasoningEffort(effort)
+		return
+	}
+	if info.ModelSuffixReasoningEffort != "" {
+		request.ReasoningEffort = info.ModelSuffixReasoningEffort
+		info.SetReasoningEffort(info.ModelSuffixReasoningEffort)
+	}
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {

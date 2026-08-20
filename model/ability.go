@@ -61,7 +61,7 @@ func GetAllEnableAbilities() []Ability {
 }
 
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
-	requiresZhipuV4 := requiresZhipuV4Channel(model)
+	requiresGLMEffortAlias := requiresGLMEffortChannel(model)
 	for _, modelCandidate := range ModelMatchCandidates(model) {
 		var priorities []int64
 		err := DB.Model(&Ability{}).
@@ -76,7 +76,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 			continue
 		}
 
-		if requestPath == "" && !requiresZhipuV4 {
+		if requestPath == "" && !requiresGLMEffortAlias {
 			priorityIndex := retry
 			if priorityIndex >= len(priorities) {
 				priorityIndex = len(priorities) - 1
@@ -133,12 +133,12 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 // filterAbilitiesByRequestPathAndModel restricts candidates by request path and
 // model for the DB (non-memory-cache) selection path. Only Advanced Custom
 // (type 58) channels are path-checked: kept only when one of their routes matches
-// requestPath and model; valid GLM-5.2 effort aliases additionally require a
-// Zhipu V4 channel. For other models, filtering is skipped when requestPath is
-// empty.
+// requestPath and model; valid GLM effort aliases additionally require a channel
+// type that translates the alias. For other models, filtering is skipped when
+// requestPath is empty.
 func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) []Ability {
-	requiresZhipuV4 := requiresZhipuV4Channel(model)
-	if len(abilities) == 0 || (requestPath == "" && !requiresZhipuV4) {
+	requiresGLMEffortAlias := requiresGLMEffortChannel(model)
+	if len(abilities) == 0 || (requestPath == "" && !requiresGLMEffortAlias) {
 		return abilities
 	}
 
@@ -154,7 +154,7 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		if requiresZhipuV4 {
+		if requiresGLMEffortAlias {
 			return nil
 		}
 		return abilities
@@ -172,7 +172,7 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
 		channel := channelsByID[ability.ChannelId]
-		if requiresZhipuV4 && (channel == nil || channel.Type != constant.ChannelTypeZhipu_v4) {
+		if requiresGLMEffortAlias && (channel == nil || !constant.SupportsGLMReasoningEffortAlias(channel.Type)) {
 			continue
 		}
 		config, isAdvancedCustom := advancedConfigs[ability.ChannelId]
