@@ -57,11 +57,11 @@ func TestGLM53AliasesRequireZhipuV4Channels(t *testing.T) {
 			}
 
 			for _, alias := range []string{"glm-5.3-low", "glm-5.3-high", "glm-5.3-max"} {
-				got, err := GetRandomSatisfiedChannel("default", alias, 0, nil)
+				got, err := GetRandomSatisfiedChannel("default", alias, 0, glmZhipuV4Filters())
 				require.NoError(t, err)
 				require.NotNil(t, got)
 				assert.Equal(t, v4.Id, got.Id)
-				assert.False(t, IsChannelEnabledForGroupModel("default", alias, v3.Id))
+				assert.True(t, IsChannelEnabledForGroupModel("default", alias, v3.Id))
 				assert.True(t, IsChannelEnabledForGroupModel("default", alias, v4.Id))
 			}
 

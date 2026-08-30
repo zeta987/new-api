@@ -7,8 +7,8 @@ import (
 )
 
 func TestModelMatchCandidatesIncludeGLM52BaseAfterExactAlias(t *testing.T) {
-	for _, alias := range []string{"glm-5.2-none", "glm-5.2-high", "glm-5.2-max"} {
+	for _, alias := range []string{"glm-5.2-none", "glm-5.2-minimal", "glm-5.2-low", "glm-5.2-medium", "glm-5.2-high", "glm-5.2-xhigh", "glm-5.2-max"} {
 		assert.Equal(t, []string{alias, "glm-5.2"}, ModelMatchCandidates(alias))
 	}
-	assert.Equal(t, []string{"glm-5.2-low"}, ModelMatchCandidates("glm-5.2-low"))
+	assert.Equal(t, []string{"glm-5.2-max-extra"}, ModelMatchCandidates("glm-5.2-max-extra"))
 }

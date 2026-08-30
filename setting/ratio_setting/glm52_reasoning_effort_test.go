@@ -8,10 +8,10 @@ import (
 )
 
 func TestFormatMatchingModelNameNormalizesExactGLM52Aliases(t *testing.T) {
-	for _, model := range []string{"glm-5.2-none", "glm-5.2-high", "glm-5.2-max"} {
+	for _, model := range []string{"glm-5.2-none", "glm-5.2-minimal", "glm-5.2-low", "glm-5.2-medium", "glm-5.2-high", "glm-5.2-xhigh", "glm-5.2-max"} {
 		assert.Equal(t, "glm-5.2", FormatMatchingModelName(model))
 	}
-	for _, model := range []string{"glm-5.2", "glm-5.2-low", "glm-5.2-max-extra", "glm-5.1-high"} {
+	for _, model := range []string{"glm-5.2", "glm-5.2-max-extra", "glm-low", "glm--low", "GLM-5.2-high"} {
 		assert.Equal(t, model, FormatMatchingModelName(model))
 	}
 }
