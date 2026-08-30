@@ -81,9 +81,7 @@ func TestGLM53BareModelOmitsEmptyReasoningEffort(t *testing.T) {
 	assert.JSONEq(t, `{"model":"glm-5.3","stop":null}`, marshalRequest(t, got))
 }
 
-// A channel may map a GLM-5.2 alias onto GLM-5.3. Recovering the origin alias
-// across base models would send an effort the target model never advertised.
-func TestGLMOriginAliasRecoveryRequiresMatchingBaseModel(t *testing.T) {
+func TestGLMOriginAliasRecoveryPreservesEffortAcrossBaseMapping(t *testing.T) {
 	t.Run("same base model recovers the origin alias", func(t *testing.T) {
 		request := &dto.GeneralOpenAIRequest{Model: "glm-5.3"}
 		info := &relaycommon.RelayInfo{
@@ -100,7 +98,7 @@ func TestGLMOriginAliasRecoveryRequiresMatchingBaseModel(t *testing.T) {
 		assert.Equal(t, "low", info.ReasoningEffort)
 	})
 
-	t.Run("other base model does not recover the origin alias", func(t *testing.T) {
+	t.Run("other GLM base model keeps the origin effort", func(t *testing.T) {
 		request := &dto.GeneralOpenAIRequest{Model: "glm-5.3"}
 		info := &relaycommon.RelayInfo{
 			OriginModelName: "glm-5.2-none",
@@ -112,9 +110,9 @@ func TestGLMOriginAliasRecoveryRequiresMatchingBaseModel(t *testing.T) {
 		got := requireZhipuRequest(t, converted)
 
 		assert.Equal(t, "glm-5.3", got.Model)
-		assert.Empty(t, got.ReasoningEffort)
-		assert.Empty(t, info.ReasoningEffort)
-		assert.JSONEq(t, `{"model":"glm-5.3","stop":null}`, marshalRequest(t, got))
+		assert.Equal(t, "none", got.ReasoningEffort)
+		assert.Equal(t, "none", info.ReasoningEffort)
+		assert.JSONEq(t, `{"model":"glm-5.3","reasoning_effort":"none","stop":null}`, marshalRequest(t, got))
 	})
 }
 

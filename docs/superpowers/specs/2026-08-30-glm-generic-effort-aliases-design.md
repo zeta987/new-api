@@ -181,6 +181,9 @@ this configuration is sufficient for OpenRouter:
 Model mapping, rather than a late parameter override, owns model-name
 redirection. It updates `UpstreamModelName` before adaptor conversion and keeps
 request metadata, retries, logs, and the serialized payload aligned.
+When a Zhipu mapping redirects the alias to another syntactically valid GLM
+base, the mapped base remains authoritative and the original suffix effort is
+still applied; provider validation decides whether that combination is valid.
 
 Suffix metadata does not by itself claim the effort was applied. Each native
 adaptor sets `RelayInfo.ReasoningEffort` only when it writes the corresponding
@@ -220,6 +223,12 @@ does not invent a default.
 This behavior applies only when the selected channel type is OpenAI and the
 requested name is a validated GLM effort alias. Existing OpenAI, Azure, and
 non-GLM reasoning behavior remains unchanged.
+
+A validated GLM effort alias requires body transformation. For Chat requests,
+it therefore forces the ordinary adaptor path even when global or channel body
+pass-through is enabled or Chat-Completions-via-Responses is configured. Bare
+GLM models and non-GLM requests retain their existing pass-through and bridge
+behavior.
 
 ## OpenRouter strategy
 
