@@ -325,6 +325,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 
 	}
+	if info.ChannelType == constant.ChannelTypeOpenAI {
+		applyOpenAIChatGLMReasoningEffort(info, request)
+	}
 	isOModel := dto.IsOpenAIReasoningOModel(info.UpstreamModelName)
 	isGPT5Model := dto.IsOpenAIGPT5Model(info.UpstreamModelName)
 	if isOModel || isGPT5Model {
@@ -364,6 +367,33 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	}
 
 	return request, nil
+}
+
+func applyOpenAIChatGLMReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+	originModel := info.OriginModelName
+	if originModel == "" {
+		originModel = request.Model
+	}
+	baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(originModel)
+	if ok {
+		upstreamModel := info.UpstreamModelName
+		if upstreamModel == "" || upstreamModel == originModel {
+			upstreamModel = baseModel
+		}
+		request.Model = upstreamModel
+		request.ReasoningEffort = effort
+		info.UpstreamModelName = upstreamModel
+		info.SetReasoningEffort(effort)
+		return
+	}
+
+	upstreamModel := info.UpstreamModelName
+	if upstreamModel == "" {
+		upstreamModel = request.Model
+	}
+	if reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		info.SetReasoningEffort(request.ReasoningEffort)
+	}
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {
@@ -602,6 +632,14 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(request.Model); ok {
+		return request, nil
+	}
+	if info != nil {
+		if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName); ok {
+			return request, nil
+		}
+	}
 	// Convert model suffixes into Responses reasoning fields.
 	originModel, mode, effort, hasReasoningSuffix := reasoning.ParseOpenAIReasoningModelSuffix(request.Model)
 	suffixCameFromRequestModel := hasReasoningSuffix
