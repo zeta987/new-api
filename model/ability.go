@@ -7,8 +7,7 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/dto"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -60,8 +59,7 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
-	requiresZhipuV4 := requiresZhipuV4Channel(model)
+func GetChannel(group string, model string, retry int, filters []dto.ChannelFilter) (*Channel, error) {
 	for _, modelCandidate := range ModelMatchCandidates(model) {
 		var priorities []int64
 		err := DB.Model(&Ability{}).
@@ -76,14 +74,6 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 			continue
 		}
 
-		if requestPath == "" && !requiresZhipuV4 {
-			priorityIndex := retry
-			if priorityIndex >= len(priorities) {
-				priorityIndex = len(priorities) - 1
-			}
-			priorities = priorities[priorityIndex : priorityIndex+1]
-		}
-
 		var targetAbilities []Ability
 		supportedPriorityIndex := 0
 		for _, priority := range priorities {
@@ -94,7 +84,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 			if err != nil {
 				return nil, err
 			}
-			abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+			abilities = filterAbilitiesByConstraints(abilities, model, filters)
 			if len(abilities) == 0 {
 				continue
 			}
@@ -130,17 +120,14 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 	return nil, nil
 }
 
-// filterAbilitiesByRequestPathAndModel restricts candidates by request path and
-// model for the DB (non-memory-cache) selection path. Only Advanced Custom
-// (type 58) channels are path-checked: kept only when one of their routes matches
-// requestPath and model; valid GLM-5.2 effort aliases additionally require a
-// Zhipu V4 channel. For other models, filtering is skipped when requestPath is
-// empty.
-func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) []Ability {
-	requiresZhipuV4 := requiresZhipuV4Channel(model)
-	if len(abilities) == 0 || (requestPath == "" && !requiresZhipuV4) {
-		return abilities
+// filterAbilitiesByConstraints applies the same ChannelSatisfiesFilters
+// predicate used by the memory-cache path. A failed channel lookup fails
+// closed when a filter needs the channel object and fails open otherwise.
+func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters []dto.ChannelFilter) []Ability {
+	if len(abilities) == 0 {
+		return nil
 	}
+	filters = ensureModelChannelFilters(modelName, filters)
 
 	channelIds := make([]int, 0, len(abilities))
 	seen := make(map[int]struct{}, len(abilities))
@@ -154,37 +141,35 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		if requiresZhipuV4 {
+		if filtersRequireResolvedChannel(filters) {
 			return nil
 		}
 		return abilities
 	}
 
 	channelsByID := make(map[int]*Channel, len(channels))
-	advancedConfigs := make(map[int]*dto.AdvancedCustomConfig)
 	for _, channel := range channels {
 		channelsByID[channel.Id] = channel
-		if channel.Type == constant.ChannelTypeAdvancedCustom {
-			advancedConfigs[channel.Id] = channel.GetOtherSettings().AdvancedCustom
-		}
 	}
 
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
 		channel := channelsByID[ability.ChannelId]
-		if requiresZhipuV4 && (channel == nil || channel.Type != constant.ChannelTypeZhipu_v4) {
-			continue
-		}
-		config, isAdvancedCustom := advancedConfigs[ability.ChannelId]
-		if !isAdvancedCustom {
-			filtered = append(filtered, ability)
-			continue
-		}
-		if config != nil && config.SupportsPathForModel(requestPath, model) {
+		if ok, _ := ChannelSatisfiesFilters(channel, modelName, filters); ok {
 			filtered = append(filtered, ability)
 		}
 	}
 	return filtered
+}
+
+func filtersRequireResolvedChannel(filters []dto.ChannelFilter) bool {
+	for _, filter := range filters {
+		if filter.Kind == dto.FilterAllowedChannelTypes ||
+			filter.Kind == dto.FilterTaskPluginIdentity && filter.TaskPluginKey != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {

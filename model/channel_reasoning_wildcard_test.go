@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -87,12 +88,12 @@ func TestGetRandomSatisfiedChannelPrefersGPT56WildcardOverBase(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, "")
+			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, nil)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, 5603, got.Id)
 
-			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-high", 0, "")
+			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-high", 0, nil)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, 5604, got.Id)
@@ -148,7 +149,7 @@ func TestGetRandomSatisfiedChannelFallsBackAfterRequestPathFilter(t *testing.T) 
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, "/v1/responses")
+			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, []dto.ChannelFilter{{Kind: dto.FilterRequestPath, RequestPath: "/v1/responses"}})
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, 5606, got.Id)
@@ -227,12 +228,12 @@ func TestGetRandomSatisfiedChannelKeepsExactCandidateAfterPriorityPathFilter(t *
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, "/v1/responses")
+			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, []dto.ChannelFilter{{Kind: dto.FilterRequestPath, RequestPath: "/v1/responses"}})
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, 5608, got.Id)
 
-			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 1, "/v1/responses")
+			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 1, []dto.ChannelFilter{{Kind: dto.FilterRequestPath, RequestPath: "/v1/responses"}})
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, 5610, got.Id)
@@ -274,18 +275,18 @@ func TestGetRandomSatisfiedChannelMatchesGPT56ReasoningWildcard(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, "")
+			got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-max", 0, nil)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, channel.Id, got.Id)
 			assert.True(t, IsChannelEnabledForGroupModel("default", "gpt-5.6-luna-pro-max", channel.Id))
 
-			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-ultra", 0, "")
+			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-pro-ultra", 0, nil)
 			require.NoError(t, err)
 			assert.Nil(t, got)
 			assert.False(t, IsChannelEnabledForGroupModel("default", "gpt-5.6-luna-pro-ultra", channel.Id))
 
-			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-*", 0, "")
+			got, err = GetRandomSatisfiedChannel("default", "gpt-5.6-luna-*", 0, nil)
 			require.NoError(t, err)
 			assert.Nil(t, got)
 			assert.False(t, IsChannelEnabledForGroupModel("default", "gpt-5.6-luna-*", channel.Id))

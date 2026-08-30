@@ -57,7 +57,7 @@ func TestGLM52AliasesRequireZhipuV4Channels(t *testing.T) {
 			}
 
 			for _, alias := range []string{"glm-5.2-none", "glm-5.2-high", "glm-5.2-max"} {
-				got, err := GetRandomSatisfiedChannel("default", alias, 0, "")
+				got, err := GetRandomSatisfiedChannel("default", alias, 0, nil)
 				require.NoError(t, err)
 				require.NotNil(t, got)
 				assert.Equal(t, v4.Id, got.Id)
@@ -65,7 +65,7 @@ func TestGLM52AliasesRequireZhipuV4Channels(t *testing.T) {
 				assert.True(t, IsChannelEnabledForGroupModel("default", alias, v4.Id))
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "glm-5.2", 0, "")
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2", 0, nil)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, v3.Id, got.Id)
@@ -120,7 +120,7 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, "")
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, nil)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, v4Base.Id, got.Id)
@@ -134,7 +134,7 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err = GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, "")
+			got, err = GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, nil)
 			require.NoError(t, err)
 			assert.Nil(t, got)
 			assert.False(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v3Exact.Id))
@@ -189,7 +189,7 @@ func TestGLM52AliasRetryUsesNextZhipuV4Priority(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 1, "")
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 1, nil)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, lowPriorityChannel.Id, got.Id)
@@ -244,7 +244,7 @@ func TestGLM52ExactZhipuV4AliasPrecedesBaseCandidate(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, "")
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, nil)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, exactChannel.Id, got.Id)
