@@ -28,22 +28,24 @@ func TestParseGLMReasoningEffortSuffix(t *testing.T) {
 		ok     bool
 	}{
 		{model: "glm-5.2-none", base: "glm-5.2", effort: "none", ok: true},
+		{model: "glm-5.2-minimal", base: "glm-5.2", effort: "minimal", ok: true},
+		{model: "glm-5.2-low", base: "glm-5.2", effort: "low", ok: true},
+		{model: "glm-5.2-medium", base: "glm-5.2", effort: "medium", ok: true},
 		{model: "glm-5.2-high", base: "glm-5.2", effort: "high", ok: true},
+		{model: "glm-5.2-xhigh", base: "glm-5.2", effort: "xhigh", ok: true},
 		{model: "glm-5.2-max", base: "glm-5.2", effort: "max", ok: true},
-		{model: "glm-5.2", base: "glm-5.2"},
-		{model: "glm-5.2-low", base: "glm-5.2-low"},
-		{model: "glm-5.2-xhigh", base: "glm-5.2-xhigh"},
-		{model: "glm-5.2-max-extra", base: "glm-5.2-max-extra"},
-		{model: "glm-5.1-high", base: "glm-5.1-high"},
-		{model: "GLM-5.2-high", base: "GLM-5.2-high"},
-		{model: "glm-5.3-low", base: "glm-5.3", effort: "low", ok: true},
 		{model: "glm-5.3-high", base: "glm-5.3", effort: "high", ok: true},
-		{model: "glm-5.3-max", base: "glm-5.3", effort: "max", ok: true},
-		{model: "glm-5.3", base: "glm-5.3"},
-		{model: "glm-5.3-none", base: "glm-5.3-none"},
-		{model: "glm-5.3-xhigh", base: "glm-5.3-xhigh"},
-		{model: "glm-5.3-max-extra", base: "glm-5.3-max-extra"},
+		{model: "glm-5.3-flash-low", base: "glm-5.3-flash", effort: "low", ok: true},
+		{model: "glm-5.3-flash-high", base: "glm-5.3-flash", effort: "high", ok: true},
+		{model: "glm-5.3-flash-max", base: "glm-5.3-flash", effort: "max", ok: true},
+		{model: "glm-future-model-xhigh", base: "glm-future-model", effort: "xhigh", ok: true},
+		{model: "glm-5.3-flash", base: "glm-5.3-flash"},
+		{model: "glm-5.3-flash-fast", base: "glm-5.3-flash-fast"},
+		{model: "glm-5.3-flash-max-extra", base: "glm-5.3-flash-max-extra"},
+		{model: "glm-low", base: "glm-low"},
+		{model: "glm--low", base: "glm--low"},
 		{model: "GLM-5.3-high", base: "GLM-5.3-high"},
+		{model: "custom-glm-5.3-high", base: "custom-glm-5.3-high"},
 	}
 
 	for _, test := range tests {
@@ -57,10 +59,17 @@ func TestParseGLMReasoningEffortSuffix(t *testing.T) {
 }
 
 func TestIsGLMReasoningEffortModel(t *testing.T) {
-	for _, model := range []string{"glm-5.2", "glm-5.3"} {
+	for _, model := range []string{"glm-5", "glm-5.1", "glm-5.2", "glm-5.3-flash", "glm-future-model", "glm-5.3-flash-fast"} {
 		assert.True(t, IsGLMReasoningEffortModel(model))
 	}
-	for _, model := range []string{"glm-5.2-max", "glm-5.3-max", "glm-5", "glm-5.1", "glm-4.7", "custom-glm-5.3"} {
+	for _, model := range []string{"glm-5.2-max", "glm-5.3-flash-low", "glm-low", "glm--low", "GLM-5.3", "custom-glm-5.3"} {
 		assert.False(t, IsGLMReasoningEffortModel(model))
+	}
+}
+
+func TestGLMBasePredicateAndSuffixParserAreMutuallyExclusive(t *testing.T) {
+	for _, model := range []string{"glm-5.3-flash", "glm-5.3-flash-low", "glm-future-model-xhigh", "glm-low", "glm--low"} {
+		_, _, parsed := ParseGLMReasoningEffortSuffix(model)
+		assert.False(t, parsed && IsGLMReasoningEffortModel(model), model)
 	}
 }

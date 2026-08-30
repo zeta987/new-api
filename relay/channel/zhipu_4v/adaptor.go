@@ -107,17 +107,7 @@ func applyGLMReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOp
 		upstreamModel = info.UpstreamModelName
 	}
 
-	baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(upstreamModel)
-	if !ok && info != nil && reasoning.IsGLMReasoningEffortModel(upstreamModel) {
-		// Model matching already replaced the alias with its base model, so the
-		// requested effort is only recoverable from the client model name. A
-		// recovered alias of another base model documents a different effort
-		// set and must not be forwarded.
-		originBase, originEffort, originOk := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
-		if originOk && originBase == upstreamModel {
-			baseModel, effort, ok = originBase, originEffort, true
-		}
-	}
+	baseModel, effort, ok := resolveGLMReasoningEffort(info, upstreamModel)
 
 	if ok {
 		request.Model = baseModel
@@ -139,6 +129,19 @@ func applyGLMReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOp
 	}
 }
 
+func resolveGLMReasoningEffort(info *relaycommon.RelayInfo, upstreamModel string) (string, string, bool) {
+	baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(upstreamModel)
+	if ok || info == nil || !reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		return baseModel, effort, ok
+	}
+
+	_, originEffort, originOK := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+	if originOK {
+		return upstreamModel, originEffort, true
+	}
+	return upstreamModel, "", false
+}
+
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {
 	return nil, nil
 }
@@ -148,6 +151,32 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if info != nil {
+		info.ReasoningEffort = ""
+	}
+
+	upstreamModel := request.Model
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName != "" {
+		upstreamModel = info.UpstreamModelName
+	}
+	baseModel, effort, ok := resolveGLMReasoningEffort(info, upstreamModel)
+	if ok {
+		request.Model = baseModel
+		if request.Reasoning == nil {
+			request.Reasoning = &dto.Reasoning{}
+		}
+		request.Reasoning.Effort = effort
+		if info != nil && info.ChannelMeta != nil {
+			info.UpstreamModelName = baseModel
+		}
+		if info != nil {
+			info.ReasoningEffort = effort
+		}
+		return request, nil
+	}
+	if reasoning.IsGLMReasoningEffortModel(upstreamModel) && info != nil && request.Reasoning != nil {
+		info.ReasoningEffort = request.Reasoning.Effort
+	}
 	return request, nil
 }
 

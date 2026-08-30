@@ -127,8 +127,6 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 	if len(abilities) == 0 {
 		return nil
 	}
-	filters = ensureModelChannelFilters(modelName, filters)
-
 	channelIds := make([]int, 0, len(abilities))
 	seen := make(map[int]struct{}, len(abilities))
 	for _, ability := range abilities {

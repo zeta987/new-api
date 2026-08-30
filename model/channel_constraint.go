@@ -17,7 +17,6 @@ var filterEvalOrder = []dto.ChannelFilterKind{
 // On false, it returns the kind of the first violated filter for error
 // attribution.
 func ChannelSatisfiesFilters(ch *Channel, modelName string, filters []dto.ChannelFilter) (bool, dto.ChannelFilterKind) {
-	filters = ensureModelChannelFilters(modelName, filters)
 	if ch == nil {
 		return false, ""
 	}
@@ -42,7 +41,6 @@ func filterCandidateIDs(ids []int, modelName string, filters []dto.ChannelFilter
 	if len(ids) == 0 {
 		return ids, ""
 	}
-	filters = ensureModelChannelFilters(modelName, filters)
 	kept = ids
 	for _, kind := range filterEvalOrder {
 		kindFilters := filtersByKind(filters, kind)
@@ -110,21 +108,4 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 	default:
 		return true
 	}
-}
-
-func ensureModelChannelFilters(modelName string, filters []dto.ChannelFilter) []dto.ChannelFilter {
-	for _, filter := range filters {
-		if filter.Kind == dto.FilterAllowedChannelTypes {
-			return filters
-		}
-	}
-	if !requiresZhipuV4Channel(modelName) {
-		return filters
-	}
-
-	withModelFilter := slices.Clone(filters)
-	return append(withModelFilter, dto.ChannelFilter{
-		Kind:                dto.FilterAllowedChannelTypes,
-		AllowedChannelTypes: []int{constant.ChannelTypeZhipu_v4},
-	})
 }
