@@ -34,6 +34,7 @@ func TestParseGLMReasoningEffortSuffix(t *testing.T) {
 		{model: "glm-5.2-high", base: "glm-5.2", effort: "high", ok: true},
 		{model: "glm-5.2-xhigh", base: "glm-5.2", effort: "xhigh", ok: true},
 		{model: "glm-5.2-max", base: "glm-5.2", effort: "max", ok: true},
+		{model: "glm-5.3-high", base: "glm-5.3", effort: "high", ok: true},
 		{model: "glm-5.3-flash-low", base: "glm-5.3-flash", effort: "low", ok: true},
 		{model: "glm-5.3-flash-high", base: "glm-5.3-flash", effort: "high", ok: true},
 		{model: "glm-5.3-flash-max", base: "glm-5.3-flash", effort: "max", ok: true},

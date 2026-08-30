@@ -499,6 +499,43 @@ func TestDistributeRejectsPinnedOpenAIResponsesGLMAlias(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), string(dto.FilterAllowedChannelTypes))
 }
 
+func TestDistributeAcceptsPinnedGLMChatAliasOnSupportedChannels(t *testing.T) {
+	require.NoError(t, appI18n.Init())
+	for _, channelType := range []int{
+		constant.ChannelTypeZhipu_v4,
+		constant.ChannelTypeOpenAI,
+		constant.ChannelTypeOpenRouter,
+	} {
+		t.Run(strconv.Itoa(channelType), func(t *testing.T) {
+			setupOriginTaskDB(t)
+			previousMemoryCacheEnabled := common.MemoryCacheEnabled
+			common.MemoryCacheEnabled = false
+			t.Cleanup(func() { common.MemoryCacheEnabled = previousMemoryCacheEnabled })
+
+			channel := insertOriginTaskChannel(t, common.ChannelStatusEnabled)
+			channel.Type = channelType
+			require.NoError(t, model.DB.Save(channel).Error)
+
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"glm-5.3-flash-high"}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("resolved_task_model", "glm-5.3-flash-high")
+			service.GetChannelConstraints(c).AddPin(dto.ChannelPin{
+				ChannelId: channel.Id,
+				Source:    dto.PinSourceToken,
+				Rank:      dto.PinRankToken,
+				RetryMode: dto.PinRetrySingleAttempt,
+			})
+
+			Distribute()(c)
+
+			assert.False(t, c.IsAborted())
+			assert.Equal(t, channel.Id, common.GetContextKeyInt(c, constant.ContextKeyChannelId))
+		})
+	}
+}
+
 func TestApplyChannelPinLocksOnlySameChannelRetry(t *testing.T) {
 	setupOriginTaskDB(t)
 	channel := insertOriginTaskChannel(t, common.ChannelStatusEnabled)

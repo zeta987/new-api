@@ -58,6 +58,34 @@ func TestOpenAIChatBareGLMPreservesExplicitReasoningEffort(t *testing.T) {
 	assert.Equal(t, "high", info.ReasoningEffort)
 }
 
+func TestOpenAIChatGLMConversionLeavesOtherModelsAndAzureUnchanged(t *testing.T) {
+	tests := []struct {
+		name        string
+		channelType int
+		model       string
+	}{
+		{name: "non GLM OpenAI model", channelType: constant.ChannelTypeOpenAI, model: "custom-model"},
+		{name: "Azure GLM alias", channelType: constant.ChannelTypeAzure, model: "glm-5.3-flash-high"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := &dto.GeneralOpenAIRequest{Model: testCase.model, ReasoningEffort: "medium"}
+			info := openAIGLMRelayInfo(testCase.model, testCase.model)
+			info.ChannelType = testCase.channelType
+
+			converted, err := (&Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+			require.NoError(t, err)
+			got, ok := converted.(*dto.GeneralOpenAIRequest)
+			require.True(t, ok)
+
+			assert.Equal(t, testCase.model, got.Model)
+			assert.Equal(t, "medium", got.ReasoningEffort)
+			assert.Empty(t, info.ReasoningEffort)
+		})
+	}
+}
+
 func TestOpenAIResponsesDoesNotConvertGLMAlias(t *testing.T) {
 	alias := "glm-5.3-flash-high"
 	request := dto.OpenAIResponsesRequest{Model: alias}

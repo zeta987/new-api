@@ -135,9 +135,9 @@ func resolveGLMReasoningEffort(info *relaycommon.RelayInfo, upstreamModel string
 		return baseModel, effort, ok
 	}
 
-	originBase, originEffort, originOK := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
-	if originOK && originBase == upstreamModel {
-		return originBase, originEffort, true
+	_, originEffort, originOK := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+	if originOK {
+		return upstreamModel, originEffort, true
 	}
 	return upstreamModel, "", false
 }

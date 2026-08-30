@@ -58,10 +58,10 @@ func TestGLM53FlashResponsesAliasWritesReasoningEffort(t *testing.T) {
 }
 
 func TestGLM53FlashResponsesRecoversAliasAfterBaseMapping(t *testing.T) {
-	request := dto.OpenAIResponsesRequest{Model: "glm-5.3-flash"}
+	request := dto.OpenAIResponsesRequest{Model: "glm-5.3"}
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "glm-5.3-flash-max",
-		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "glm-5.3-flash"},
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "glm-5.3"},
 	}
 
 	converted, err := (&zhipu_4v.Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, request)
@@ -69,7 +69,7 @@ func TestGLM53FlashResponsesRecoversAliasAfterBaseMapping(t *testing.T) {
 	got, ok := converted.(dto.OpenAIResponsesRequest)
 	require.True(t, ok)
 
-	assert.Equal(t, "glm-5.3-flash", got.Model)
+	assert.Equal(t, "glm-5.3", got.Model)
 	require.NotNil(t, got.Reasoning)
 	assert.Equal(t, "max", got.Reasoning.Effort)
 	assert.Equal(t, "max", info.ReasoningEffort)
