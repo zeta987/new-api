@@ -19,6 +19,8 @@ func TestFilterCandidateIDs(t *testing.T) {
 	ordinary := &Channel{Id: 900003, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled}
 	kling := &Channel{Id: 900004, Type: constant.ChannelTypeKling, Status: common.ChannelStatusEnabled}
 	jimeng := &Channel{Id: 900005, Type: constant.ChannelTypeJimeng, Status: common.ChannelStatusEnabled}
+	zhipuV3 := &Channel{Id: 900006, Type: constant.ChannelTypeZhipu, Status: common.ChannelStatusEnabled}
+	zhipuV4 := &Channel{Id: 900007, Type: constant.ChannelTypeZhipu_v4, Status: common.ChannelStatusEnabled}
 	matchingCustom := &Channel{Id: 900010, Type: constant.ChannelTypeAdvancedCustom, Status: common.ChannelStatusEnabled}
 	matchingCustom.SetOtherSettings(kitdto.ChannelOtherSettings{
 		AdvancedCustom: &kitdto.AdvancedCustomConfig{
@@ -40,6 +42,10 @@ func TestFilterCandidateIDs(t *testing.T) {
 
 	pathFilter := dto.ChannelFilter{Kind: dto.FilterRequestPath, RequestPath: "/v1/chat/completions"}
 	emptyPathFilter := dto.ChannelFilter{Kind: dto.FilterRequestPath, RequestPath: ""}
+	zhipuV4Filter := dto.ChannelFilter{
+		Kind:                dto.FilterAllowedChannelTypes,
+		AllowedChannelTypes: []int{constant.ChannelTypeZhipu_v4},
+	}
 
 	tests := []struct {
 		name      string
@@ -101,6 +107,21 @@ func TestFilterCandidateIDs(t *testing.T) {
 			wantKept:  []int{900004},
 		},
 		{
+			name:      "allowed types keep v4 and reject v3",
+			ids:       []int{900006, 900007},
+			modelName: "glm-5.3-high",
+			filters:   []dto.ChannelFilter{zhipuV4Filter},
+			wantKept:  []int{900007},
+		},
+		{
+			name:      "allowed types fail closed for missing cache entry",
+			ids:       []int{999999},
+			modelName: "glm-5.3-high",
+			filters:   []dto.ChannelFilter{zhipuV4Filter},
+			wantKept:  []int{},
+			wantEmpty: dto.FilterAllowedChannelTypes,
+		},
+		{
 			name:      "empty request path is a passthrough including missing ids",
 			ids:       []int{900003, 900010, 999999},
 			modelName: "gpt-4",
@@ -155,6 +176,8 @@ func TestFilterCandidateIDs(t *testing.T) {
 		900003: ordinary,
 		900004: kling,
 		900005: jimeng,
+		900006: zhipuV3,
+		900007: zhipuV4,
 		900010: matchingCustom,
 		900011: otherCustom,
 	}
@@ -215,4 +238,17 @@ func TestChannelSatisfiesFilters(t *testing.T) {
 	}})
 	assert.False(t, ok)
 	assert.Equal(t, dto.FilterRequestPath, kind)
+}
+
+func TestChannelSatisfiesFiltersRestrictsPinnedGLMAliasToZhipuV4(t *testing.T) {
+	zhipuV3 := &Channel{Id: 1, Type: constant.ChannelTypeZhipu}
+	zhipuV4 := &Channel{Id: 2, Type: constant.ChannelTypeZhipu_v4}
+
+	ok, kind := ChannelSatisfiesFilters(zhipuV4, "glm-5.3-high", nil)
+	require.True(t, ok)
+	assert.Empty(t, kind)
+
+	ok, kind = ChannelSatisfiesFilters(zhipuV3, "glm-5.3-high", nil)
+	assert.False(t, ok)
+	assert.Equal(t, dto.FilterAllowedChannelTypes, kind)
 }
