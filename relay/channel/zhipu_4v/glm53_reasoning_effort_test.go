@@ -119,7 +119,7 @@ func TestGLMOriginAliasRecoveryRequiresMatchingBaseModel(t *testing.T) {
 }
 
 func TestGLM53InvalidAliasesRemainUnchanged(t *testing.T) {
-	for _, model := range []string{"glm-5.3-none", "glm-5.3-xhigh", "glm-5.3-max-extra", "GLM-5.3-high"} {
+	for _, model := range []string{"glm-low", "glm--low", "GLM-5.3-high", "custom-glm-5.3-high"} {
 		t.Run(model, func(t *testing.T) {
 			request := &dto.GeneralOpenAIRequest{Model: model, ReasoningEffort: "high"}
 			info := &relaycommon.RelayInfo{
@@ -139,19 +139,19 @@ func TestGLM53InvalidAliasesRemainUnchanged(t *testing.T) {
 	}
 }
 
-func TestZhipu4VModelListIncludesGLM53AliasesOnly(t *testing.T) {
+func TestZhipu4VModelListIncludesGLM53FlashAliases(t *testing.T) {
 	modelList := (&zhipu_4v.Adaptor{}).GetModelList()
-	for _, model := range []string{"glm-5.3", "glm-5.3-low", "glm-5.3-high", "glm-5.3-max"} {
+	for _, model := range []string{"glm-5.3", "glm-5.3-low", "glm-5.3-high", "glm-5.3-max", "glm-5.3-flash", "glm-5.3-flash-low", "glm-5.3-flash-high", "glm-5.3-flash-max"} {
 		assert.Contains(t, modelList, model)
 	}
-	for _, model := range []string{"glm-5.3-none", "glm-5.3-xhigh", "glm-5.3-max-extra"} {
+	for _, model := range []string{"glm-5.3-max-extra", "glm-5.3-flash-fast"} {
 		assert.NotContains(t, modelList, model)
 	}
 }
 
 func TestZhipuV3ModelListExcludesGLM53Models(t *testing.T) {
 	modelList := (&zhipu.Adaptor{}).GetModelList()
-	for _, model := range []string{"glm-5.3", "glm-5.3-low", "glm-5.3-high", "glm-5.3-max"} {
+	for _, model := range []string{"glm-5.3", "glm-5.3-low", "glm-5.3-high", "glm-5.3-max", "glm-5.3-flash", "glm-5.3-flash-low", "glm-5.3-flash-high", "glm-5.3-flash-max"} {
 		assert.NotContains(t, modelList, model)
 	}
 }

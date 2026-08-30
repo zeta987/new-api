@@ -137,8 +137,8 @@ func TestGLM52RecoversOriginAliasOnlyForBaseMappedUpstreamModel(t *testing.T) {
 	})
 }
 
-func TestGLM52InvalidAliasesRemainUnchanged(t *testing.T) {
-	for _, model := range []string{"glm-5.2-low", "glm-5.2-xhigh", "glm-5.2-max-extra", "glm-5.1-high", "GLM-5.2-high"} {
+func TestGLMMalformedAliasesRemainUnchanged(t *testing.T) {
+	for _, model := range []string{"glm-low", "glm--low", "GLM-5.2-high", "custom-glm-5.2-high"} {
 		t.Run(model, func(t *testing.T) {
 			request := &dto.GeneralOpenAIRequest{Model: model}
 			info := &relaycommon.RelayInfo{
@@ -159,8 +159,8 @@ func TestGLM52InvalidAliasesRemainUnchanged(t *testing.T) {
 	}
 }
 
-func TestGLM52ZhipuV4OmitsReasoningEffortForNonGLMAndInvalidModels(t *testing.T) {
-	for _, model := range []string{"glm-4.7", "glm-5.2-low", "custom-model"} {
+func TestGLM52ZhipuV4OmitsReasoningEffortForNonGLMModels(t *testing.T) {
+	for _, model := range []string{"custom-model", "GLM-5.2", "custom-glm-5.2"} {
 		t.Run(model, func(t *testing.T) {
 			request := &dto.GeneralOpenAIRequest{Model: model, ReasoningEffort: "high"}
 			info := &relaycommon.RelayInfo{
@@ -190,10 +190,10 @@ func TestGLM52ZhipuV4ClearsReusedReasoningEffortMetadata(t *testing.T) {
 	assert.Equal(t, "max", requireZhipuRequest(t, converted).ReasoningEffort)
 	require.Equal(t, "max", info.ReasoningEffort)
 
-	info.OriginModelName = "glm-4.7"
-	info.UpstreamModelName = "glm-4.7"
+	info.OriginModelName = "custom-model"
+	info.UpstreamModelName = "custom-model"
 	converted, err = (&zhipu_4v.Adaptor{}).ConvertOpenAIRequest(nil, info, &dto.GeneralOpenAIRequest{
-		Model:           "glm-4.7",
+		Model:           "custom-model",
 		ReasoningEffort: "high",
 	})
 	require.NoError(t, err)
@@ -201,7 +201,7 @@ func TestGLM52ZhipuV4ClearsReusedReasoningEffortMetadata(t *testing.T) {
 
 	assert.Empty(t, got.ReasoningEffort)
 	assert.Empty(t, info.ReasoningEffort)
-	assert.JSONEq(t, `{"model":"glm-4.7","stop":null}`, marshalRequest(t, got))
+	assert.JSONEq(t, `{"model":"custom-model","stop":null}`, marshalRequest(t, got))
 }
 
 func TestZhipu4VModelListIncludesGLM52AliasesOnly(t *testing.T) {
