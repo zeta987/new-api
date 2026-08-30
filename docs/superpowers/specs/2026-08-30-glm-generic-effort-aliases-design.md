@@ -230,6 +230,11 @@ pass-through is enabled or Chat-Completions-via-Responses is configured. Bare
 GLM models and non-GLM requests retain their existing pass-through and bridge
 behavior.
 
+Zhipu V4 Responses aliases likewise force Responses adaptor conversion when
+global or channel body pass-through is configured; otherwise the raw alias
+would reach upstream without `reasoning.effort`. Bare Responses models retain
+their configured pass-through behavior.
+
 ## OpenRouter strategy
 
 OpenRouter receives no new GLM conversion code in its adaptor. Shared routing
