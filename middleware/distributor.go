@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -43,6 +44,12 @@ func Distribute() func(c *gin.Context) {
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
+		}
+		if allowedTypes, ok := glmReasoningAllowedChannelTypes(c.Request.URL.Path, modelRequest.Model); ok {
+			constraints.AddFilter(taskdto.ChannelFilter{
+				Kind:                taskdto.FilterAllowedChannelTypes,
+				AllowedChannelTypes: allowedTypes,
+			})
 		}
 		if pin, found, overridden := constraints.ResolvedPin(); found {
 			for _, lost := range overridden {
@@ -209,6 +216,23 @@ func tokenAllowsModel(tokenModelLimit map[string]bool, modelName string) bool {
 		}
 	}
 	return false
+}
+
+func glmReasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
+	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(modelName); !ok {
+		return nil, false
+	}
+	if requestPath == "/v1/chat/completions" || strings.HasPrefix(requestPath, "/pg/chat/completions") {
+		return []int{
+			constant.ChannelTypeZhipu_v4,
+			constant.ChannelTypeOpenAI,
+			constant.ChannelTypeOpenRouter,
+		}, true
+	}
+	if requestPath == "/v1/responses" {
+		return []int{constant.ChannelTypeZhipu_v4}, true
+	}
+	return []int{}, true
 }
 
 func channelMatchesExpectedTaskPlugin(c *gin.Context, channel *model.Channel, expected string) bool {

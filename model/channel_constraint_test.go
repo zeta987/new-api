@@ -244,11 +244,19 @@ func TestChannelSatisfiesFiltersRestrictsPinnedGLMAliasToZhipuV4(t *testing.T) {
 	zhipuV3 := &Channel{Id: 1, Type: constant.ChannelTypeZhipu}
 	zhipuV4 := &Channel{Id: 2, Type: constant.ChannelTypeZhipu_v4}
 
-	ok, kind := ChannelSatisfiesFilters(zhipuV4, "glm-5.3-high", nil)
+	ok, kind := ChannelSatisfiesFilters(zhipuV4, "glm-5.3-high", glmZhipuV4Filters())
 	require.True(t, ok)
 	assert.Empty(t, kind)
 
-	ok, kind = ChannelSatisfiesFilters(zhipuV3, "glm-5.3-high", nil)
+	ok, kind = ChannelSatisfiesFilters(zhipuV3, "glm-5.3-high", glmZhipuV4Filters())
 	assert.False(t, ok)
 	assert.Equal(t, dto.FilterAllowedChannelTypes, kind)
+}
+
+func TestChannelSatisfiesFiltersDoesNotInventGLMChannelPolicy(t *testing.T) {
+	openAI := &Channel{Id: 1, Type: constant.ChannelTypeOpenAI}
+
+	ok, kind := ChannelSatisfiesFilters(openAI, "glm-5.3-flash-high", nil)
+	require.True(t, ok)
+	assert.Empty(t, kind)
 }

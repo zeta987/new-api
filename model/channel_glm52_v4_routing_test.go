@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,11 +58,11 @@ func TestGLM52AliasesRequireZhipuV4Channels(t *testing.T) {
 			}
 
 			for _, alias := range []string{"glm-5.2-none", "glm-5.2-high", "glm-5.2-max"} {
-				got, err := GetRandomSatisfiedChannel("default", alias, 0, nil)
+				got, err := GetRandomSatisfiedChannel("default", alias, 0, glmZhipuV4Filters())
 				require.NoError(t, err)
 				require.NotNil(t, got)
 				assert.Equal(t, v4.Id, got.Id)
-				assert.False(t, IsChannelEnabledForGroupModel("default", alias, v3.Id))
+				assert.True(t, IsChannelEnabledForGroupModel("default", alias, v3.Id))
 				assert.True(t, IsChannelEnabledForGroupModel("default", alias, v4.Id))
 			}
 
@@ -120,11 +121,11 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, nil)
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, glmZhipuV4Filters())
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, v4Base.Id, got.Id)
-			assert.False(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v3Exact.Id))
+			assert.True(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v3Exact.Id))
 			assert.True(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v4Base.Id))
 
 			clearGLMRoutingTables(t)
@@ -134,10 +135,10 @@ func TestGLM52AliasesRejectV3ExactAndBaseOnlyChannels(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err = GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, nil)
+			got, err = GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, glmZhipuV4Filters())
 			require.NoError(t, err)
 			assert.Nil(t, got)
-			assert.False(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v3Exact.Id))
+			assert.True(t, IsChannelEnabledForGroupModel("default", "glm-5.2-high", v3Exact.Id))
 		})
 	}
 }
@@ -189,7 +190,7 @@ func TestGLM52AliasRetryUsesNextZhipuV4Priority(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 1, nil)
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 1, glmZhipuV4Filters())
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, lowPriorityChannel.Id, got.Id)
@@ -244,12 +245,19 @@ func TestGLM52ExactZhipuV4AliasPrecedesBaseCandidate(t *testing.T) {
 				InitChannelCache()
 			}
 
-			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, nil)
+			got, err := GetRandomSatisfiedChannel("default", "glm-5.2-high", 0, glmZhipuV4Filters())
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, exactChannel.Id, got.Id)
 		})
 	}
+}
+
+func glmZhipuV4Filters() []dto.ChannelFilter {
+	return []dto.ChannelFilter{{
+		Kind:                dto.FilterAllowedChannelTypes,
+		AllowedChannelTypes: []int{constant.ChannelTypeZhipu_v4},
+	}}
 }
 
 func clearGLMRoutingTables(t *testing.T) {
