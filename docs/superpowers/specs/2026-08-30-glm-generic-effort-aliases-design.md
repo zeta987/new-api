@@ -56,7 +56,9 @@ add OpenAI Responses conversion.
 
 The OpenRouter path covers Chat Completions only and does not add GLM-specific
 effort conversion to the OpenRouter adaptor. It depends on administrator-owned
-model mapping and parameter-override configuration.
+model mapping and parameter-override configuration. OpenAI Responses, Claude,
+Gemini, embeddings, images, and other relay formats do not gain GLM alias
+support through either the OpenAI or OpenRouter channel type.
 
 This feature does not guess arbitrary trailing words as efforts, modify
 sampling parameters, force `thinking.type`, change default effort when no
@@ -75,9 +77,14 @@ func IsGLMReasoningEffortModel(modelName string) bool
 
 The implementation no longer maps exact base models to effort lists. It first
 removes one recognized final effort suffix, then validates the remaining name
-with one lexical rule: it must start with lowercase `glm-` and contain at least
-one character after that prefix. `IsGLMReasoningEffortModel` exposes that same
-predicate. The recognized vocabulary is:
+with a lexical base predicate: it must start with lowercase `glm-`, contain at
+least one character after that prefix, not begin its remainder with another
+hyphen, and not itself end in a recognized effort segment.
+`IsGLMReasoningEffortModel` means exactly "this is a syntactically valid GLM
+base model name" and exposes that predicate. It returns false for validated
+aliases. A successful `ParseGLMReasoningEffortSuffix` result and a true
+`IsGLMReasoningEffortModel` result are therefore mutually exclusive for the
+same input. The recognized vocabulary is:
 
 ```text
 none, minimal, low, medium, high, xhigh, max
@@ -92,6 +99,8 @@ Only the final segment is interpreted. Examples:
 | `glm-5.3-flash-max` | `glm-5.3-flash` | `max` | yes |
 | `glm-5.3-flash` | unchanged | empty | no |
 | `glm-5.3-flash-fast` | unchanged | empty | no |
+| `glm-low` | unchanged | empty | no |
+| `glm--low` | unchanged | empty | no |
 | `custom-glm-5.3-high` | unchanged | empty | no |
 | `GLM-5.3-high` | unchanged | empty | no |
 
@@ -100,7 +109,8 @@ what removes the per-base code update. Provider documentation and upstream
 validation remain authoritative for whether a particular base model accepts a
 particular recognized effort. Current first-class regression tests cover
 GLM-5.2's released aliases and GLM-5.3 plus GLM-5.3-Flash with `low`, `high`,
-and `max`.
+and `max`. Predicate tests separately prove that bare bases are true while
+valid aliases, `glm-low`, and `glm--low` are false.
 
 ## Matching, pricing, and channel selection
 
@@ -120,6 +130,9 @@ rc.27 centralizes channel constraints through
 kind `FilterAllowedChannelTypes` and an `AllowedChannelTypes []int` field on
 `dto.ChannelFilter`. After the distributor parses a validated GLM effort
 alias, it adds one such filter containing the three supported channel types.
+Add the new kind to `filterEvalOrder` so every selection path evaluates it in
+the same position. Evaluation fails closed when the filter is present but the
+candidate channel ID is missing or cannot be resolved to an allowed type.
 This replaces separate GLM checks in database selection, memory-cache
 selection, affinity, and pinned-channel paths. A GLM effort alias may select
 only:
@@ -130,7 +143,16 @@ only:
 
 Legacy Zhipu V3 and unrelated channel types remain ineligible. Database and
 cache selection must consume the same ordered candidates and the same filter
-set.
+set. The distributor derives the allowed set from the incoming relay format:
+
+- Chat Completions allows Zhipu V4, OpenAI, and OpenRouter;
+- Responses allows Zhipu V4 only;
+- Claude, Gemini, embeddings, images, and every other relay format reject the
+  alias before channel selection.
+
+This format-aware list prevents an OpenAI `/v1/responses` request from losing
+its suffix after base-model mapping and keeps the two third-party strategies
+confined to the user-requested Chat path.
 
 ## Alias normalization and model mapping
 
@@ -138,6 +160,12 @@ After a channel is selected and before its model-mapping chain runs, resolve a
 validated GLM alias once. Preserve `RelayInfo.OriginModelName` exactly for
 conditions and logs, retain the effort in suffix metadata, and use the base
 model as the mapping source when no exact alias mapping exists.
+
+`ModelMappedHelper` first attempts an exact alias key. When that key is absent,
+it parses the validated GLM suffix and restarts the existing mapping chain from
+the base key, preserving the original alias and the current cycle-detection
+behavior. All mapping JSON decoding continues through `common.Unmarshal`;
+business code must not call `encoding/json.Unmarshal` directly.
 
 An explicit mapping for the complete alias remains authoritative. Otherwise,
 this configuration is sufficient for OpenRouter:
@@ -280,7 +308,10 @@ The reusable channel parameter override is:
 ```
 
 Setting the complete object gives suffix intent precedence over any client
-`enabled`, `max_tokens`, or conflicting effort. `original_model` remains the
+`enabled`, `max_tokens`, or conflicting effort. For example, a `-high` alias
+replaces `{ "enabled": false, "max_tokens": 0 }` with
+`{ "effort": "high" }` instead of merging contradictory controls.
+`original_model` remains the
 unmapped client alias, while `model` and `upstream_model` expose the mapped
 provider ID. The existing override audit and reasoning-effort synchronization
 record the final applied value.
@@ -292,8 +323,8 @@ Malformed or differently cased GLM names remain unchanged. A recognized
 effort that an upstream model does not support is forwarded as requested and
 the upstream provider remains responsible for rejecting or normalizing it.
 
-Failure to configure the OpenRouter model mapping can leave a plain GLM base
-name that OpenRouter does not recognize. Failure to configure the parameter
+Failure to configure the OpenRouter model mapping leaves the complete client
+alias in the outgoing request, which OpenRouter does not recognize. Failure to configure the parameter
 override can produce a valid model request without the selected effort. Both
 configuration requirements are part of the OpenRouter interface and receive
 tests against the example configuration.
@@ -309,12 +340,15 @@ Tests are written before production changes and cover:
 
 1. Relaykit parser positives for GLM-5.2, GLM-5.3,
    GLM-5.3-Flash, and a future-shaped GLM base; negatives for bare models,
-   unknown suffixes, embedded `glm`, case changes, and extra trailing text.
+   unknown suffixes, embedded `glm`, `glm-low`, `glm--low`, case changes, and
+   extra trailing text.
 2. Exact alias, existing wildcard, and base fallback candidate order.
 3. Pricing normalization with exact-alias precedence and base fallback.
 4. Database, memory-cache, affinity, and pinned-channel selection through
    rc.27's `ChannelSatisfiesFilters` seam for Zhipu V4, OpenAI, and OpenRouter,
-   plus rejection of Zhipu V3 and an unrelated channel type.
+   plus rejection of Zhipu V3 and an unrelated channel type. Format cases prove
+   Chat allows all three, Responses allows only Zhipu V4, and OpenAI Responses,
+   Claude, Gemini, and unrelated relay formats reject the alias.
 5. Model mapping from a base key to `z-ai/glm-5.3-flash`, preservation of an
    exact alias mapping, preservation of `OriginModelName`, and cycle detection.
 6. Zhipu V4 Chat serialization with top-level `reasoning_effort`, suffix

@@ -127,7 +127,7 @@ the later GLM topic branch, where it receives independent tests and review.
 
 rc.27 adds `TaskPlugin` to GORM `AutoMigrate`. The resulting table contains a
 surrogate key, unique `(key, version)` index, active/enabled state, source text,
-source hash, timestamps, and remarks. This is an additive schema change, but it
+source hash, one creation timestamp, and remarks. This is an additive schema change, but it
 still requires SQLite, MySQL, and PostgreSQL migration verification under the
 repository release gate.
 
