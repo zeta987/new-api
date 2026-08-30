@@ -12,8 +12,17 @@ var (
 )
 
 var (
+	IsClaudeEffortLevel                       = kitreasoning.IsClaudeEffortLevel
 	TrimEffortSuffix                          = kitreasoning.TrimEffortSuffix
+	IsClaudeAdaptiveThinkingModel             = kitreasoning.IsClaudeAdaptiveThinkingModel
+	IsClaudePost46AdaptiveThinkingModel       = kitreasoning.IsClaudePost46AdaptiveThinkingModel
 	TrimEffortSuffixWithSuffixes              = kitreasoning.TrimEffortSuffixWithSuffixes
 	ParseOpenAIReasoningEffortFromModelSuffix = kitreasoning.ParseOpenAIReasoningEffortFromModelSuffix
+	ParseOpenAIReasoningModelSuffix           = kitreasoning.ParseOpenAIReasoningModelSuffix
+	GPT56ReasoningWildcardModel               = kitreasoning.GPT56ReasoningWildcardModel
+	IsGPT56ReasoningWildcard                  = kitreasoning.IsGPT56ReasoningWildcard
+	ParseGPT56ReasoningModelSuffix            = kitreasoning.ParseGPT56ReasoningModelSuffix
+	ParseGLMReasoningEffortSuffix             = kitreasoning.ParseGLMReasoningEffortSuffix
+	IsGLMReasoningEffortModel                 = kitreasoning.IsGLMReasoningEffortModel
 	ParseDeepSeekV4ThinkingSuffix             = kitreasoning.ParseDeepSeekV4ThinkingSuffix
 )

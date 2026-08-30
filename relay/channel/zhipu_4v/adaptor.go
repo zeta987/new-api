@@ -14,6 +14,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
@@ -89,10 +90,53 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
+	applyGLMReasoningEffort(info, request)
 	if lo.FromPtrOr(request.TopP, 0) >= 1 {
 		request.TopP = lo.ToPtr(0.99)
 	}
 	return requestOpenAI2Zhipu(*request), nil
+}
+
+func applyGLMReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+	if info != nil {
+		info.ReasoningEffort = ""
+	}
+
+	upstreamModel := request.Model
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName != "" {
+		upstreamModel = info.UpstreamModelName
+	}
+
+	baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(upstreamModel)
+	if !ok && info != nil && reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		// Model matching already replaced the alias with its base model, so the
+		// requested effort is only recoverable from the client model name. A
+		// recovered alias of another base model documents a different effort
+		// set and must not be forwarded.
+		originBase, originEffort, originOk := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+		if originOk && originBase == upstreamModel {
+			baseModel, effort, ok = originBase, originEffort, true
+		}
+	}
+
+	if ok {
+		request.Model = baseModel
+		request.ReasoningEffort = effort
+		if info != nil && info.ChannelMeta != nil {
+			info.UpstreamModelName = baseModel
+		}
+		if info != nil {
+			info.ReasoningEffort = effort
+		}
+		return
+	}
+
+	if reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		request.Model = upstreamModel
+		if info != nil {
+			info.ReasoningEffort = request.ReasoningEffort
+		}
+	}
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {

@@ -9,13 +9,15 @@ import (
 
 var filterEvalOrder = []dto.ChannelFilterKind{
 	dto.FilterRequestPath,
+	dto.FilterAllowedChannelTypes,
 	dto.FilterTaskPluginIdentity,
 }
 
 // ChannelSatisfiesFilters reports whether ch passes every filter.
-// On false, it returns the kind of the first violated filter (request_path
-// then task_plugin_identity) for error attribution.
+// On false, it returns the kind of the first violated filter for error
+// attribution.
 func ChannelSatisfiesFilters(ch *Channel, modelName string, filters []dto.ChannelFilter) (bool, dto.ChannelFilterKind) {
+	filters = ensureModelChannelFilters(modelName, filters)
 	if ch == nil {
 		return false, ""
 	}
@@ -40,6 +42,7 @@ func filterCandidateIDs(ids []int, modelName string, filters []dto.ChannelFilter
 	if len(ids) == 0 {
 		return ids, ""
 	}
+	filters = ensureModelChannelFilters(modelName, filters)
 	kept = ids
 	for _, kind := range filterEvalOrder {
 		kindFilters := filtersByKind(filters, kind)
@@ -97,6 +100,8 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 		}
 		config := ch.GetOtherSettings().AdvancedCustom
 		return config != nil && config.SupportsPathForModel(filter.RequestPath, modelName)
+	case dto.FilterAllowedChannelTypes:
+		return slices.Contains(filter.AllowedChannelTypes, ch.Type)
 	case dto.FilterTaskPluginIdentity:
 		if ch.Type == constant.ChannelTypeTaskPlugin {
 			return filter.TaskPluginKey != "" && ch.GetSetting().TaskPluginKey == filter.TaskPluginKey
@@ -105,4 +110,21 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 	default:
 		return true
 	}
+}
+
+func ensureModelChannelFilters(modelName string, filters []dto.ChannelFilter) []dto.ChannelFilter {
+	for _, filter := range filters {
+		if filter.Kind == dto.FilterAllowedChannelTypes {
+			return filters
+		}
+	}
+	if !requiresZhipuV4Channel(modelName) {
+		return filters
+	}
+
+	withModelFilter := slices.Clone(filters)
+	return append(withModelFilter, dto.ChannelFilter{
+		Kind:                dto.FilterAllowedChannelTypes,
+		AllowedChannelTypes: []int{constant.ChannelTypeZhipu_v4},
+	})
 }

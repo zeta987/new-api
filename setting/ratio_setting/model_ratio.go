@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -135,6 +136,12 @@ var defaultModelRatio = map[string]float64{
 	"claude-3-7-sonnet-20250219-thinking":       1.5,
 	"claude-sonnet-4-20250514":                  1.5,
 	"claude-sonnet-4-5-20250929":                1.5,
+	"claude-sonnet-5":                           1.5,
+	"claude-sonnet-5-max":                       1.5,
+	"claude-sonnet-5-xhigh":                     1.5,
+	"claude-sonnet-5-high":                      1.5,
+	"claude-sonnet-5-medium":                    1.5,
+	"claude-sonnet-5-low":                       1.5,
 	"claude-opus-4-5-20251101":                  2.5,
 	"claude-opus-4-6":                           2.5,
 	"claude-opus-4-6-max":                       2.5,
@@ -153,6 +160,18 @@ var defaultModelRatio = map[string]float64{
 	"claude-opus-4-8-high":                      2.5,
 	"claude-opus-4-8-medium":                    2.5,
 	"claude-opus-4-8-low":                       2.5,
+	"claude-opus-5":                             2.5,
+	"claude-opus-5-max":                         2.5,
+	"claude-opus-5-xhigh":                       2.5,
+	"claude-opus-5-high":                        2.5,
+	"claude-opus-5-medium":                      2.5,
+	"claude-opus-5-low":                         2.5,
+	"claude-fable-5":                            2.5,
+	"claude-fable-5-max":                        2.5,
+	"claude-fable-5-xhigh":                      2.5,
+	"claude-fable-5-high":                       2.5,
+	"claude-fable-5-medium":                     2.5,
+	"claude-fable-5-low":                        2.5,
 	"claude-3-opus-20240229":                    7.5, // $15 / 1M tokens
 	"claude-opus-4-20250514":                    7.5,
 	"claude-opus-4-1-20250805":                  7.5,
@@ -356,16 +375,69 @@ func UpdateModelPriceByJSONString(jsonStr string) error {
 	return types.LoadFromJsonStringWithCallback(modelPriceMap, jsonStr, InvalidateExposedDataCache)
 }
 
+// ModelPricingCandidates returns exact and terminal "-*" pricing keys from
+// most specific to least specific, followed by the existing normalized model
+// fallback. Runtime model names containing a literal wildcard are rejected.
+func ModelPricingCandidates(name string) []string {
+	if name == "" {
+		return nil
+	}
+	if strings.Contains(name, "*") {
+		if strings.Count(name, "*") == 1 && strings.HasSuffix(name, "-*") {
+			return []string{name}
+		}
+		return nil
+	}
+
+	names := []string{name}
+	normalizedName := FormatMatchingModelName(name)
+	if normalizedName != "" && normalizedName != name {
+		names = append(names, normalizedName)
+	}
+
+	candidates := make([]string, 0, 8)
+	seen := make(map[string]struct{}, 8)
+	for _, candidateName := range names {
+		if _, exists := seen[candidateName]; !exists {
+			seen[candidateName] = struct{}{}
+			candidates = append(candidates, candidateName)
+		}
+
+		remaining := candidateName
+		for {
+			separatorIndex := strings.LastIndex(remaining, "-")
+			if separatorIndex <= 0 {
+				break
+			}
+			wildcardKey := remaining[:separatorIndex+1] + "*"
+			if _, exists := seen[wildcardKey]; !exists {
+				seen[wildcardKey] = struct{}{}
+				candidates = append(candidates, wildcardKey)
+			}
+			remaining = remaining[:separatorIndex]
+		}
+	}
+	return candidates
+}
+
+func getModelPricingValue(settings *types.RWMap[string, float64], name string) (float64, bool) {
+	for _, candidate := range ModelPricingCandidates(name) {
+		if value, ok := settings.Get(candidate); ok {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
 // GetModelPrice 返回模型的价格，如果模型不存在则返回-1，false
 func GetModelPrice(name string, printErr bool) (float64, bool) {
-	name = FormatMatchingModelName(name)
-
-	if price, ok := modelPriceMap.Get(name); ok {
+	if price, ok := getModelPricingValue(modelPriceMap, name); ok {
 		return price, true
 	}
 
+	normalizedName := FormatMatchingModelName(name)
 	if printErr {
-		common.SysError("model price not found: " + name)
+		common.SysError("model price not found: " + normalizedName)
 	}
 	return -1, false
 }
@@ -383,13 +455,13 @@ func handleThinkingBudgetModel(name, prefix, wildcard string) string {
 }
 
 func GetModelRatio(name string) (float64, bool, string) {
-	name = FormatMatchingModelName(name)
+	normalizedName := FormatMatchingModelName(name)
 
-	ratio, ok := modelRatioMap.Get(name)
+	ratio, ok := getModelPricingValue(modelRatioMap, name)
 	if !ok {
-		return 37.5, operation_setting.SelfUseModeEnabled, name
+		return 37.5, operation_setting.SelfUseModeEnabled, normalizedName
 	}
-	return ratio, true, name
+	return ratio, true, normalizedName
 }
 
 func DefaultModelRatio2JSONString() string {
@@ -417,18 +489,18 @@ func UpdateCompletionRatioByJSONString(jsonStr string) error {
 }
 
 func GetCompletionRatio(name string) float64 {
-	name = FormatMatchingModelName(name)
+	normalizedName := FormatMatchingModelName(name)
 
-	if strings.Contains(name, "/") {
-		if ratio, ok := completionRatioMap.Get(name); ok {
+	if strings.Contains(normalizedName, "/") {
+		if ratio, ok := getModelPricingValue(completionRatioMap, name); ok {
 			return ratio
 		}
 	}
-	hardCodedRatio, contain := getHardcodedCompletionModelRatio(name)
-	if contain {
+	hardCodedRatio, locked := getHardcodedCompletionModelRatio(normalizedName)
+	if locked {
 		return hardCodedRatio
 	}
-	if ratio, ok := completionRatioMap.Get(name); ok {
+	if ratio, ok := getModelPricingValue(completionRatioMap, name); ok {
 		return ratio
 	}
 	return hardCodedRatio
@@ -440,10 +512,10 @@ type CompletionRatioInfo struct {
 }
 
 func GetCompletionRatioInfo(name string) CompletionRatioInfo {
-	name = FormatMatchingModelName(name)
+	normalizedName := FormatMatchingModelName(name)
 
-	if strings.Contains(name, "/") {
-		if ratio, ok := completionRatioMap.Get(name); ok {
+	if strings.Contains(normalizedName, "/") {
+		if ratio, ok := getModelPricingValue(completionRatioMap, name); ok {
 			return CompletionRatioInfo{
 				Ratio:  ratio,
 				Locked: false,
@@ -451,7 +523,7 @@ func GetCompletionRatioInfo(name string) CompletionRatioInfo {
 		}
 	}
 
-	hardCodedRatio, locked := getHardcodedCompletionModelRatio(name)
+	hardCodedRatio, locked := getHardcodedCompletionModelRatio(normalizedName)
 	if locked {
 		return CompletionRatioInfo{
 			Ratio:  hardCodedRatio,
@@ -459,7 +531,7 @@ func GetCompletionRatioInfo(name string) CompletionRatioInfo {
 		}
 	}
 
-	if ratio, ok := completionRatioMap.Get(name); ok {
+	if ratio, ok := getModelPricingValue(completionRatioMap, name); ok {
 		return CompletionRatioInfo{
 			Ratio:  ratio,
 			Locked: false,
@@ -522,7 +594,7 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 
 	if strings.Contains(name, "claude-3") {
 		return 5, true
-	} else if strings.Contains(name, "claude-sonnet-4") || strings.Contains(name, "claude-opus-4") || strings.Contains(name, "claude-haiku-4") {
+	} else if strings.Contains(name, "claude-sonnet-4") || strings.Contains(name, "claude-sonnet-5") || strings.Contains(name, "claude-opus-4") || strings.Contains(name, "claude-opus-5") || strings.Contains(name, "claude-haiku-4") {
 		return 5, true
 	}
 
@@ -604,30 +676,26 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 }
 
 func GetAudioRatio(name string) float64 {
-	name = FormatMatchingModelName(name)
-	if ratio, ok := audioRatioMap.Get(name); ok {
+	if ratio, ok := getModelPricingValue(audioRatioMap, name); ok {
 		return ratio
 	}
 	return 1
 }
 
 func GetAudioCompletionRatio(name string) float64 {
-	name = FormatMatchingModelName(name)
-	if ratio, ok := audioCompletionRatioMap.Get(name); ok {
+	if ratio, ok := getModelPricingValue(audioCompletionRatioMap, name); ok {
 		return ratio
 	}
 	return 1
 }
 
 func ContainsAudioRatio(name string) bool {
-	name = FormatMatchingModelName(name)
-	_, ok := audioRatioMap.Get(name)
+	_, ok := getModelPricingValue(audioRatioMap, name)
 	return ok
 }
 
 func ContainsAudioCompletionRatio(name string) bool {
-	name = FormatMatchingModelName(name)
-	_, ok := audioCompletionRatioMap.Get(name)
+	_, ok := getModelPricingValue(audioCompletionRatioMap, name)
 	return ok
 }
 
@@ -647,11 +715,11 @@ func ImageRatio2JSONString() string {
 }
 
 func UpdateImageRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonString(imageRatioMap, jsonStr)
+	return types.LoadFromJsonStringWithCallback(imageRatioMap, jsonStr, InvalidateExposedDataCache)
 }
 
 func GetImageRatio(name string) (float64, bool) {
-	ratio, ok := imageRatioMap.Get(name)
+	ratio, ok := getModelPricingValue(imageRatioMap, name)
 	if !ok {
 		return 1, false // Default to 1 if not found
 	}
@@ -700,6 +768,12 @@ func GetAudioCompletionRatioCopy() map[string]float64 {
 
 // 转换模型名，减少渠道必须配置各种带参数模型
 func FormatMatchingModelName(name string) string {
+	if baseModel, _, _, ok := reasoning.ParseGPT56ReasoningModelSuffix(name); ok {
+		name = baseModel
+	}
+	if baseModel, _, ok := reasoning.ParseGLMReasoningEffortSuffix(name); ok {
+		name = baseModel
+	}
 
 	if strings.HasPrefix(name, "gemini-2.5-flash-lite") {
 		name = handleThinkingBudgetModel(name, "gemini-2.5-flash-lite", "gemini-2.5-flash-lite-thinking-*")
@@ -707,6 +781,13 @@ func FormatMatchingModelName(name string) string {
 		name = handleThinkingBudgetModel(name, "gemini-2.5-flash", "gemini-2.5-flash-thinking-*")
 	} else if strings.HasPrefix(name, "gemini-2.5-pro") {
 		name = handleThinkingBudgetModel(name, "gemini-2.5-pro", "gemini-2.5-pro-thinking-*")
+	}
+
+	if name == "claude-sonnet-5" || strings.HasPrefix(name, "claude-sonnet-5-") {
+		name = "claude-sonnet-5"
+	}
+	if name == "claude-opus-5" || strings.HasPrefix(name, "claude-opus-5-") {
+		name = "claude-opus-5"
 	}
 
 	if strings.HasPrefix(name, "gpt-4-gizmo") {

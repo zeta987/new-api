@@ -1,15 +1,17 @@
 package oairesponses
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"context"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/claudeadaptive"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	relaymedia "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/media"
 	sharedclaude "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/shared/claude"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 )
 
 func convertOpenAIResponsesRequestToClaudeMessages(c context.Context, info convmeta.Meta, request any) (any, error) {
@@ -31,17 +33,22 @@ func OpenAIResponsesRequestToClaudeMessages(c context.Context, info convmeta.Met
 		return nil, err
 	}
 
+	opts := convmeta.OptionsOf(info)
 	claudeRequest := &dto.ClaudeRequest{
 		Model:       req.Model,
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
 		Stream:      req.Stream,
 	}
+	if !claudeadaptive.ApplyEffortSuffix(claudeRequest) &&
+		opts.Claude.ThinkingAdapterEnabled {
+		claudeadaptive.ApplyPost46ThinkingSuffix(claudeRequest)
+	}
 	if req.MaxOutputTokens != nil && *req.MaxOutputTokens > 0 {
 		claudeRequest.MaxTokens = kitutil.GetPointer(*req.MaxOutputTokens)
 	}
 	if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens == 0 {
-		if defaultMaxTokens, configured := convmeta.OptionsOf(info).Claude.DefaultMaxTokensFor(req.Model); configured {
+		if defaultMaxTokens, configured := opts.Claude.DefaultMaxTokensFor(req.Model); configured {
 			value := uint(defaultMaxTokens)
 			claudeRequest.MaxTokens = &value
 		}
@@ -63,6 +70,7 @@ func OpenAIResponsesRequestToClaudeMessages(c context.Context, info convmeta.Met
 		claudeRequest.ToolChoice = sharedclaude.MapOpenAIToolChoice(toolChoice, ParallelToolCalls(req.ParallelToolCalls))
 	}
 	applyResponsesReasoningToClaude(req, claudeRequest)
+	claudeadaptive.Normalize(claudeRequest)
 
 	systemMessages := make([]dto.ClaudeMediaMessage, 0)
 	if RawJSONPresent(req.Instructions) {
@@ -142,6 +150,12 @@ func responsesFunctionDeclarationsToClaudeTools(functions []dto.FunctionRequest)
 
 func applyResponsesReasoningToClaude(req *dto.OpenAIResponsesRequest, claudeRequest *dto.ClaudeRequest) {
 	effort := ReasoningEffort(req)
+	if reasoning.IsClaudePost46AdaptiveThinkingModel(claudeRequest.Model) {
+		if effort != "" {
+			claudeadaptive.SetEffort(claudeRequest, effort)
+		}
+		return
+	}
 	switch effort {
 	case "low":
 		claudeRequest.Thinking = &dto.Thinking{

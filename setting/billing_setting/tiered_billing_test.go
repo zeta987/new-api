@@ -5,12 +5,46 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGPT56TieredBillingWildcardUsesOneCandidate(t *testing.T) {
+	originalModes := lo.Assign(billingSetting.BillingMode)
+	originalExprs := lo.Assign(billingSetting.BillingExpr)
+	t.Cleanup(func() {
+		billingSetting.BillingMode = originalModes
+		billingSetting.BillingExpr = originalExprs
+	})
+
+	billingSetting.BillingMode = map[string]string{"gpt-5.6-*": BillingModeTieredExpr}
+	billingSetting.BillingExpr = map[string]string{"gpt-5.6-*": "p + c"}
+
+	assert.Equal(t, BillingModeTieredExpr, GetBillingMode("gpt-5.6-luna-pro-max"))
+	expr, ok := GetBillingExpr("gpt-5.6-luna-pro-max")
+	require.True(t, ok)
+	assert.Equal(t, "p + c", expr)
+}
+
+func TestGPT56TieredBillingDoesNotMixCandidateKeys(t *testing.T) {
+	originalModes := lo.Assign(billingSetting.BillingMode)
+	originalExprs := lo.Assign(billingSetting.BillingExpr)
+	t.Cleanup(func() {
+		billingSetting.BillingMode = originalModes
+		billingSetting.BillingExpr = originalExprs
+	})
+
+	billingSetting.BillingMode = map[string]string{"gpt-5.6-luna-*": BillingModeTieredExpr}
+	billingSetting.BillingExpr = map[string]string{"gpt-5.6-*": "p + c"}
+
+	assert.Equal(t, BillingModeTieredExpr, GetBillingMode("gpt-5.6-luna-pro-max"))
+	_, ok := GetBillingExpr("gpt-5.6-luna-pro-max")
+	assert.False(t, ok)
+}
 
 func TestSmokeTestTaskExprValidatesDeclaredUsageVectors(t *testing.T) {
 	videoSchema := map[string]jsplugin.UsageFieldSchema{
@@ -25,47 +59,13 @@ func TestSmokeTestTaskExprValidatesDeclaredUsageVectors(t *testing.T) {
 		expression    string
 		expectedError string
 	}{
-		{
-			name:       "declared numeric and enum facts",
-			schema:     videoSchema,
-			expression: `u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)`,
-		},
-		{
-			name:          "undeclared literal key",
-			schema:        videoSchema,
-			expression:    `tier("base", u("clips") * 0.1)`,
-			expectedError: `usage key "clips" is not declared`,
-		},
-		{
-			name:          "negative duration boundary",
-			schema:        videoSchema,
-			expression:    fmt.Sprintf(`u("seconds") == %d ? -1 : 0`, relaycommon.MaxTaskDurationSeconds),
-			expectedError: "result must be finite and non-negative",
-		},
-		{
-			name:          "negative count boundary",
-			schema:        map[string]jsplugin.UsageFieldSchema{"clips": {Type: "number", Unit: "count"}},
-			expression:    fmt.Sprintf(`u("clips") == %d ? -1 : 0`, dto.MaxImageN),
-			expectedError: "result must be finite and non-negative",
-		},
-		{
-			name:          "negative token boundary",
-			schema:        map[string]jsplugin.UsageFieldSchema{"tokens": {Type: "number", Unit: "token"}},
-			expression:    fmt.Sprintf(`u("tokens") == %d ? -1 : 0`, common.MaxQuota),
-			expectedError: "result must be finite and non-negative",
-		},
-		{
-			name:          "negative credit boundary",
-			schema:        map[string]jsplugin.UsageFieldSchema{"units": {Type: "number", Unit: "credit"}},
-			expression:    fmt.Sprintf(`u("units") == %d ? -1 : 0`, common.MaxQuota),
-			expectedError: "result must be finite and non-negative",
-		},
-		{
-			name:          "negative enum combination",
-			schema:        videoSchema,
-			expression:    `u("mode") == "pro" && u("quality") == "hd" ? -1 : 0`,
-			expectedError: "result must be finite and non-negative",
-		},
+		{name: "declared numeric and enum facts", schema: videoSchema, expression: `u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)`},
+		{name: "undeclared literal key", schema: videoSchema, expression: `tier("base", u("clips") * 0.1)`, expectedError: `usage key "clips" is not declared`},
+		{name: "negative duration boundary", schema: videoSchema, expression: fmt.Sprintf(`u("seconds") == %d ? -1 : 0`, relaycommon.MaxTaskDurationSeconds), expectedError: "result must be finite and non-negative"},
+		{name: "negative count boundary", schema: map[string]jsplugin.UsageFieldSchema{"clips": {Type: "number", Unit: "count"}}, expression: fmt.Sprintf(`u("clips") == %d ? -1 : 0`, dto.MaxImageN), expectedError: "result must be finite and non-negative"},
+		{name: "negative token boundary", schema: map[string]jsplugin.UsageFieldSchema{"tokens": {Type: "number", Unit: "token"}}, expression: fmt.Sprintf(`u("tokens") == %d ? -1 : 0`, common.MaxQuota), expectedError: "result must be finite and non-negative"},
+		{name: "negative credit boundary", schema: map[string]jsplugin.UsageFieldSchema{"units": {Type: "number", Unit: "credit"}}, expression: fmt.Sprintf(`u("units") == %d ? -1 : 0`, common.MaxQuota), expectedError: "result must be finite and non-negative"},
+		{name: "negative enum combination", schema: videoSchema, expression: `u("mode") == "pro" && u("quality") == "hd" ? -1 : 0`, expectedError: "result must be finite and non-negative"},
 	}
 
 	for _, testCase := range tests {
@@ -100,6 +100,5 @@ func TestSmokeTestExprRejectsTaskUsageWithoutSchema(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "mode")
 	assert.ErrorContains(t, err, "no task plugin usage schema")
-
 	require.NoError(t, SmokeTestExpr(`tier("base", p * 2 + c * 8)`))
 }
