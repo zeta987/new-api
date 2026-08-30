@@ -473,6 +473,32 @@ func TestDistributePinViolatingIdentityFilterErrors(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), string(dto.FilterTaskPluginIdentity))
 }
 
+func TestDistributeRejectsPinnedOpenAIResponsesGLMAlias(t *testing.T) {
+	require.NoError(t, appI18n.Init())
+	setupOriginTaskDB(t)
+	channel := insertOriginTaskChannel(t, common.ChannelStatusEnabled)
+	channel.Type = constant.ChannelTypeOpenAI
+	require.NoError(t, model.DB.Save(channel).Error)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"glm-5.3-flash-high"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("resolved_task_model", "glm-5.3-flash-high")
+	service.GetChannelConstraints(c).AddPin(dto.ChannelPin{
+		ChannelId: channel.Id,
+		Source:    dto.PinSourceToken,
+		Rank:      dto.PinRankToken,
+		RetryMode: dto.PinRetrySingleAttempt,
+	})
+
+	Distribute()(c)
+
+	assert.True(t, c.IsAborted())
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), string(dto.FilterAllowedChannelTypes))
+}
+
 func TestApplyChannelPinLocksOnlySameChannelRetry(t *testing.T) {
 	setupOriginTaskDB(t)
 	channel := insertOriginTaskChannel(t, common.ChannelStatusEnabled)
