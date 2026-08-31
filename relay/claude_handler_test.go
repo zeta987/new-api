@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -51,6 +52,7 @@ func TestClaudeHelperClearsTopPForSonnet46EffortSuffix(t *testing.T) {
 	common.SetContextKey(c, constant.ContextKeyOriginalModel, "claude-sonnet-4-6-high")
 
 	topP := 0.8
+	topK := 4
 	temperature := 0.7
 	maxTokens := uint(128)
 	request := &dto.ClaudeRequest{
@@ -59,6 +61,7 @@ func TestClaudeHelperClearsTopPForSonnet46EffortSuffix(t *testing.T) {
 		MaxTokens:   &maxTokens,
 		Temperature: &temperature,
 		TopP:        &topP,
+		TopK:        &topK,
 	}
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "claude-sonnet-4-6-high",
@@ -69,7 +72,21 @@ func TestClaudeHelperClearsTopPForSonnet46EffortSuffix(t *testing.T) {
 
 	relayErr := ClaudeHelper(c, info)
 	require.NotNil(t, relayErr)
-	result := <-upstreamResults
+	require.Equal(t, http.StatusBadRequest, relayErr.StatusCode)
+	require.Contains(t, relayErr.Error(), "test stop")
+
+	const upstreamWaitTimeout = 5 * time.Second
+	var result upstreamResult
+	select {
+	case result = <-upstreamResults:
+	case <-time.After(upstreamWaitTimeout):
+		require.FailNow(
+			t,
+			"timed out waiting for the upstream Claude request",
+			"timeout=%s",
+			upstreamWaitTimeout,
+		)
+	}
 	require.NoError(t, result.err)
 	assert.Equal(t, "claude-sonnet-4-6", result.request.Model)
 	require.NotNil(t, result.request.Thinking)
@@ -78,4 +95,6 @@ func TestClaudeHelperClearsTopPForSonnet46EffortSuffix(t *testing.T) {
 	require.NotNil(t, result.request.Temperature)
 	assert.Equal(t, 1.0, *result.request.Temperature)
 	assert.Nil(t, result.request.TopP)
+	require.NotNil(t, result.request.TopK)
+	assert.Equal(t, 4, *result.request.TopK)
 }
