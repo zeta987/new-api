@@ -65,6 +65,7 @@ const UsageLogsContext = createContext<UsageLogsContextValue | undefined>(
 
 export function UsageLogsProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
+  const accessToken = useAuthStore((state) => state.auth.accessToken)
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [userInfoDialogOpen, setUserInfoDialogOpen] = useState(false)
   const [affinityTarget, setAffinityTarget] =
@@ -83,13 +84,15 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
         .catch(() => undefined)
     }
     const unsubscribeBrowserEvents = subscribeUsageLogsChanged(refreshLogs)
+    if (!accessToken) return unsubscribeBrowserEvents
+
     const unsubscribeServerEvents = subscribeUsageLogStream(refreshLogs)
 
     return () => {
       unsubscribeBrowserEvents()
       unsubscribeServerEvents()
     }
-  }, [queryClient])
+  }, [accessToken, queryClient])
 
   return (
     <UsageLogsContext.Provider
