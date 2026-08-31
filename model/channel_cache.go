@@ -25,8 +25,8 @@ var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
 	if !common.MemoryCacheEnabled {
-		InvalidatePricingCache()
 		rebuildTaskAliasView()
+		InvalidatePricingCache()
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
@@ -96,12 +96,14 @@ func InitChannelCache() {
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channelSyncLock.Unlock()
-	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
+	// Lock ordering: rebuildTaskAliasView and InvalidatePricingCache run only
+	// after channelSyncLock is released. InvalidatePricingCache acquires
+	// updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
 	// loadPricingAdvancedCustomConfigs. channelSyncLock MUST be released before
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
-	InvalidatePricingCache()
 	rebuildTaskAliasView()
+	InvalidatePricingCache()
 	common.SysLog("channels synced from database")
 }
 

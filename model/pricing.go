@@ -421,24 +421,23 @@ func updatePricing() {
 			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
 		}
+		aliasTarget, aliasResolved := ResolveTaskModelAlias(pluginGeneration, model)
 		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
 			if expr, ok := billing_setting.GetBillingExpr(model); ok && strings.TrimSpace(expr) != "" {
 				pricing.BillingMode = billingMode
 				pricing.BillingExpr = expr
 			}
-		} else if target, resolved := ResolveTaskModelAlias(pluginGeneration, model); resolved && target.Declared != "" {
-			if tailMode := billing_setting.GetBillingMode(target.Declared); tailMode == "tiered_expr" {
-				if expr, ok := billing_setting.GetBillingExpr(target.Declared); ok && strings.TrimSpace(expr) != "" {
+		} else if aliasResolved && aliasTarget.Declared != "" {
+			if tailMode := billing_setting.GetBillingMode(aliasTarget.Declared); tailMode == "tiered_expr" {
+				if expr, ok := billing_setting.GetBillingExpr(aliasTarget.Declared); ok && strings.TrimSpace(expr) != "" {
 					pricing.BillingMode = tailMode
 					pricing.BillingExpr = expr
 				}
 			}
 		}
 		plugin, ok := pluginGeneration.GetByModel(model)
-		if !ok {
-			if target, resolved := ResolveTaskModelAlias(pluginGeneration, model); resolved {
-				plugin, ok = pluginGeneration.Get(target.PluginKey)
-			}
+		if !ok && aliasResolved {
+			plugin, ok = pluginGeneration.Get(aliasTarget.PluginKey)
 		}
 		if ok && plugin != nil && len(plugin.Meta.UsageSchema) > 0 {
 			pricing.BillingUsageSchema = make(map[string]jsplugin.UsageFieldSchema, len(plugin.Meta.UsageSchema))
