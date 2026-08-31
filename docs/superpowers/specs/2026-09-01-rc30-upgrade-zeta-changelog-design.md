@@ -4,14 +4,17 @@
 
 This change promotes the integrated self-use release from
 `v1.0.0-rc.29` to `v1.0.0-rc.30`, preserves every active customization,
-verifies the PostgreSQL migrations that appeared in rc.28 through rc.30,
+verifies every upstream schema change between production rc.26 and rc.30,
 and adds a repository-level `CHANGELOG-ZETA.md` covering ZETA-authored
 history from its first released customization through rc.30.
 
-Production currently remains on rc.27 according to the owner. Live Zeabur
-state must be checked again before any branch switch. The production switch
-requires the exact confirmation phrase `確認發布` after the release evidence
-and database backup status have been presented.
+A live Zeabur check on 2026-09-01 shows production running
+`release/v1.0.0-rc.26` at
+`c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7`, despite the earlier rc.27
+assumption. The deployment status is `RUNNING`, and the same rc.26 release ref
+exists on origin. This state must be checked again before any branch switch.
+The production switch requires the exact confirmation phrase `確認發布` after
+the release evidence and database backup status have been presented.
 
 ## Verified starting state
 
@@ -143,13 +146,23 @@ Every ledger row contains:
 
 Both dates are kept because carried commits can have an author date months
 before their release committer date. The displayed version comes from Git
-topology, never from a date guess.
+topology plus recorded release-branch epoch boundaries, never from a date
+guess.
 
 ### Selection and assignment
 
 Build the ledger from the union of local and origin `release/**`, `dev/**`,
 `feat/**`, and `fix/**` refs. Exclude `main`, `pr/**`, and every exact object
-reachable from verified upstream refs or upstream tags.
+reachable from all verified `refs/tags/**`, `refs/remotes/upstream/HEAD`, and
+`refs/remotes/upstream/main`. Other upstream remote-tracking branches are
+optional evidence and enter the exclusion set only when their exact names and
+SHAs are recorded in the final reference block. Include
+`refs/remotes/origin/main` in the upstream exclusion set only after a live
+comparison proves that it matches the upstream mirror; it matched the rc.30
+tag at
+`27ff6a8767e728f879d52770c273d4f73214a430` during this review. Before final
+generation, record the local `main`, live origin `main`, and target upstream
+tag SHAs, then fetch only the required stale remote-tracking ref.
 
 Assign a commit with this precedence:
 
@@ -164,10 +177,27 @@ Assign a commit with this precedence:
 5. An unmatched object is marked `Unclassified` for manual review.
 
 Walk the canonical release first-parent history from oldest to newest.
-An upstream tag merge begins a new version epoch when its non-first parent is
-the exact peeled upstream tag object. A normal topic merge assigns the newly
-introduced fork-only subtree to the active epoch. The tag merge itself is an
-Integration row, while its upstream parent and upstream subtree are excluded.
+Creating a named `release/v<new-version>` branch starts that version's epoch,
+including approved design and plan commits made before the upstream tag merge.
+For this release, `e8e2d3469cfaa8df759957731a6ff3c2306393e2` belongs to rc.30.
+The pre-rc.30 counts remain the fixed 82 released, 35 backup-only, and 3
+unreleased OIDs. An upstream tag merge confirms the active epoch when its
+non-first parent is the exact peeled upstream tag object. A normal topic merge
+assigns the newly introduced fork-only subtree to the active epoch. The tag
+merge itself is an Integration row, while its upstream parent and upstream
+subtree are excluded.
+
+Some historical release refs were pruned, so the following boundaries are
+recorded release-branch evidence and override a pure tag-merge inference:
+
+- rc.26 starts with `e595d819211dba119c8f9e9543a287e0c1122798` and includes
+  `fd81ba893e649c3cb9cb946dec023e60a2fa7b5f`.
+- rc.27 starts with `3084ef43418370ebc3ab9c266ad11105df2a207c` and includes
+  `74e223c6cdff076ea55e611074f127e80e69ed63` plus
+  `7add487c63e295287b4a0419ae5d983eac6040c9` before the tag merge.
+
+These recorded boundaries are part of the reproducible assignment input and
+must appear in the changelog reference block.
 
 ### Duplicate handling
 
@@ -187,11 +217,34 @@ The three commits on the unmerged rc.25 GLM topic remain under `Unreleased`.
 Similar GLM behavior implemented later does not convert those OIDs into
 released history.
 
-The finished changelog records its generation timestamp, every source ref tip
-used for the snapshot, and all full 40-character OIDs in a compact reference
-block so future branch pruning cannot erase the audit trail.
+Generate the final summary, ledger, and reference block together only after
+the rc.30 release, development, and five backup refs exist. The finished
+changelog records that generation timestamp, every source ref tip used for the
+snapshot, and all full 40-character OIDs in a compact reference block so
+future branch pruning cannot erase the audit trail. Any earlier draft snapshot
+is regenerated rather than mixed with the final rc.30 inventory.
 
 ## PostgreSQL migration design
+
+### Production rc.26 to rc.30 schema inventory
+
+The implementation plan must repeat a tag-to-tag inspection of every
+`model/` schema-related change between `v1.0.0-rc.26` and
+`v1.0.0-rc.30`, then map each item to a fixture before the tag merge is
+accepted. The current inspection identifies these schema changes:
+
+- A new `login_encryption_keys` table with a unique slot index.
+- A new `task_plugins` table with a composite unique key/version index and an
+  active-state index.
+- A nullable `prefill_groups.deleted_at` column plus replacement of legacy
+  global name uniqueness with the partial `uk_prefill_name` index.
+- Replacement of legacy `tokens.key` constraint-backed uniqueness with the
+  standalone `idx_tokens_key` unique index.
+
+The PostgreSQL prepared-statement setting, JSON scan normalization, task model
+alias logic, and quota-statistics correction are recorded as database-adjacent
+changes but do not add or alter schema objects. Any additional schema object
+found by the repeated tag diff requires a named fixture before promotion.
 
 ### Compatibility behavior
 
@@ -227,26 +280,38 @@ production database directly.
 1. **Fresh database**: run migrations three times; verify stable catalog
    counts, token duplicate rejection, active prefill duplicate rejection, and
    reuse of a soft-deleted prefill name.
-2. **rc.27-shaped database**: clone the real production schema after a
-   read-only catalog inventory; verify row preservation, canonical token and
-   prefill indexes, bigint quota columns, and an identical catalog snapshot on
-   the second startup.
-3. **rc.28-shaped database**: cover `tokens_key_key`, a constraint named
+2. **rc.26 production-shaped database**: clone the real production schema
+   after a read-only catalog inventory; verify row preservation, canonical
+   token and prefill indexes, bigint quota columns, and an identical catalog
+   snapshot on the second startup.
+3. **rc.27-shaped database**: create a separate representative fixture from
+   the recorded rc.27 application and schema path; verify the same row and
+   catalog invariants without treating it as the live production source.
+4. **rc.28-shaped database**: cover `tokens_key_key`, a constraint named
    `idx_tokens_key`, legacy prefill constraint and standalone-index forms,
    existing target indexes, non-conflicting composite and partial indexes,
    and the `login_encryption_keys` table.
-4. **rc.29-shaped database**: preserve canonical prefill state, migrate the
+5. **rc.29-shaped database**: preserve canonical prefill state, migrate the
    token legacy form, then run the generic named-constraint fixture through
    the ZETA dialector wrapper without SQLSTATE 42704.
-5. **Failure atomicity**: insert an unsupported constraint or invalid target
+6. **Failure atomicity**: insert an unsupported constraint or invalid target
    index; verify startup stops and the transaction leaves the schema and rows
    unchanged.
-6. **Rollback compatibility**: start the rc.29 ZETA release and rc.27
-   application against separate rc.30-migrated clones; verify existing rows
-   remain readable and token uniqueness remains enforced.
-7. **Database range**: run SQLite, MySQL 5.7.8 or later, PostgreSQL 9.6, and a
-   current PostgreSQL 16 instance. PostgreSQL tests must execute with an actual
-   `TEST_POSTGRES_DSN`; skipped integration tests do not satisfy this matrix.
+7. **Rollback compatibility**: start the live rc.26 release, the recorded
+   rc.27 application, and the rc.29 ZETA release against separate
+   rc.30-migrated clones; verify existing rows remain readable and token
+   uniqueness remains enforced. For rc.26, perform two complete application
+   startups and two `AutoMigrate` passes, verify identical before-and-after
+   catalog snapshots, and require no SQLSTATE 42704 or constraint removal.
+8. **Database range**: run SQLite, MySQL 5.7.8 or later, PostgreSQL 9.6, and a
+   current PostgreSQL 16 instance. Run the common PostgreSQL fixture corpus on
+   both versions. The `NULLS NOT DISTINCT` rejection fixture requires
+   PostgreSQL 15 or later; on PostgreSQL 9.6, record that the syntax is
+   unavailable rather than reporting a skipped common fixture. On PostgreSQL
+   9.6, explicitly verify that `cardinality`, `to_regclass`, `indisready`, and
+   `indexprs` return the values required by the inspection queries.
+   PostgreSQL tests must execute with an actual `TEST_POSTGRES_DSN`; skipped
+   common integration tests do not satisfy this matrix.
 
 Before a production switch, run a read-only catalog inspection against the
 database selected by the New-API service `SQL_DSN`, not the PostgreSQL
@@ -298,7 +363,10 @@ The final rc.30 candidate must pass all applicable current-repository gates:
   `/v1/chat/completions` request while the local page is open.
 
 The current tree contains a single `web/` frontend and no `web/classic`
-package, so no obsolete classic-build command is added.
+package, so no obsolete classic-build command is added. The `test`,
+`typecheck`, `lint`, `format:check`, and `build:check` scripts were verified in
+`web/package.json`, and `relaykit/go.mod` was verified before these commands
+were made mandatory.
 
 The two recorded Windows HTTP/2 tests require a fresh final-candidate run and
 a Linux run. If they fail only on Windows with the recorded socket-abort
@@ -331,13 +399,21 @@ approved an exact local-and-origin deletion inventory.
 
 If the rc.30 application deployment fails, inspect the newest deployment logs
 and metrics, then roll the Zeabur application back to the previous successful
-snapshot while keeping the current release branch available for repair.
+rc.26 snapshot while keeping the current release branch available for repair.
+The branch-level fallback is origin `release/v1.0.0-rc.26` at
+`c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7`. If that ref is later pruned,
+recreating a temporary fallback branch from the recorded signed commit
+requires an explicit owner decision under governance rule 18.
 
 The token constraint-to-index migration is not reversed by an application
-rollback. The rc.27 and rc.29 clone tests therefore prove whether the prior
-application can read the migrated schema. Restore the production database
-only for demonstrated data or schema damage and only from the verified backup
-created immediately before the switch.
+rollback. The rc.26, rc.27, and rc.29 clone tests therefore prove whether
+prior applications can read the migrated schema. Restore the production
+database only for demonstrated data or schema damage and only from the
+verified backup created immediately before the switch.
+
+Branch-level fallback to rc.26 is permitted only after the rc.26 application
+has completed two startups and two `AutoMigrate` passes against an
+rc.30-migrated clone with unchanged catalog snapshots and no SQLSTATE 42704.
 
 ## Completion criteria
 
@@ -348,15 +424,17 @@ state:
 - All five rc.30 reusable backup refs exist, contain only their themes, and
   match the integrated release behavior.
 - `CHANGELOG-ZETA.md` contains every released, backup-only, and unreleased ZETA
-  OID once, with topology-based version assignment and both Git dates.
+  OID once, with Git topology plus recorded release-branch epoch assignment
+  and both Git dates.
 - The full application, frontend, relaykit, container, and database gates have
   current results.
-- PostgreSQL rc.27, rc.28, rc.29, fresh-install, failure-atomicity, and
-  rollback fixtures satisfy the documented invariants.
+- PostgreSQL rc.26 production, rc.27, rc.28, rc.29, fresh-install,
+  failure-atomicity, and rollback fixtures satisfy the documented invariants.
 - The runtime PostgreSQL credential has been rotated and dependent services
   reconnect successfully without exposing secret values.
 - Production has a verified backup and restore drill.
 - Dev rc.30 deployment is healthy.
-- Production remains on rc.27 until the exact phrase `確認發布` is received.
+- Production remains on the verified rc.26 deployment until the exact phrase
+  `確認發布` is received.
 - After that approval, production rc.30 deployment is healthy and reports the
   rc.30 version through runtime and health evidence.
