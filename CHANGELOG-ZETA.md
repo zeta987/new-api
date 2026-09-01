@@ -54,7 +54,7 @@ Claude 的 effort 別名處理也在這版收斂：別名觸發時清掉 top-p �
 - 同步別名定價快取 — [505120faf7d6](../../commit/505120faf7d6df3e3456b2037a154d0b3a1535ce)
 - 整合上游 rc29 — [e3ab5bc85d13](../../commit/e3ab5bc85d13e370a664ea37bcdc98f3bf09d043)
 
-備份：`feat/v1.0.0-rc.29/reasoning-model-support` 13 筆、`feat/v1.0.0-rc.29/chatcompletions-responses-compat` 1 筆、`fix/v1.0.0-rc.29/usage-logs-realtime-refresh` 1 筆、`fix/v1.0.0-rc.29/channel-affinity-test-isolation` 1 筆、`fix/v1.0.0-rc.29/postgres-automigrate-compat` 1 筆，共 18 筆僅備份提交。
+備份：`feat/v1.0.0-rc.29/reasoning-model-support` 13 筆、`feat/v1.0.0-rc.29/chatcompletions-responses-compat` 1 筆、`fix/v1.0.0-rc.29/usage-logs-realtime-refresh` 2 筆、`fix/v1.0.0-rc.29/channel-affinity-test-isolation` 1 筆、`fix/v1.0.0-rc.29/postgres-automigrate-compat` 1 筆，共 18 筆僅備份提交。
 
 ## v1.0.0-rc.27
 
