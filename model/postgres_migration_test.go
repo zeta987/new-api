@@ -1,9 +1,12 @@
 package model
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
@@ -48,6 +51,225 @@ func openPostgresMigrationTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	return db
+}
+
+func TestConfigurePostgresMigrationTimeouts(t *testing.T) {
+	db := openPostgresMigrationTestDB(t)
+	type postgresTimeoutSettings struct {
+		LockTimeout      string `gorm:"column:lock_timeout"`
+		StatementTimeout string `gorm:"column:statement_timeout"`
+	}
+	originalSessionSettings := postgresTimeoutSettings{}
+	baselineSessionSettings := postgresTimeoutSettings{
+		LockTimeout:      "1s",
+		StatementTimeout: "2s",
+	}
+	var insideTransaction postgresTimeoutSettings
+	var afterTransaction postgresTimeoutSettings
+
+	require.NoError(t, db.Connection(func(connection *gorm.DB) error {
+		if err := connection.Raw(`
+SELECT current_setting('lock_timeout') AS lock_timeout,
+       current_setting('statement_timeout') AS statement_timeout`).Scan(&originalSessionSettings).Error; err != nil {
+			return err
+		}
+		defer func() {
+			require.NoError(t, connection.Exec(
+				"SELECT set_config('lock_timeout', ?, false)",
+				originalSessionSettings.LockTimeout,
+			).Error)
+			require.NoError(t, connection.Exec(
+				"SELECT set_config('statement_timeout', ?, false)",
+				originalSessionSettings.StatementTimeout,
+			).Error)
+		}()
+		if err := connection.Exec(
+			"SELECT set_config('lock_timeout', ?, false)",
+			baselineSessionSettings.LockTimeout,
+		).Error; err != nil {
+			return err
+		}
+		if err := connection.Exec(
+			"SELECT set_config('statement_timeout', ?, false)",
+			baselineSessionSettings.StatementTimeout,
+		).Error; err != nil {
+			return err
+		}
+		if err := connection.Transaction(func(tx *gorm.DB) error {
+			if err := configurePostgresMigrationTimeouts(tx); err != nil {
+				return err
+			}
+			return tx.Raw(`
+SELECT current_setting('lock_timeout') AS lock_timeout,
+       current_setting('statement_timeout') AS statement_timeout`).Scan(&insideTransaction).Error
+		}); err != nil {
+			return err
+		}
+		return connection.Raw(`
+SELECT current_setting('lock_timeout') AS lock_timeout,
+       current_setting('statement_timeout') AS statement_timeout`).Scan(&afterTransaction).Error
+	}))
+	assert.Equal(t, "5s", insideTransaction.LockTimeout)
+	assert.Equal(t, "30s", insideTransaction.StatementTimeout)
+	assert.Equal(t, baselineSessionSettings, afterTransaction)
+}
+
+func TestPostgresUniquenessMigrationsBoundLockWait(t *testing.T) {
+	db := openPostgresMigrationTestDB(t)
+	tests := []struct {
+		name      string
+		model     any
+		tableName string
+		prepare   func(*testing.T, *gorm.DB)
+		migrate   func(*gorm.DB) error
+	}{
+		{
+			name:      "token",
+			model:     &Token{},
+			tableName: "tokens",
+			prepare: func(t *testing.T, db *gorm.DB) {
+				t.Helper()
+				require.NoError(t, db.Exec(
+					"ALTER TABLE ? ADD CONSTRAINT ? UNIQUE (?)",
+					clause.Table{Name: "tokens"},
+					clause.Column{Name: gormTokenKeyConstraint},
+					clause.Column{Name: "key"},
+				).Error)
+			},
+			migrate: migrateTokenKeyUniqueness,
+		},
+		{
+			name:      "prefill_group",
+			model:     &PrefillGroup{},
+			tableName: "prefill_groups",
+			prepare: func(t *testing.T, db *gorm.DB) {
+				t.Helper()
+				require.NoError(t, db.Migrator().DropIndex(&PrefillGroup{}, prefillGroupNameIndex))
+				require.NoError(t, db.Exec(
+					"ALTER TABLE ? ADD CONSTRAINT ? UNIQUE (?)",
+					clause.Table{Name: "prefill_groups"},
+					clause.Column{Name: legacyPrefillGroupNameUnique},
+					clause.Column{Name: "name"},
+				).Error)
+			},
+			migrate: migratePrefillGroupUniqueness,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			schemaName := fmt.Sprintf("postgres_timeout_%s_%d", test.name, time.Now().UnixNano())
+			require.NoError(t, db.Exec(
+				"CREATE SCHEMA ?",
+				clause.Table{Name: schemaName},
+			).Error)
+			t.Cleanup(func() {
+				require.NoError(t, db.Exec(
+					"DROP SCHEMA ? CASCADE",
+					clause.Table{Name: schemaName},
+				).Error)
+			})
+
+			setupTx := db.Begin()
+			require.NoError(t, setupTx.Error)
+			t.Cleanup(func() { _ = setupTx.Rollback().Error })
+			require.NoError(t, setupTx.Exec(
+				"SET LOCAL search_path TO ?",
+				clause.Table{Name: schemaName},
+			).Error)
+			require.NoError(t, setupTx.AutoMigrate(test.model))
+			test.prepare(t, setupTx)
+			require.NoError(t, setupTx.Commit().Error)
+
+			lockHolder := db.Begin()
+			require.NoError(t, lockHolder.Error)
+			t.Cleanup(func() { _ = lockHolder.Rollback().Error })
+			require.NoError(t, lockHolder.Exec(
+				"SET LOCAL search_path TO ?",
+				clause.Table{Name: schemaName},
+			).Error)
+			require.NoError(t, lockHolder.Exec(
+				"LOCK TABLE ? IN ACCESS EXCLUSIVE MODE",
+				clause.Table{Name: test.tableName},
+			).Error)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			migrationTx := db.WithContext(ctx).Begin()
+			require.NoError(t, migrationTx.Error)
+			t.Cleanup(func() { _ = migrationTx.Rollback().Error })
+			require.NoError(t, migrationTx.Exec(
+				"SET LOCAL search_path TO ?",
+				clause.Table{Name: schemaName},
+			).Error)
+			err := test.migrate(migrationTx)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "SQLSTATE 55P03")
+			require.NoError(t, migrationTx.Rollback().Error)
+			require.NoError(t, lockHolder.Rollback().Error)
+		})
+	}
+}
+
+func TestMigratePrefillGroupUniquenessReadyTargetAvoidsLock(t *testing.T) {
+	db := openPostgresMigrationTestDB(t)
+	schemaName := fmt.Sprintf("postgres_ready_prefill_%d", time.Now().UnixNano())
+	require.NoError(t, db.Exec(
+		"CREATE SCHEMA ?",
+		clause.Table{Name: schemaName},
+	).Error)
+	t.Cleanup(func() {
+		require.NoError(t, db.Exec(
+			"DROP SCHEMA ? CASCADE",
+			clause.Table{Name: schemaName},
+		).Error)
+	})
+
+	setupTx := db.Begin()
+	require.NoError(t, setupTx.Error)
+	t.Cleanup(func() { _ = setupTx.Rollback().Error })
+	require.NoError(t, setupTx.Exec(
+		"SET LOCAL search_path TO ?",
+		clause.Table{Name: schemaName},
+	).Error)
+	require.NoError(t, setupTx.AutoMigrate(&PrefillGroup{}))
+	require.NoError(t, setupTx.Exec(
+		"ALTER TABLE ? ADD CONSTRAINT ? UNIQUE (?)",
+		clause.Table{Name: "prefill_groups"},
+		clause.Column{Name: legacyPrefillGroupNameUnique},
+		clause.Column{Name: "name"},
+	).Error)
+	assert.True(t, setupTx.Migrator().HasColumn(&PrefillGroup{}, "DeletedAt"))
+	assert.True(t, setupTx.Migrator().HasConstraint(&PrefillGroup{}, legacyPrefillGroupNameUnique))
+	targetIndex, err := inspectPrefillGroupNameIndex(setupTx, "prefill_groups")
+	require.NoError(t, err)
+	assert.True(t, targetIndex.valid)
+	require.NoError(t, setupTx.Commit().Error)
+
+	lockHolder := db.Begin()
+	require.NoError(t, lockHolder.Error)
+	t.Cleanup(func() { _ = lockHolder.Rollback().Error })
+	require.NoError(t, lockHolder.Exec(
+		"SET LOCAL search_path TO ?",
+		clause.Table{Name: schemaName},
+	).Error)
+	require.NoError(t, lockHolder.Exec(
+		"LOCK TABLE ? IN ACCESS SHARE MODE",
+		clause.Table{Name: "prefill_groups"},
+	).Error)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	migrationTx := db.WithContext(ctx).Begin()
+	require.NoError(t, migrationTx.Error)
+	t.Cleanup(func() { _ = migrationTx.Rollback().Error })
+	require.NoError(t, migrationTx.Exec(
+		"SET LOCAL search_path TO ?",
+		clause.Table{Name: schemaName},
+	).Error)
+	require.NoError(t, migratePrefillGroupUniqueness(migrationTx))
+	require.NoError(t, migrationTx.Rollback().Error)
+	require.NoError(t, lockHolder.Rollback().Error)
 }
 
 func TestChooseDBPostgreSQLRepeatedAutoMigrateNamedUniqueIndex(t *testing.T) {
