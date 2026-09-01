@@ -216,7 +216,7 @@ Expected: PASS with no PostgreSQL SQL emitted on either engine.
 **Files:**
 - Create ignored helper: `.local-tests/prefill-rollback-check/main.go`
 - Create ignored runner: `.local-tests/run-prefill-rollback-check.ps1`
-- Create evidence: `.superpowers/sdd/2026-09-01-rc30-upgrade-zeta-changelog/rollback-bridge-report.md`
+- Create evidence: `.superpowers/sdd/2026-09-01-rc30-rollback-bridge/rollback-bridge-report.md`
 
 **Interfaces:**
 - Consumes: Bridge candidate and actual rc.26 commit `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7`
@@ -280,6 +280,7 @@ credential, or raw data.
 
 **Files:**
 - Commit: spec commit `a94284fe5c6b10112c43bfb7832caa82945c8dff`
+- Commit: plan commit `91f41f7b680e509d1c389f88a8fef03beb1928eb`
 - Commit: Task 1 and Task 2 production/test files
 - Review: complete topic diff from `97c9413e88ce48033d2638529c61810902adc842`
 
@@ -332,9 +333,9 @@ Expected: Good SSH signature, one final Codex trailer, clean worktree.
 
 - [ ] **Step 5: Request a read-only Bridge review**
 
-The reviewer reads the spec, topic diff, PG9.6/16 outputs, Task 13 report, and
-actual rc.26 evidence. Any finding is verified against local code before a
-change is accepted.
+The reviewer reads the spec, topic diff, Task 1 and Task 2 reports, PG9.6/16
+outputs, the Task 3 rollback report, and actual rc.26 evidence. Any finding is
+verified against local code before a change is accepted.
 
 ### Task 5: Append Bridge to the PostgreSQL backup theme
 
@@ -388,9 +389,11 @@ published rc.30 backup refs must remain unchanged.
 **Files:**
 - Merge into: `dev/v1.0.0-rc.30`
 - Promote into: `release/v1.0.0-rc.30`
-- Update evidence: `rollback-bridge-report.md`
+- Update evidence: `.superpowers/sdd/2026-09-01-rc30-rollback-bridge/rollback-bridge-report.md`
 
 **Interfaces:**
+- Consumes: the signed Bridge topic, the PostgreSQL Bridge backup tip, and
+  exact readbacks for all five rc.30 backup refs
 - Produces: one signed Bridge release SHA shared by local dev/release refs
 
 - [ ] **Step 1: Merge the working topic into development**
@@ -428,7 +431,7 @@ SQLSTATE 42704/23505/42710, container/public status rc.30, and current logs.
 ### Task 7: Gate and deploy Bridge to Production
 
 **Files:**
-- Evidence only: `rollback-bridge-report.md`
+- Evidence only: `.superpowers/sdd/2026-09-01-rc30-rollback-bridge/rollback-bridge-report.md`
 - External state: `GCP-TW_AI-Rel`
 
 **Interfaces:**
@@ -462,15 +465,15 @@ Check build/runtime logs, metrics, container/public status, allowlisted API
 paths, Anubis, both prefill objects, and that the previous successful snapshot
 is rc.26. Roll back immediately if any required gate fails. After Bridge is
 healthy, create the local-only ref
-`fix/rc30/rollback-bridge-snapshot` from
-`fix/rc30/production-review-gaps`; never push this inspection ref.
+`fix/rc30/rollback-bridge-snapshot` at the exact signed Bridge release SHA
+that Production is running; never push this inspection ref.
 
 ### Task 8: Implement the rc.30 Contract
 
 **Files:**
 - Modify: `model/prefill_group_migration.go`
 - Modify: `model/prefill_group_migration_test.go`
-- Update evidence: `.superpowers/sdd/2026-09-01-rc30-upgrade-zeta-changelog/rollback-contract-report.md`
+- Update evidence: `.superpowers/sdd/2026-09-01-rc30-rollback-bridge/rollback-contract-report.md`
 
 **Interfaces:**
 - Consumes: Bridge release SHA and timeout helper
@@ -628,7 +631,10 @@ Use `apply_patch` to add this ignored PowerShell runner as
 `.local-tests/run-bridge-rollback-probe.ps1` in the repository root:
 
 ```powershell
-$env:SQL_DSN = 'postgresql://postgres:rc30_timeout_test@127.0.0.1:57516/rc30_prefill_contract_test?sslmode=disable'
+if ([string]::IsNullOrWhiteSpace($env:RC30_BRIDGE_ROLLBACK_TEST_DSN)) {
+    throw 'RC30_BRIDGE_ROLLBACK_TEST_DSN is required'
+}
+$env:SQL_DSN = $env:RC30_BRIDGE_ROLLBACK_TEST_DSN
 $env:LOG_SQL_DSN = ''
 $bridgeDir = 'D:\Data\Coding_Github\Projects\_AI\_Proxy\new-api\.local-tests\worktrees\rc30-bridge-rollback-check'
 go -C $bridgeDir run ./.local-tests/prefill-rollback-check
@@ -672,7 +678,8 @@ Verify Good SSH signature, exact trailer, focused tests, and a clean topic.
 - [ ] **Step 1: Merge and promote Contract**
 
 Merge the topic into development without squash, then create a signed release
-`--no-ff` merge. Verify ancestry and parents.
+`--no-ff` merge. Verify ancestry and parents. This is a local promotion only:
+do not push development or the monitored release ref during this task.
 
 - [ ] **Step 2: Append Contract to the PostgreSQL backup**
 
@@ -708,7 +715,7 @@ development locally to the same SHA.
 ### Task 10: Run Contract release gates and Dev deployment
 
 **Files:**
-- Evidence: `rollback-contract-report.md`
+- Evidence: `.superpowers/sdd/2026-09-01-rc30-rollback-bridge/rollback-contract-report.md`
 - External state: `GCP-TW_AI-Dev`
 
 **Interfaces:**
@@ -737,7 +744,8 @@ object, metrics classified by actual availability, and current logs.
 
 **Files:**
 - Update ignored Oracle bundle inputs and manifest
-- Include Task 2, Task 8, Task 13, Task 14, Git manifest, and final patch
+- Include current-plan Task 1, Task 2, Task 3, Task 8, and Task 10 reports,
+  Git manifest, and final patch
 
 **Interfaces:**
 - Produces: GPT-5.6 Sol Pro, Claude, and agy verdicts bound to the final SHA
@@ -765,12 +773,15 @@ claims against local files and live readbacks.
 
 Classify each finding as verified, attachment-only, already proven, or
 incorrect. A verified Blocker or Major stops the release and returns to the
-corresponding TDD task.
+corresponding TDD task. Any source, test, report, or changelog correction
+invalidates the candidate-bound evidence: regenerate the Task 9 candidate and
+ledger, rerun Task 10 gates and Dev verification, rebuild the bundle, and
+rerun every Task 11 external review against the new full SHA.
 
 ### Task 12: Gate and deploy Contract to Production
 
 **Files:**
-- Evidence: final `rollback-contract-report.md`
+- Evidence: final `.superpowers/sdd/2026-09-01-rc30-rollback-bridge/rollback-contract-report.md`
 - External state: `GCP-TW_AI-Rel`
 
 **Interfaces:**
