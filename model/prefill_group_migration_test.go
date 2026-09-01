@@ -84,6 +84,116 @@ func TestMigratePrefillGroupUniquenessPostgreSQL(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 
+	t.Run("invalid_legacy_index_from_failed_concurrent_build_is_atomic", func(t *testing.T) {
+		schemaName := fmt.Sprintf("prefill_group_invalid_legacy_%d", time.Now().UnixNano())
+		require.NoError(t, db.Exec(
+			"CREATE SCHEMA ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		t.Cleanup(func() {
+			require.NoError(t, db.Exec(
+				"DROP SCHEMA ? CASCADE",
+				clause.Table{Name: schemaName},
+			).Error)
+		})
+
+		setupTx := db.Begin()
+		require.NoError(t, setupTx.Error)
+		t.Cleanup(func() { _ = setupTx.Rollback().Error })
+		require.NoError(t, setupTx.Exec(
+			"SET LOCAL search_path TO ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		require.NoError(t, setupTx.Exec(`
+CREATE TABLE prefill_groups (
+    id bigserial PRIMARY KEY,
+    name varchar(64) NOT NULL
+)`).Error)
+		require.NoError(t, setupTx.Exec(
+			"INSERT INTO prefill_groups (name) VALUES (?), (?)",
+			"duplicate-name",
+			"duplicate-name",
+		).Error)
+		require.NoError(t, setupTx.Commit().Error)
+
+		concurrentIndexErr := db.Exec(
+			"CREATE UNIQUE INDEX CONCURRENTLY ? ON ? (?)",
+			clause.Column{Name: legacyPrefillGroupNameUnique},
+			clause.Table{Name: schemaName + ".prefill_groups"},
+			clause.Column{Name: "name"},
+		).Error
+		require.Error(t, concurrentIndexErr)
+
+		fixtureTx := db.Begin()
+		require.NoError(t, fixtureTx.Error)
+		t.Cleanup(func() { _ = fixtureTx.Rollback().Error })
+		require.NoError(t, fixtureTx.Exec(
+			"SET LOCAL search_path TO ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		require.NoError(t, fixtureTx.Exec(`
+DELETE FROM prefill_groups
+WHERE id = (SELECT max(id) FROM prefill_groups)`).Error)
+		require.NoError(t, fixtureTx.Commit().Error)
+
+		migrationTx := db.Begin()
+		require.NoError(t, migrationTx.Error)
+		t.Cleanup(func() { _ = migrationTx.Rollback().Error })
+		require.NoError(t, migrationTx.Exec(
+			"SET LOCAL search_path TO ?",
+			clause.Table{Name: schemaName},
+		).Error)
+
+		type legacyIndexSnapshot struct {
+			Valid      bool   `gorm:"column:index_valid"`
+			Ready      bool   `gorm:"column:index_ready"`
+			Definition string `gorm:"column:index_definition"`
+		}
+		inspectLegacyIndex := func() legacyIndexSnapshot {
+			t.Helper()
+			var snapshot legacyIndexSnapshot
+			require.NoError(t, migrationTx.Raw(`
+SELECT index_meta.indisvalid AS index_valid,
+       index_meta.indisready AS index_ready,
+       pg_get_indexdef(index_meta.indexrelid) AS index_definition
+FROM pg_catalog.pg_index AS index_meta
+JOIN pg_catalog.pg_class AS index_class
+  ON index_class.oid = index_meta.indexrelid
+WHERE index_meta.indrelid = to_regclass('prefill_groups')
+  AND index_class.relname = ?`, legacyPrefillGroupNameUnique).Scan(&snapshot).Error)
+			return snapshot
+		}
+		type prefillRow struct {
+			ID   int64
+			Name string
+		}
+		inspectRows := func() []prefillRow {
+			t.Helper()
+			var rows []prefillRow
+			require.NoError(t, migrationTx.Raw(
+				"SELECT id, name FROM prefill_groups ORDER BY id",
+			).Scan(&rows).Error)
+			return rows
+		}
+
+		legacyBefore := inspectLegacyIndex()
+		rowsBefore := inspectRows()
+		require.False(t, legacyBefore.Valid)
+		require.False(t, legacyBefore.Ready)
+		require.NotEmpty(t, legacyBefore.Definition)
+		require.False(t, migrationTx.Migrator().HasColumn(&PrefillGroup{}, "DeletedAt"))
+		require.False(t, migrationTx.Migrator().HasIndex(&PrefillGroup{}, prefillGroupNameIndex))
+
+		migrationErr := migratePrefillGroupUniqueness(migrationTx)
+		require.Error(t, migrationErr)
+		assert.Contains(t, migrationErr.Error(), legacyPrefillGroupNameUnique)
+		assert.Contains(t, migrationErr.Error(), "unexpected definition")
+		assert.Equal(t, legacyBefore, inspectLegacyIndex())
+		assert.Equal(t, rowsBefore, inspectRows())
+		assert.False(t, migrationTx.Migrator().HasColumn(&PrefillGroup{}, "DeletedAt"))
+		assert.False(t, migrationTx.Migrator().HasIndex(&PrefillGroup{}, prefillGroupNameIndex))
+	})
+
 	t.Run("malformed_target_without_legacy_is_atomic", func(t *testing.T) {
 		tx := db.Begin()
 		require.NoError(t, tx.Error)

@@ -11,8 +11,9 @@ const prefillGroupNameIndex = "uk_prefill_name"
 const legacyPrefillGroupNameUnique = "idx_prefill_groups_name"
 
 type conflictingPrefillGroupUniqueness struct {
-	constraints []string
-	indexes     []string
+	constraints    []string
+	indexes        []string
+	invalidIndexes []string
 }
 
 type prefillGroupNameIndexState struct {
@@ -25,6 +26,15 @@ func (conflicts conflictingPrefillGroupUniqueness) empty() bool {
 }
 
 func (conflicts conflictingPrefillGroupUniqueness) validateAutomaticMigrationScope() error {
+	for _, name := range conflicts.invalidIndexes {
+		if name == legacyPrefillGroupNameUnique {
+			return fmt.Errorf(
+				"prefill group legacy index %q has an unexpected definition: PostgreSQL index is invalid or not ready",
+				name,
+			)
+		}
+	}
+
 	unexpectedConstraints := make([]string, 0)
 	for _, name := range conflicts.constraints {
 		if name != legacyPrefillGroupNameUnique {
@@ -67,8 +77,15 @@ ORDER BY constraint_meta.conname`, tableName, "name").Scan(&conflicts.constraint
 		return conflicts, fmt.Errorf("inspect conflicting prefill group unique constraints: %w", err)
 	}
 
+	var indexRows []struct {
+		Name  string `gorm:"column:index_name"`
+		Valid bool   `gorm:"column:index_valid"`
+		Ready bool   `gorm:"column:index_ready"`
+	}
 	if err := db.Raw(`
-SELECT index_class.relname
+SELECT index_class.relname AS index_name,
+       index_meta.indisvalid AS index_valid,
+       index_meta.indisready AS index_ready
 FROM pg_catalog.pg_index AS index_meta
 JOIN pg_catalog.pg_class AS index_class
   ON index_class.oid = index_meta.indexrelid
@@ -87,8 +104,14 @@ WHERE index_meta.indrelid = to_regclass(?)
       FROM pg_catalog.pg_constraint AS constraint_meta
       WHERE constraint_meta.conindid = index_meta.indexrelid
   )
-ORDER BY index_class.relname`, tableName, "name").Scan(&conflicts.indexes).Error; err != nil {
+ORDER BY index_class.relname`, tableName, "name").Scan(&indexRows).Error; err != nil {
 		return conflicts, fmt.Errorf("inspect conflicting prefill group unique indexes: %w", err)
+	}
+	for _, index := range indexRows {
+		conflicts.indexes = append(conflicts.indexes, index.Name)
+		if !index.Valid || !index.Ready {
+			conflicts.invalidIndexes = append(conflicts.invalidIndexes, index.Name)
+		}
 	}
 
 	return conflicts, nil
