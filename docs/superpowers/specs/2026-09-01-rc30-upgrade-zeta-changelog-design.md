@@ -13,8 +13,9 @@ A live Zeabur check on 2026-09-01 shows production running
 `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7`, despite the earlier rc.27
 assumption. The deployment status is `RUNNING`, and the same rc.26 release ref
 exists on origin. This state must be checked again before any branch switch.
-The production switch requires the exact confirmation phrase `確認發布` after
-the release evidence and database backup status have been presented.
+Production uses a two-stage rollback bridge described below. Each monitored
+release change requires its own exact confirmation phrase `確認發布` after the
+corresponding release evidence and database backup status have been presented.
 
 ## Verified starting state
 
@@ -272,6 +273,46 @@ constraints. When a known legacy constraint exists, it takes an
 `ACCESS EXCLUSIVE` table lock in a transaction, removes the constraint, and
 creates or validates the standalone unique index `idx_tokens_key`.
 
+### Two-stage prefill rollback bridge
+
+A real PostgreSQL 16 fixture on 2026-09-01 disproved the earlier assumption
+that the rc.26 application could always read the final rc.30 prefill schema.
+The fixture contained one soft-deleted prefill row and one active replacement
+with the same name. The actual rc.26 commit
+`c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7`, using GORM `v1.25.2`, attempted
+to add the global constraint `idx_prefill_groups_name` during `InitDB()` and
+failed with SQLSTATE 23505. An always-true CHECK constraint with that name was
+also tested and failed with SQLSTATE 42710 because the old migrator still
+issued `ADD CONSTRAINT ... UNIQUE (name)`. Neither model-tag equivalence nor a
+same-name sentinel is rollback evidence.
+
+Production currently has zero `prefill_groups` rows and both the legacy global
+constraint `idx_prefill_groups_name` and partial index `uk_prefill_name`.
+Migration therefore proceeds as an expand/contract sequence:
+
+| State | Schema behavior | Previous successful application snapshot |
+| --- | --- | --- |
+| rc.26 | Global and partial name uniqueness coexist. | rc.26 |
+| rc.30 Bridge | GORM `v1.25.12`; retain a recognized legacy global object and ensure the partial target exists. Never create the legacy object when it is absent. | rc.26 |
+| rc.30 Contract | Remove the recognized legacy global object and keep the partial target, enabling reuse of a soft-deleted name. | rc.30 Bridge |
+
+The Bridge migration validates the same object allowlist as the Contract
+migration. If the recognized global object and valid partial target already
+coexist, it performs no DDL and takes no table lock. If the partial target is
+missing, it adds `deleted_at` when needed and creates or validates the partial
+index while leaving the recognized global object in place. Repeated Bridge
+startups are idempotent. When rolled back after Contract, Bridge sees no legacy
+object, does not recreate one, and GORM `v1.25.12` keeps the partial target.
+
+Contract restores the intended rc.30 behavior by dropping only the recognized
+legacy global constraint or standalone index. Before either migration obtains
+an `ACCESS EXCLUSIVE` lock, its transaction must set `lock_timeout` to 5
+seconds and `statement_timeout` to 30 seconds with transaction-local
+`set_config`. PostgreSQL 9.6 and 16 tests must read back both values and prove
+that token and prefill lock contention ends with SQLSTATE 55P03. The JSONValue
+scanner fallback must use `common.Marshal`; `encoding/json` remains permitted
+only for the `json.RawMessage` type.
+
 ### Test matrix
 
 Use disposable databases and schema clones. No migration test may target the
@@ -298,11 +339,17 @@ production database directly.
    index; verify startup stops and the transaction leaves the schema and rows
    unchanged.
 7. **Rollback compatibility**: start the live rc.26 release, the recorded
-   rc.27 application, and the rc.29 ZETA release against separate
-   rc.30-migrated clones; verify existing rows remain readable and token
-   uniqueness remains enforced. For rc.26, perform two complete application
-   startups and two `AutoMigrate` passes, verify identical before-and-after
-   catalog snapshots, and require no SQLSTATE 42704 or constraint removal.
+   rc.27 application, and the rc.29 ZETA release against separate Bridge
+   clones; verify existing rows remain readable and token uniqueness remains
+   enforced. The Bridge clone must retain both recognized prefill objects and
+   must reject same-name replacement while a soft-deleted row exists. Run the
+   actual rc.26 application twice and require unchanged rows and catalogs with
+   no startup SQLSTATE. Then migrate an independent Bridge clone to Contract,
+   create a same-name soft-deleted/active pair, and run the actual Bridge
+   application twice; it must preserve two total rows, one active row,
+   duplicate rejection, and an unchanged catalog. Running rc.26 directly on
+   that Contract-only duplicate fixture is a required negative control and is
+   expected to fail with SQLSTATE 23505; it is not an approved rollback path.
 8. **Database range**: run SQLite, MySQL 5.7.8 or later, PostgreSQL 9.6, and a
    current PostgreSQL 16 instance. Run the common PostgreSQL fixture corpus on
    both versions. The `NULLS NOT DISTINCT` rejection fixture requires
@@ -325,9 +372,9 @@ unique, valid, ready, partial, and expression state. Any unsupported token or
 prefill object blocks the switch until a separately approved migration plan
 exists.
 
-Set bounded PostgreSQL `lock_timeout` and `statement_timeout` values for the
-deployment drill. Deploy in a maintenance window after checking active long
-transactions and blocking locks.
+Deploy in a maintenance window after checking active long transactions and
+blocking locks. The application-level transaction-local timeout settings are
+mandatory in addition to that live preflight.
 
 ### Credentials and backup
 
@@ -375,21 +422,39 @@ release record may list the qualified baseline exception.
 
 ## Push and deployment order
 
-1. Verify the integrated release, development candidate, five backup diffs,
-   commit signatures, and required trailers locally.
-2. Push and read back the five rc.30 backup refs.
-3. Push and read back `dev/v1.0.0-rc.30`.
-4. Push and read back the unmonitored `release/v1.0.0-rc.30` last.
-5. Point the isolated Dev Zeabur project at the rc.30 development branch and
-   verify build logs, runtime logs, CPU, memory, container-local health, and
-   version headers.
-6. Present the release SHA, test record, five backup refs, signature results,
-   production catalog inventory, credential-rotation status, backup status,
-   and restore-drill result.
-7. Accept only the exact owner phrase `確認發布` as production-switch approval.
-8. Point the production Zeabur project at the rc.30 release branch and inspect
-   build/runtime logs, metrics, container-local health, public API allowlisted
-   paths, and `/api/status`.
+1. Build and verify the Bridge candidate. Its PostgreSQL backup theme retains
+   the legacy global prefill object, includes the timeout guard, and matches
+   the integrated Bridge release.
+2. Push and read back all five Bridge backup refs, then the Bridge development
+   ref, and finally the still-unmonitored Bridge release ref.
+3. Deploy Bridge to the isolated Dev project. Verify the full application
+   gates, the Bridge schema fixture, runtime logs, metrics, health, version,
+   and actual rc.26 rollback fixture.
+4. Present the Bridge SHA, tests, backups, signatures, live catalog, credential
+   rotation, fresh production backup, and restore drill. Accept only the exact
+   phrase `確認發布`, then point Production at the Bridge release.
+5. Verify Bridge build/runtime logs, metrics, health, allowlisted API paths,
+   `/api/status`, both prefill objects, and the new previous-successful
+   snapshot before preparing Contract.
+6. Append the Contract change on the same rc.30 working theme. Verify that it
+   drops only the recognized global object, preserves the partial target, and
+   passes the actual Bridge-on-Contract rollback fixture. Append the same
+   signed delta to the PostgreSQL backup theme and read it back before release.
+7. Promote Contract locally, then regenerate `CHANGELOG-ZETA.md` after every
+   Contract release, development, and backup tip exists. Its new snapshot
+   upper bound is the signed Contract release merge; the final changelog
+   commit excludes only itself from the ledger. Re-run the complete ledger,
+   relative-link, archive-exclusion, and Markdown-fence validators before
+   treating that documentation commit as the Contract candidate SHA.
+8. Push the Contract backups and development ref, deploy Contract to Dev, and
+   repeat the database, application, and runtime gates. Create and verify a
+   new production backup and restore drill.
+9. Because the release branch is now monitored, present the Contract SHA and
+   evidence and accept a second exact `確認發布` before pushing Contract to the
+   production release ref.
+10. Verify Contract build/runtime logs, metrics, health, allowlisted paths,
+   `/api/status`, removal of the legacy object, validity of `uk_prefill_name`,
+   soft-deleted name reuse, and rollback to the Bridge snapshot.
 
 No branch or tag is pushed to `upstream`. No custom tag is created. Old
 version branches remain until rc.30 production is healthy and the owner has
@@ -397,13 +462,20 @@ approved an exact local-and-origin deletion inventory.
 
 ## Rollback
 
-If the rc.30 application deployment fails, inspect the newest deployment logs
-and metrics, then roll the Zeabur application back to the previous successful
-rc.26 snapshot while keeping the current release branch available for repair.
-The branch-level fallback is origin `release/v1.0.0-rc.26` at
-`c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7`. If that ref is later pruned,
-recreating a temporary fallback branch from the recorded signed commit
-requires an explicit owner decision under governance rule 18.
+If Bridge deployment fails, inspect the newest deployment logs and metrics,
+then roll the Zeabur application back to the previous successful rc.26
+snapshot. Bridge retains global prefill uniqueness, so its schema cannot
+contain the same-name soft-deleted/active pair that breaks rc.26 AutoMigrate.
+The branch fallback remains origin `release/v1.0.0-rc.26` at
+`c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` until Contract is healthy.
+
+If Contract deployment fails, roll back only to the previous successful
+rc.30 Bridge snapshot. Bridge uses GORM `v1.25.12` and does not recreate the
+legacy global object when it is absent, so it remains compatible after
+Contract enables same-name reuse. Direct rc.26 rollback from Contract is
+prohibited unless an immediate read-only preflight proves that no duplicate
+name exists across active and soft-deleted rows. No destructive rename or
+deletion may be performed merely to satisfy that preflight.
 
 The token constraint-to-index migration is not reversed by an application
 rollback. The rc.26, rc.27, and rc.29 clone tests therefore prove whether
@@ -411,9 +483,9 @@ prior applications can read the migrated schema. Restore the production
 database only for demonstrated data or schema damage and only from the
 verified backup created immediately before the switch.
 
-Branch-level fallback to rc.26 is permitted only after the rc.26 application
-has completed two startups and two `AutoMigrate` passes against an
-rc.30-migrated clone with unchanged catalog snapshots and no SQLSTATE 42704.
+The rc.26 branch remains until Contract is healthy. The Bridge and Contract
+snapshots, exact SHAs, schema state, and allowed rollback edge must be recorded
+before old-version branch pruning.
 
 ## Completion criteria
 
@@ -425,16 +497,22 @@ state:
   match the integrated release behavior.
 - `CHANGELOG-ZETA.md` contains every released, backup-only, and unreleased ZETA
   OID once, with Git topology plus recorded release-branch epoch assignment
-  and both Git dates.
+  and both Git dates. The earlier 142-OID result remains a historical base;
+  the final Contract ledger includes the post-review design, Bridge, Contract,
+  merge, and backup commits through its new snapshot upper bound.
 - The full application, frontend, relaykit, container, and database gates have
   current results.
 - PostgreSQL rc.26 production, rc.27, rc.28, rc.29, fresh-install,
   failure-atomicity, and rollback fixtures satisfy the documented invariants.
+- Bridge retains global prefill uniqueness and passes actual rc.26 rollback;
+  Contract removes it only after Bridge is the previous successful snapshot
+  and passes actual Bridge rollback with a same-name soft-delete replacement.
+- Both monitored release changes received separate exact `確認發布` phrases.
 - The runtime PostgreSQL credential has been rotated and dependent services
   reconnect successfully without exposing secret values.
 - Production has a verified backup and restore drill.
 - Dev rc.30 deployment is healthy.
-- Production remains on the verified rc.26 deployment until the exact phrase
-  `確認發布` is received.
-- After that approval, production rc.30 deployment is healthy and reports the
-  rc.30 version through runtime and health evidence.
+- Production remains on verified rc.26 until Bridge approval, then on verified
+  Bridge until Contract approval.
+- Final Production runs healthy rc.30 Contract and reports the rc.30 version
+  through runtime and health evidence.
