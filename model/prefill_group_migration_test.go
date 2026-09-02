@@ -368,9 +368,9 @@ CREATE TABLE prefill_groups (
 				).Error)
 			},
 			expectation: prefillMigrationExpectation{
-				legacyConstraintCount: 1,
+				legacyConstraintCount: 0,
 				legacyIndexCount:      0,
-				deletedNameReusable:   false,
+				deletedNameReusable:   true,
 			},
 		},
 		{
@@ -387,8 +387,8 @@ CREATE TABLE prefill_groups (
 			},
 			expectation: prefillMigrationExpectation{
 				legacyConstraintCount: 0,
-				legacyIndexCount:      1,
-				deletedNameReusable:   false,
+				legacyIndexCount:      0,
+				deletedNameReusable:   true,
 			},
 		},
 		{
@@ -463,9 +463,9 @@ CREATE TABLE prefill_groups (
 				"keep_prefill_deleted_name",
 			},
 			expectation: prefillMigrationExpectation{
-				legacyConstraintCount: 1,
+				legacyConstraintCount: 0,
 				legacyIndexCount:      0,
-				deletedNameReusable:   false,
+				deletedNameReusable:   true,
 			},
 		},
 	}
