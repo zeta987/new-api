@@ -8,9 +8,9 @@
 
 ## 快照邊界
 
-本文件涵蓋 2026-09-02 產出的 154 個 ZETA commit OID：從當時本地與 origin 的 `release/**`、`dev/**`、`feat/**`、`fix/**` 聯集，先排除下文兩條 Task 4 失敗封存分支及其 26 個 OID，再扣除全部 686 個已驗證 tag、`upstream/HEAD`、`upstream/main` 與 `origin/main` 可達的上游物件。
+本文件涵蓋 2026-09-02 產出的 157 個 ZETA commit OID：從當時本地與 origin 的 `release/**`、`dev/**`、`feat/**`、`fix/**` 聯集，先排除下文兩條 Task 4 失敗封存分支及其 26 個 OID，再扣除全部 686 個已驗證 tag、`upstream/HEAD`、`upstream/main` 與 `origin/main` 可達的上游物件。
 
-**快照不含最終 `docs: refresh zeta changelog` 提交，也不含其後的任何提交。** 產出時 signed Contract release merge `85da814a0d8f0d7a10e6d479017aabcf3c829e88` 是 rc.30 釋出上界，development 尖端 `6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870` 已完整包含於該 merge。最終 changelog 提交落地後兩個本地 ref 都會前進，因此拿 live ref 重跑完整性驗證時，該最終提交會被算成 missing，這是快照邊界的預期差異。要重現這 154 筆，請以 `85da814a0d8f0d7a10e6d479017aabcf3c829e88` 為 rc.30 的釋出上界，並納入下列 PostgreSQL backup tip。
+**快照不含最終 `docs: refresh zeta changelog` 提交，也不含其後的任何提交。** 產出時 signed nullable-priority release merge `50f0f0d13f09b08601bc15ce2e40bf989e351e3e` 是 rc.30 釋出上界，development 尖端 `f9f1a465e7572569a7392d79024697fdb5e7a1e7` 已完整包含於該 merge。最終 changelog 提交落地後兩個本地 ref 都會前進，因此拿 live ref 重跑完整性驗證時，該最終提交會被算成 missing，這是快照邊界的預期差異。要重現這 157 筆，請以 `50f0f0d13f09b08601bc15ce2e40bf989e351e3e` 為 rc.30 的釋出上界，並納入下列主題備份 tips。
 
 另有兩條 Task 4 失敗嘗試的封存分支（訊息格式錯誤與 trailer 重複各 13 個 OID，共 26 個）被明確排除，與帳本的交集為 0，不視為 ZETA 歷史。rc.26 與 rc.27 因為舊 release ref 已被剪除，版本歸屬改用明文記錄的 epoch 邊界判定，詳見技術帳本的參考區塊。
 
@@ -28,6 +28,8 @@
 
 PostgreSQL prefill 唯一性採兩階段發布。Bridge 先保留舊版辨識得到的 global unique object，建立有效的 partial unique index，並把 migration lock wait 限定為 `5s`、statement timeout 限定為 `30s`，使 rc.26 snapshot 仍可回復；Contract 再只移除 allowlist 內的舊物件，完成 soft-delete name reuse。無效或未 ready 的舊索引會在資料異動前被拒絕。
 
+- 修正 nullable channel priority 選路 — [50f0f0d13f09](../../commit/50f0f0d13f09b08601bc15ce2e40bf989e351e3e)
+- 實作 `NULL` 與明示零的相同 priority 語意 — [f9f1a465e757](../../commit/f9f1a465e7572569a7392d79024697fdb5e7a1e7)
 - 完成 prefill uniqueness Contract — [85da814a0d8f](../../commit/85da814a0d8f0d7a10e6d479017aabcf3c829e88)
 - 實作 Contract 並保留 migration failure atomicity — [6f2abbdf9810](../../commit/6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870)
 - 推進 rollback Bridge 至 rc.30 候選版 — [35869c53edb2](../../commit/35869c53edb2b3da775f071e2f4c1c86178e07d1)
@@ -46,7 +48,7 @@ PostgreSQL prefill 唯一性採兩階段發布。Bridge 先保留舊版辨識得
 
 五個主題備份分支全部從乾淨的 rc.30 tag 重建，各自只含自己的主題：
 
-- `feat/v1.0.0-rc.30/reasoning-model-support`，13 筆，尖端 [d283b48067f9](../../commit/d283b48067f9410a0e4bc09b8555167c009fc1cd)
+- `feat/v1.0.0-rc.30/reasoning-model-support`，14 筆，尖端 [c19ae9c73f49](../../commit/c19ae9c73f49af76542e767b3c82ba1c790011fc)
 - `feat/v1.0.0-rc.30/chatcompletions-responses-compat`，1 筆，尖端 [f2f151c1df31](../../commit/f2f151c1df31e0e3f28e1eee53e58ecc3de11795)
 - `fix/v1.0.0-rc.30/usage-logs-realtime-refresh`，2 筆，尖端 [6b6a176e7443](../../commit/6b6a176e74433e45c30b3dff874815d5e0fc9d4d)
 - `fix/v1.0.0-rc.30/channel-affinity-test-isolation`，1 筆，尖端 [78ea94034805](../../commit/78ea940348058f04037b90cb87ad8b90aa466c72)
@@ -199,10 +201,13 @@ Claude 的 effort 別名處理也在這版收斂：別名觸發時清掉 top-p �
 
 ## 技術帳本
 
-狀態由 Provenance 欄明示；Version 欄記錄 release epoch 或未釋出工作的目標版本。新加入的 Released rows 指向 signed Contract release merge `85da814a0d8f0d7a10e6d479017aabcf3c829e88`；較早 rows 保留首次完整快照 `75cca222f607b703cef48bcd3e478b101e28f062` 作為歷史來源證據，兩者都位於目前 rc.30 釋出祖先鏈。
+狀態由 Provenance 欄明示；Version 欄記錄 release epoch 或未釋出工作的目標版本。最新 Released rows 指向 signed release merge `50f0f0d13f09b08601bc15ce2e40bf989e351e3e`；較早 rows 保留 Contract merge `85da814a0d8f0d7a10e6d479017aabcf3c829e88` 與首次完整快照 `75cca222f607b703cef48bcd3e478b101e28f062` 作為歷史來源證據，三者都位於目前 rc.30 釋出祖先鏈。
 
 | Version | Class | Commit | Author date | Committer date | Subject | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
+| v1.0.0-rc.30 | Backup rebuild | [c19ae9c73f49](../../commit/c19ae9c73f49af76542e767b3c82ba1c790011fc) | 2026-09-02T23:11:45+08:00 | 2026-09-02T23:24:22+08:00 | fix: preserve nullable channel priority | Backup-only; `refs/heads/feat/v1.0.0-rc.30/reasoning-model-support`; exact patch-id of `f9f1a465e7572569a7392d79024697fdb5e7a1e7` |
+| v1.0.0-rc.30 | Integration | [50f0f0d13f09](../../commit/50f0f0d13f09b08601bc15ce2e40bf989e351e3e) | 2026-09-02T23:23:08+08:00 | 2026-09-02T23:23:08+08:00 | fix: preserve nullable channel priority | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `50f0f0d13f09b08601bc15ce2e40bf989e351e3e` |
+| v1.0.0-rc.30 | Fix | [f9f1a465e757](../../commit/f9f1a465e7572569a7392d79024697fdb5e7a1e7) | 2026-09-02T23:11:45+08:00 | 2026-09-02T23:11:45+08:00 | fix: preserve nullable channel priority | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `50f0f0d13f09b08601bc15ce2e40bf989e351e3e` |
 | v1.0.0-rc.30 | Backup rebuild | [8615f9a843ef](../../commit/8615f9a843efd8f5bed2e604f96e6b46507fbc55) | 2026-09-02T17:56:09+08:00 | 2026-09-02T17:56:09+08:00 | fix: complete prefill uniqueness contract | Backup-only; `refs/heads/fix/v1.0.0-rc.30/postgres-automigrate-compat`; exact Contract delta |
 | v1.0.0-rc.30 | Integration | [85da814a0d8f](../../commit/85da814a0d8f0d7a10e6d479017aabcf3c829e88) | 2026-09-02T17:47:03+08:00 | 2026-09-02T17:47:03+08:00 | fix: promote rc30 uniqueness contract | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
 | v1.0.0-rc.30 | Fix | [6f2abbdf9810](../../commit/6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870) | 2026-09-02T17:18:05+08:00 | 2026-09-02T17:38:03+08:00 | fix: complete prefill uniqueness contract | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
@@ -360,9 +365,9 @@ Claude 的 effort 別名處理也在這版收斂：別名觸發時清掉 top-p �
 
 ## 可重現參考資料
 
-本參考區塊與技術帳本同於 `2026-09-02T18:00:39.2404073+08:00` 生成。154-OID snapshot 的 signed Contract release 上界固定為 `85da814a0d8f0d7a10e6d479017aabcf3c829e88`；最終 `docs: refresh zeta changelog` 提交與其後提交不在本帳本內。
+本參考區塊與技術帳本同於 `2026-09-02T23:26:07.0513037+08:00` 更新。157-OID snapshot 的 signed release 上界固定為 `50f0f0d13f09b08601bc15ce2e40bf989e351e3e`；最終 `docs: refresh zeta changelog` 提交與其後提交不在本帳本內。
 
-集合計數為 Released 96、Backup-only 55、Unreleased 3，共 154 個唯一 OID。完整性結果為 duplicates=0、missing=0、extra=0、unclassified=0，兩個 malformed archive 與帳本 overlap=0。
+集合計數為 Released 98、Backup-only 56、Unreleased 3，共 157 個唯一 OID。完整性結果為 duplicates=0、missing=0、extra=0、unclassified=0，兩個 malformed archive 與帳本 overlap=0。
 
 rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `fd81ba893e649c3cb9cb946dec023e60a2fa7b5f`。rc.27 epoch 從 `3084ef43418370ebc3ab9c266ad11105df2a207c` 開始，並在 tag merge 前包含 `74e223c6cdff076ea55e611074f127e80e69ed63` 與 `7add487c63e295287b4a0419ae5d983eac6040c9`。
 
@@ -373,7 +378,7 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/heads/dev/v1.0.0-rc.26` | `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` |
 | `refs/heads/dev/v1.0.0-rc.27` | `15ccc25556359fa097d039426966d618c5e7d2b8` |
 | `refs/heads/dev/v1.0.0-rc.29` | `55c0dea9d8573d9b0f55fd2891d906938e00a850` |
-| `refs/heads/dev/v1.0.0-rc.30` | `6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870` |
+| `refs/heads/dev/v1.0.0-rc.30` | `f9f1a465e7572569a7392d79024697fdb5e7a1e7` |
 | `refs/heads/feat/rc25/glm-effort-openai-openrouter` | `5fd1641ae442a24ee7d5c70e7a70186ae6417af1` |
 | `refs/heads/feat/rc27/glm-generic-effort-suffixes` | `f2a4893e73f1efc840ce50274d310687c21443e4` |
 | `refs/heads/feat/v1.0.0-rc.26/chatcompletions-responses-compat` | `d2c2a1c4d60c10c62bfc87829ecf21c9e9dd2a1c` |
@@ -383,9 +388,10 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/heads/feat/v1.0.0-rc.29/chatcompletions-responses-compat` | `965b46fd5bb3188cfb779b86b03f88fab8debb31` |
 | `refs/heads/feat/v1.0.0-rc.29/reasoning-model-support` | `91450384951ac181a8d25ce2774743afb6e3f62c` |
 | `refs/heads/feat/v1.0.0-rc.30/chatcompletions-responses-compat` | `f2f151c1df31e0e3f28e1eee53e58ecc3de11795` |
-| `refs/heads/feat/v1.0.0-rc.30/reasoning-model-support` | `d283b48067f9410a0e4bc09b8555167c009fc1cd` |
+| `refs/heads/feat/v1.0.0-rc.30/reasoning-model-support` | `c19ae9c73f49af76542e767b3c82ba1c790011fc` |
 | `refs/heads/fix/rc29/postgres-automigrate-compat` | `8e026e7c6abb6a8129bf6b39834ee5c05563aa6e` |
 | `refs/heads/fix/rc30/production-review-gaps` | `6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870` |
+| `refs/heads/fix/rc30/nullable-priority-selection` | `f9f1a465e7572569a7392d79024697fdb5e7a1e7` |
 | `refs/heads/fix/rc30/rollback-bridge-snapshot` | `35869c53edb2b3da775f071e2f4c1c86178e07d1` |
 | `refs/heads/fix/v1.0.0-rc.26/channel-affinity-test-isolation` | `a478fe4513088d15582b7a372c319e700bc0a62b` |
 | `refs/heads/fix/v1.0.0-rc.26/usage-logs-realtime-refresh` | `7f68d21c5e84ee846c4412d8088873fd4ab69186` |
@@ -400,7 +406,7 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/heads/release/v1.0.0-rc.26` | `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` |
 | `refs/heads/release/v1.0.0-rc.27` | `15ccc25556359fa097d039426966d618c5e7d2b8` |
 | `refs/heads/release/v1.0.0-rc.29` | `dccf03595850addfd0901523e5ace279ecb9da83` |
-| `refs/heads/release/v1.0.0-rc.30` | `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| `refs/heads/release/v1.0.0-rc.30` | `50f0f0d13f09b08601bc15ce2e40bf989e351e3e` |
 
 ### Origin remote-tracking ref tips
 
@@ -409,7 +415,7 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/remotes/origin/dev/v1.0.0-rc.26` | `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` |
 | `refs/remotes/origin/dev/v1.0.0-rc.27` | `15ccc25556359fa097d039426966d618c5e7d2b8` |
 | `refs/remotes/origin/dev/v1.0.0-rc.29` | `55c0dea9d8573d9b0f55fd2891d906938e00a850` |
-| `refs/remotes/origin/dev/v1.0.0-rc.30` | `35869c53edb2b3da775f071e2f4c1c86178e07d1` |
+| `refs/remotes/origin/dev/v1.0.0-rc.30` | `da443762c38078ba4552b381a6c9a2b22ff9189c` |
 | `refs/remotes/origin/feat/rc25/glm-effort-openai-openrouter` | `5fd1641ae442a24ee7d5c70e7a70186ae6417af1` |
 | `refs/remotes/origin/feat/v1.0.0-rc.26/chatcompletions-responses-compat` | `d2c2a1c4d60c10c62bfc87829ecf21c9e9dd2a1c` |
 | `refs/remotes/origin/feat/v1.0.0-rc.26/reasoning-model-support` | `189797b3156475cb723976099a714bf9440983de` |
@@ -447,7 +453,7 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `upstream:refs/heads/main` | `0ed497f066a68613375124303ef54f220267b334` |
 | `origin:refs/heads/main` | `27ff6a8767e728f879d52770c273d4f73214a430` |
 
-Live readback 顯示 origin rc.30 development 與 release 仍為已發布的 Bridge SHA `35869c53edb2b3da775f071e2f4c1c86178e07d1`；五個 rc.30 backup refs 均存在，其中 PostgreSQL backup 已前進至 Contract tip `8615f9a843efd8f5bed2e604f96e6b46507fbc55`。本 Task 沒有推送 development 或 release。
+Live readback 顯示 origin rc.30 development 位於先前候選 `da443762c38078ba4552b381a6c9a2b22ff9189c`，release 仍為已發布的 Bridge SHA `35869c53edb2b3da775f071e2f4c1c86178e07d1`；五個 rc.30 backup refs 均存在，其中 PostgreSQL backup 已前進至 Contract tip `8615f9a843efd8f5bed2e604f96e6b46507fbc55`。本次 nullable-priority 修正尚未推送 development、reasoning backup 或 release。
 
 ### 已驗證 epoch tags
 
@@ -468,11 +474,14 @@ Live readback 顯示 origin rc.30 development 與 release 仍為已發布的 Bri
 
 額外納入的 upstream 排除 refs：無。
 
-### 154 個完整 OID
+### 157 個完整 OID
 
 下列資料採 `Version|State|Full OID` 格式，順序與技術帳本完全相同。
 
 ```text
+v1.0.0-rc.30|Backup-only|c19ae9c73f49af76542e767b3c82ba1c790011fc
+v1.0.0-rc.30|Released|50f0f0d13f09b08601bc15ce2e40bf989e351e3e
+v1.0.0-rc.30|Released|f9f1a465e7572569a7392d79024697fdb5e7a1e7
 v1.0.0-rc.30|Backup-only|8615f9a843efd8f5bed2e604f96e6b46507fbc55
 v1.0.0-rc.30|Released|85da814a0d8f0d7a10e6d479017aabcf3c829e88
 v1.0.0-rc.30|Released|6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870
