@@ -64,9 +64,10 @@ func GetChannel(group string, model string, retry int, filters []dto.ChannelFilt
 		var priorities []int64
 		err := DB.Model(&Ability{}).
 			Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, modelCandidate, true).
-			Distinct("priority").
+			Select("COALESCE(priority, 0) AS priority").
+			Distinct().
 			Order("priority DESC").
-			Pluck("priority", &priorities).Error
+			Scan(&priorities).Error
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +79,7 @@ func GetChannel(group string, model string, retry int, filters []dto.ChannelFilt
 		supportedPriorityIndex := 0
 		for _, priority := range priorities {
 			var abilities []Ability
-			err = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, modelCandidate, true, priority).
+			err = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and COALESCE(priority, 0) = ?", group, modelCandidate, true, priority).
 				Order("weight DESC").
 				Find(&abilities).Error
 			if err != nil {
