@@ -211,9 +211,9 @@ func TestPostgresUniquenessMigrationsBoundLockWait(t *testing.T) {
 	}
 }
 
-func TestMigratePrefillGroupUniquenessReadyTargetAvoidsLock(t *testing.T) {
+func TestMigratePrefillGroupUniquenessContractWaitsForLockAndReplacesLegacy(t *testing.T) {
 	db := openPostgresMigrationTestDB(t)
-	schemaName := fmt.Sprintf("postgres_ready_prefill_%d", time.Now().UnixNano())
+	schemaName := fmt.Sprintf("postgres_contract_prefill_%d", time.Now().UnixNano())
 	require.NoError(t, db.Exec(
 		"CREATE SCHEMA ?",
 		clause.Table{Name: schemaName},
@@ -233,6 +233,13 @@ func TestMigratePrefillGroupUniquenessReadyTargetAvoidsLock(t *testing.T) {
 		clause.Table{Name: schemaName},
 	).Error)
 	require.NoError(t, setupTx.AutoMigrate(&PrefillGroup{}))
+	original := PrefillGroup{
+		Name:        "contract-shared-name",
+		Type:        "model",
+		Items:       JSONValue(`[]`),
+		Description: "preserve through lock timeout",
+	}
+	require.NoError(t, setupTx.Create(&original).Error)
 	require.NoError(t, setupTx.Exec(
 		"ALTER TABLE ? ADD CONSTRAINT ? UNIQUE (?)",
 		clause.Table{Name: "prefill_groups"},
@@ -267,9 +274,83 @@ func TestMigratePrefillGroupUniquenessReadyTargetAvoidsLock(t *testing.T) {
 		"SET LOCAL search_path TO ?",
 		clause.Table{Name: schemaName},
 	).Error)
-	require.NoError(t, migratePrefillGroupUniqueness(migrationTx))
+	migrationErr := migratePrefillGroupUniqueness(migrationTx)
+	require.Error(t, migrationErr)
+	require.Contains(t, migrationErr.Error(), "SQLSTATE 55P03")
 	require.NoError(t, migrationTx.Rollback().Error)
+
+	blockedStateTx := db.Begin()
+	require.NoError(t, blockedStateTx.Error)
+	t.Cleanup(func() { _ = blockedStateTx.Rollback().Error })
+	require.NoError(t, blockedStateTx.Exec(
+		"SET LOCAL search_path TO ?",
+		clause.Table{Name: schemaName},
+	).Error)
+	assert.True(t, blockedStateTx.Migrator().HasConstraint(&PrefillGroup{}, legacyPrefillGroupNameUnique))
+	targetIndex, err = inspectPrefillGroupNameIndex(blockedStateTx, "prefill_groups")
+	require.NoError(t, err)
+	assert.True(t, targetIndex.valid)
+	var preserved PrefillGroup
+	require.NoError(t, blockedStateTx.First(&preserved, original.Id).Error)
+	assert.Equal(t, original.Name, preserved.Name)
+	assert.Equal(t, original.Description, preserved.Description)
+	var blockedTotal int64
+	require.NoError(t, blockedStateTx.Unscoped().Model(&PrefillGroup{}).Count(&blockedTotal).Error)
+	assert.EqualValues(t, 1, blockedTotal)
+	require.NoError(t, blockedStateTx.Rollback().Error)
+
 	require.NoError(t, lockHolder.Rollback().Error)
+
+	successTx := db.Begin()
+	require.NoError(t, successTx.Error)
+	t.Cleanup(func() { _ = successTx.Rollback().Error })
+	require.NoError(t, successTx.Exec(
+		"SET LOCAL search_path TO ?",
+		clause.Table{Name: schemaName},
+	).Error)
+	require.NoError(t, migratePrefillGroupUniqueness(successTx))
+	require.NoError(t, successTx.Commit().Error)
+
+	verifyTx := db.Begin()
+	require.NoError(t, verifyTx.Error)
+	t.Cleanup(func() { _ = verifyTx.Rollback().Error })
+	require.NoError(t, verifyTx.Exec(
+		"SET LOCAL search_path TO ?",
+		clause.Table{Name: schemaName},
+	).Error)
+	assert.False(t, verifyTx.Migrator().HasConstraint(&PrefillGroup{}, legacyPrefillGroupNameUnique))
+	targetIndex, err = inspectPrefillGroupNameIndex(verifyTx, "prefill_groups")
+	require.NoError(t, err)
+	assert.True(t, targetIndex.valid)
+	require.NoError(t, verifyTx.First(&preserved, original.Id).Error)
+	assert.Equal(t, original.Name, preserved.Name)
+	assert.Equal(t, original.Description, preserved.Description)
+
+	duplicateErr := verifyTx.Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&PrefillGroup{
+			Name:  original.Name,
+			Type:  "model",
+			Items: JSONValue(`[]`),
+		}).Error
+	})
+	require.Error(t, duplicateErr)
+	require.NoError(t, verifyTx.Delete(&preserved).Error)
+	reuseErr := verifyTx.Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&PrefillGroup{
+			Name:  original.Name,
+			Type:  "model",
+			Items: JSONValue(`[]`),
+		}).Error
+	})
+	require.NoError(t, reuseErr)
+	var total, active int64
+	require.NoError(t, verifyTx.Unscoped().Model(&PrefillGroup{}).
+		Where("name = ?", original.Name).Count(&total).Error)
+	require.NoError(t, verifyTx.Model(&PrefillGroup{}).
+		Where("name = ?", original.Name).Count(&active).Error)
+	assert.EqualValues(t, 2, total)
+	assert.EqualValues(t, 1, active)
+	require.NoError(t, verifyTx.Rollback().Error)
 }
 
 func TestChooseDBPostgreSQLRepeatedAutoMigrateNamedUniqueIndex(t *testing.T) {
