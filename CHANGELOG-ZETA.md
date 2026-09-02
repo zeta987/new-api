@@ -8,9 +8,9 @@
 
 ## 快照邊界
 
-本文件涵蓋 2026-09-01 產出的 142 個 ZETA commit OID：從當時本地與 origin 的 `release/**`、`dev/**`、`feat/**`、`fix/**` 聯集，先排除下文兩條 Task 4 失敗封存分支及其 26 個 OID，再扣除全部 686 個已驗證 tag、`upstream/HEAD`、`upstream/main` 與 `origin/main` 可達的上游物件。
+本文件涵蓋 2026-09-02 產出的 154 個 ZETA commit OID：從當時本地與 origin 的 `release/**`、`dev/**`、`feat/**`、`fix/**` 聯集，先排除下文兩條 Task 4 失敗封存分支及其 26 個 OID，再扣除全部 686 個已驗證 tag、`upstream/HEAD`、`upstream/main` 與 `origin/main` 可達的上游物件。
 
-**快照不含這份 changelog 自身的提交，也不含其後的任何提交。** 產出時 `release/v1.0.0-rc.30` 與 `dev/v1.0.0-rc.30` 的尖端都是 `75cca222f607`，changelog 提交落地之後兩者都會前進，因此拿 live ref 重跑完整性驗證時，本文件之後的新提交會被算成 missing，那是預期行為而不是資料缺漏。要重現這 142 筆，請以 `75cca222f607` 為 rc.30 的釋出上界。
+**快照不含最終 `docs: refresh zeta changelog` 提交，也不含其後的任何提交。** 產出時 signed Contract release merge `85da814a0d8f0d7a10e6d479017aabcf3c829e88` 是 rc.30 釋出上界，development 尖端 `6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870` 已完整包含於該 merge。最終 changelog 提交落地後兩個本地 ref 都會前進，因此拿 live ref 重跑完整性驗證時，該最終提交會被算成 missing，這是快照邊界的預期差異。要重現這 154 筆，請以 `85da814a0d8f0d7a10e6d479017aabcf3c829e88` 為 rc.30 的釋出上界，並納入下列 PostgreSQL backup tip。
 
 另有兩條 Task 4 失敗嘗試的封存分支（訊息格式錯誤與 trailer 重複各 13 個 OID，共 26 個）被明確排除，與帳本的交集為 0，不視為 ZETA 歷史。rc.26 與 rc.27 因為舊 release ref 已被剪除，版本歸屬改用明文記錄的 epoch 邊界判定，詳見技術帳本的參考區塊。
 
@@ -26,6 +26,19 @@
 
 本版把整合釋出從 rc.29 推進到上游 `v1.0.0-rc.30`，並在合併時保住兩處與上游重疊的自訂行為：`model/log.go` 的用量日誌自訂邏輯，以及 `model/main.go` 的 PostgreSQL migrator 包裝層。上游新增的 `tokens.key` 舊唯一性遷移在 GORM `AutoMigrate` 之前執行，ZETA 的 dialector 包裝則在 `AutoMigrate` 期間持續生效，兩者並存。
 
+PostgreSQL prefill 唯一性採兩階段發布。Bridge 先保留舊版辨識得到的 global unique object，建立有效的 partial unique index，並把 migration lock wait 限定為 `5s`、statement timeout 限定為 `30s`，使 rc.26 snapshot 仍可回復；Contract 再只移除 allowlist 內的舊物件，完成 soft-delete name reuse。無效或未 ready 的舊索引會在資料異動前被拒絕。
+
+- 完成 prefill uniqueness Contract — [85da814a0d8f](../../commit/85da814a0d8f0d7a10e6d479017aabcf3c829e88)
+- 實作 Contract 並保留 migration failure atomicity — [6f2abbdf9810](../../commit/6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870)
+- 推進 rollback Bridge 至 rc.30 候選版 — [35869c53edb2](../../commit/35869c53edb2b3da775f071e2f4c1c86178e07d1)
+- 拒絕無效的 prefill legacy indexes — [61c001f84079](../../commit/61c001f8407980c750c40c238421134fc78bf1e1)
+- 新增 rc.30 rollback Bridge — [df818ccd0f11](../../commit/df818ccd0f11428ef5a7de9fd33179c56ff929af)
+- 修正 rollback Bridge 介面設計 — [3c988a4f0d98](../../commit/3c988a4f0d98e63bc20bb4e500ed25bd5d1be497)
+- 規劃 rc.30 rollback Bridge — [91f41f7b680e](../../commit/91f41f7b680e509d1c389f88a8fef03beb1928eb)
+- 設計 rc.30 rollback Bridge — [a94284fe5c6b](../../commit/a94284fe5c6b10112c43bfb7832caa82945c8dff)
+- 修正 rc.29 backup 數量 — [97c9413e88ce](../../commit/97c9413e88ce48033d2638529c61810902adc842)
+- 新增 ZETA release changelog — [e18d488a6c11](../../commit/e18d488a6c1132d9267276f690fd0bf6659f7d91)
+
 - 整合上游 rc.30 tag，簽章合併並保留雙親 — [75cca222f607](../../commit/75cca222f607b703cef48bcd3e478b101e28f062)
 - 記錄 rc.30 升級計畫 — [57ebbda62da4](../../commit/57ebbda62da4afa2b5b41c113f3c26cc4c5c4f21)
 - 修訂 rc.30 升級設計 — [43b18f09db5e](../../commit/43b18f09db5e42b7e6a01677b6498e41f567c165)
@@ -37,7 +50,7 @@
 - `feat/v1.0.0-rc.30/chatcompletions-responses-compat`，1 筆，尖端 [f2f151c1df31](../../commit/f2f151c1df31e0e3f28e1eee53e58ecc3de11795)
 - `fix/v1.0.0-rc.30/usage-logs-realtime-refresh`，2 筆，尖端 [6b6a176e7443](../../commit/6b6a176e74433e45c30b3dff874815d5e0fc9d4d)
 - `fix/v1.0.0-rc.30/channel-affinity-test-isolation`，1 筆，尖端 [78ea94034805](../../commit/78ea940348058f04037b90cb87ad8b90aa466c72)
-- `fix/v1.0.0-rc.30/postgres-automigrate-compat`，1 筆，尖端 [b37f6be3a309](../../commit/b37f6be3a309c89b60067e64bb80c47340800096)
+- `fix/v1.0.0-rc.30/postgres-automigrate-compat`，3 筆，尖端 [8615f9a843ef](../../commit/8615f9a843efd8f5bed2e604f96e6b46507fbc55)
 
 ## v1.0.0-rc.29
 
@@ -186,10 +199,22 @@ Claude 的 effort 別名處理也在這版收斂：別名觸發時清掉 top-p �
 
 ## 技術帳本
 
-狀態由 Provenance 欄明示；Version 欄記錄 release epoch 或未釋出工作的目標版本。Released rows 統一指向不會依賴 rc.29 保留狀態的 rc.30 快照祖先鏈。
+狀態由 Provenance 欄明示；Version 欄記錄 release epoch 或未釋出工作的目標版本。新加入的 Released rows 指向 signed Contract release merge `85da814a0d8f0d7a10e6d479017aabcf3c829e88`；較早 rows 保留首次完整快照 `75cca222f607b703cef48bcd3e478b101e28f062` 作為歷史來源證據，兩者都位於目前 rc.30 釋出祖先鏈。
 
 | Version | Class | Commit | Author date | Committer date | Subject | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
+| v1.0.0-rc.30 | Backup rebuild | [8615f9a843ef](../../commit/8615f9a843efd8f5bed2e604f96e6b46507fbc55) | 2026-09-02T17:56:09+08:00 | 2026-09-02T17:56:09+08:00 | fix: complete prefill uniqueness contract | Backup-only; `refs/heads/fix/v1.0.0-rc.30/postgres-automigrate-compat`; exact Contract delta |
+| v1.0.0-rc.30 | Integration | [85da814a0d8f](../../commit/85da814a0d8f0d7a10e6d479017aabcf3c829e88) | 2026-09-02T17:47:03+08:00 | 2026-09-02T17:47:03+08:00 | fix: promote rc30 uniqueness contract | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Fix | [6f2abbdf9810](../../commit/6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870) | 2026-09-02T17:18:05+08:00 | 2026-09-02T17:38:03+08:00 | fix: complete prefill uniqueness contract | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Integration | [35869c53edb2](../../commit/35869c53edb2b3da775f071e2f4c1c86178e07d1) | 2026-09-01T21:55:39+08:00 | 2026-09-01T21:55:39+08:00 | fix: promote rc30 rollback bridge | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Backup rebuild | [e19302477e75](../../commit/e19302477e75e411e9e08563b77e1ed9db177707) | 2026-09-01T21:34:59+08:00 | 2026-09-01T21:34:59+08:00 | fix: add rc30 rollback bridge | Backup-only; `refs/heads/fix/v1.0.0-rc.30/postgres-automigrate-compat`; exact Bridge delta |
+| v1.0.0-rc.30 | Fix | [61c001f84079](../../commit/61c001f8407980c750c40c238421134fc78bf1e1) | 2026-09-01T21:17:07+08:00 | 2026-09-01T21:17:07+08:00 | fix: reject invalid prefill legacy indexes | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Fix | [df818ccd0f11](../../commit/df818ccd0f11428ef5a7de9fd33179c56ff929af) | 2026-09-01T20:52:58+08:00 | 2026-09-01T20:52:58+08:00 | fix: add rc30 rollback bridge | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Docs | [3c988a4f0d98](../../commit/3c988a4f0d98e63bc20bb4e500ed25bd5d1be497) | 2026-09-01T19:14:25+08:00 | 2026-09-01T19:14:25+08:00 | docs: fix rollback bridge interfaces | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Docs | [91f41f7b680e](../../commit/91f41f7b680e509d1c389f88a8fef03beb1928eb) | 2026-09-01T18:40:57+08:00 | 2026-09-01T18:40:57+08:00 | docs: plan rc30 rollback bridge | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Docs | [a94284fe5c6b](../../commit/a94284fe5c6b10112c43bfb7832caa82945c8dff) | 2026-09-01T18:31:14+08:00 | 2026-09-01T18:31:14+08:00 | docs: design rc30 rollback bridge | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Docs | [97c9413e88ce](../../commit/97c9413e88ce48033d2638529c61810902adc842) | 2026-09-01T16:46:30+08:00 | 2026-09-01T16:46:30+08:00 | docs: correct rc29 backup count | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
+| v1.0.0-rc.30 | Docs | [e18d488a6c11](../../commit/e18d488a6c1132d9267276f690fd0bf6659f7d91) | 2026-09-01T08:41:58+08:00 | 2026-09-01T12:13:33+08:00 | docs: add Zeta release changelog | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
 | v1.0.0-rc.30 | Integration | [75cca222f607](../../commit/75cca222f607b703cef48bcd3e478b101e28f062) | 2026-09-01T04:30:47+08:00 | 2026-09-01T04:30:47+08:00 | build: integrate upstream rc30 | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `75cca222f607b703cef48bcd3e478b101e28f062` |
 | v1.0.0-rc.30 | Docs | [57ebbda62da4](../../commit/57ebbda62da4afa2b5b41c113f3c26cc4c5c4f21) | 2026-09-01T04:22:48+08:00 | 2026-09-01T04:22:48+08:00 | docs: plan rc30 upgrade | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `75cca222f607b703cef48bcd3e478b101e28f062` |
 | v1.0.0-rc.30 | Docs | [43b18f09db5e](../../commit/43b18f09db5e42b7e6a01677b6498e41f567c165) | 2026-09-01T04:17:41+08:00 | 2026-09-01T04:17:41+08:00 | docs: revise rc30 upgrade design | Released; `refs/heads/release/v1.0.0-rc.30` snapshot ancestry at `75cca222f607b703cef48bcd3e478b101e28f062` |
@@ -335,9 +360,9 @@ Claude 的 effort 別名處理也在這版收斂：別名觸發時清掉 top-p �
 
 ## 可重現參考資料
 
-本參考區塊與技術帳本同於 `2026-09-01T08:11:25.2119192+08:00` 生成。142-OID snapshot 的 release/dev 上界固定為 `75cca222f607b703cef48bcd3e478b101e28f062`；changelog 自身提交與其後提交不在本帳本內。
+本參考區塊與技術帳本同於 `2026-09-02T18:00:39.2404073+08:00` 生成。154-OID snapshot 的 signed Contract release 上界固定為 `85da814a0d8f0d7a10e6d479017aabcf3c829e88`；最終 `docs: refresh zeta changelog` 提交與其後提交不在本帳本內。
 
-集合計數為 Released 86、Backup-only 53、Unreleased 3，共 142 個唯一 OID。完整性結果為 duplicates=0、missing=0、extra=0、unclassified=0，兩個 malformed archive 與帳本 overlap=0。
+集合計數為 Released 96、Backup-only 55、Unreleased 3，共 154 個唯一 OID。完整性結果為 duplicates=0、missing=0、extra=0、unclassified=0，兩個 malformed archive 與帳本 overlap=0。
 
 rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `fd81ba893e649c3cb9cb946dec023e60a2fa7b5f`。rc.27 epoch 從 `3084ef43418370ebc3ab9c266ad11105df2a207c` 開始，並在 tag merge 前包含 `74e223c6cdff076ea55e611074f127e80e69ed63` 與 `7add487c63e295287b4a0419ae5d983eac6040c9`。
 
@@ -348,7 +373,7 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/heads/dev/v1.0.0-rc.26` | `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` |
 | `refs/heads/dev/v1.0.0-rc.27` | `15ccc25556359fa097d039426966d618c5e7d2b8` |
 | `refs/heads/dev/v1.0.0-rc.29` | `55c0dea9d8573d9b0f55fd2891d906938e00a850` |
-| `refs/heads/dev/v1.0.0-rc.30` | `75cca222f607b703cef48bcd3e478b101e28f062` |
+| `refs/heads/dev/v1.0.0-rc.30` | `6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870` |
 | `refs/heads/feat/rc25/glm-effort-openai-openrouter` | `5fd1641ae442a24ee7d5c70e7a70186ae6417af1` |
 | `refs/heads/feat/rc27/glm-generic-effort-suffixes` | `f2a4893e73f1efc840ce50274d310687c21443e4` |
 | `refs/heads/feat/v1.0.0-rc.26/chatcompletions-responses-compat` | `d2c2a1c4d60c10c62bfc87829ecf21c9e9dd2a1c` |
@@ -360,6 +385,8 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/heads/feat/v1.0.0-rc.30/chatcompletions-responses-compat` | `f2f151c1df31e0e3f28e1eee53e58ecc3de11795` |
 | `refs/heads/feat/v1.0.0-rc.30/reasoning-model-support` | `d283b48067f9410a0e4bc09b8555167c009fc1cd` |
 | `refs/heads/fix/rc29/postgres-automigrate-compat` | `8e026e7c6abb6a8129bf6b39834ee5c05563aa6e` |
+| `refs/heads/fix/rc30/production-review-gaps` | `6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870` |
+| `refs/heads/fix/rc30/rollback-bridge-snapshot` | `35869c53edb2b3da775f071e2f4c1c86178e07d1` |
 | `refs/heads/fix/v1.0.0-rc.26/channel-affinity-test-isolation` | `a478fe4513088d15582b7a372c319e700bc0a62b` |
 | `refs/heads/fix/v1.0.0-rc.26/usage-logs-realtime-refresh` | `7f68d21c5e84ee846c4412d8088873fd4ab69186` |
 | `refs/heads/fix/v1.0.0-rc.27/channel-affinity-test-isolation` | `d101e7b005a0dde42c02937cb7e34bcc7127f3af` |
@@ -368,12 +395,12 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/heads/fix/v1.0.0-rc.29/postgres-automigrate-compat` | `0a8422e16490cc7854dd20c9d0ca5767498dea9e` |
 | `refs/heads/fix/v1.0.0-rc.29/usage-logs-realtime-refresh` | `78e4960269ed35c6ea1d90b10205fc347fd76976` |
 | `refs/heads/fix/v1.0.0-rc.30/channel-affinity-test-isolation` | `78ea940348058f04037b90cb87ad8b90aa466c72` |
-| `refs/heads/fix/v1.0.0-rc.30/postgres-automigrate-compat` | `b37f6be3a309c89b60067e64bb80c47340800096` |
+| `refs/heads/fix/v1.0.0-rc.30/postgres-automigrate-compat` | `8615f9a843efd8f5bed2e604f96e6b46507fbc55` |
 | `refs/heads/fix/v1.0.0-rc.30/usage-logs-realtime-refresh` | `6b6a176e74433e45c30b3dff874815d5e0fc9d4d` |
 | `refs/heads/release/v1.0.0-rc.26` | `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` |
 | `refs/heads/release/v1.0.0-rc.27` | `15ccc25556359fa097d039426966d618c5e7d2b8` |
 | `refs/heads/release/v1.0.0-rc.29` | `dccf03595850addfd0901523e5ace279ecb9da83` |
-| `refs/heads/release/v1.0.0-rc.30` | `75cca222f607b703cef48bcd3e478b101e28f062` |
+| `refs/heads/release/v1.0.0-rc.30` | `85da814a0d8f0d7a10e6d479017aabcf3c829e88` |
 
 ### Origin remote-tracking ref tips
 
@@ -382,18 +409,25 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 | `refs/remotes/origin/dev/v1.0.0-rc.26` | `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` |
 | `refs/remotes/origin/dev/v1.0.0-rc.27` | `15ccc25556359fa097d039426966d618c5e7d2b8` |
 | `refs/remotes/origin/dev/v1.0.0-rc.29` | `55c0dea9d8573d9b0f55fd2891d906938e00a850` |
+| `refs/remotes/origin/dev/v1.0.0-rc.30` | `35869c53edb2b3da775f071e2f4c1c86178e07d1` |
 | `refs/remotes/origin/feat/rc25/glm-effort-openai-openrouter` | `5fd1641ae442a24ee7d5c70e7a70186ae6417af1` |
 | `refs/remotes/origin/feat/v1.0.0-rc.26/chatcompletions-responses-compat` | `d2c2a1c4d60c10c62bfc87829ecf21c9e9dd2a1c` |
 | `refs/remotes/origin/feat/v1.0.0-rc.26/reasoning-model-support` | `189797b3156475cb723976099a714bf9440983de` |
 | `refs/remotes/origin/feat/v1.0.0-rc.29/chatcompletions-responses-compat` | `965b46fd5bb3188cfb779b86b03f88fab8debb31` |
 | `refs/remotes/origin/feat/v1.0.0-rc.29/reasoning-model-support` | `91450384951ac181a8d25ce2774743afb6e3f62c` |
+| `refs/remotes/origin/feat/v1.0.0-rc.30/chatcompletions-responses-compat` | `f2f151c1df31e0e3f28e1eee53e58ecc3de11795` |
+| `refs/remotes/origin/feat/v1.0.0-rc.30/reasoning-model-support` | `d283b48067f9410a0e4bc09b8555167c009fc1cd` |
 | `refs/remotes/origin/fix/v1.0.0-rc.26/channel-affinity-test-isolation` | `a478fe4513088d15582b7a372c319e700bc0a62b` |
 | `refs/remotes/origin/fix/v1.0.0-rc.26/usage-logs-realtime-refresh` | `7f68d21c5e84ee846c4412d8088873fd4ab69186` |
 | `refs/remotes/origin/fix/v1.0.0-rc.29/channel-affinity-test-isolation` | `bc4e43801de037257a6b00f6b44c23b8482b5cce` |
 | `refs/remotes/origin/fix/v1.0.0-rc.29/postgres-automigrate-compat` | `0a8422e16490cc7854dd20c9d0ca5767498dea9e` |
 | `refs/remotes/origin/fix/v1.0.0-rc.29/usage-logs-realtime-refresh` | `78e4960269ed35c6ea1d90b10205fc347fd76976` |
+| `refs/remotes/origin/fix/v1.0.0-rc.30/channel-affinity-test-isolation` | `78ea940348058f04037b90cb87ad8b90aa466c72` |
+| `refs/remotes/origin/fix/v1.0.0-rc.30/postgres-automigrate-compat` | `8615f9a843efd8f5bed2e604f96e6b46507fbc55` |
+| `refs/remotes/origin/fix/v1.0.0-rc.30/usage-logs-realtime-refresh` | `6b6a176e74433e45c30b3dff874815d5e0fc9d4d` |
 | `refs/remotes/origin/release/v1.0.0-rc.26` | `c0b9df91c8b0e9e4cc84d71740d7ffaacdb6d2b7` |
 | `refs/remotes/origin/release/v1.0.0-rc.29` | `dccf03595850addfd0901523e5ace279ecb9da83` |
+| `refs/remotes/origin/release/v1.0.0-rc.30` | `35869c53edb2b3da775f071e2f4c1c86178e07d1` |
 
 ### Main、upstream tracking 與目標 tag
 
@@ -409,11 +443,11 @@ rc.26 epoch 從 `e595d819211dba119c8f9e9543a287e0c1122798` 開始，並包含 `f
 
 | Remote ref | Full OID |
 | --- | --- |
-| `upstream:HEAD` | `67a0585d0f252dfca445c11b7600971b7eeb8eea` |
-| `upstream:refs/heads/main` | `67a0585d0f252dfca445c11b7600971b7eeb8eea` |
+| `upstream:HEAD` | `0ed497f066a68613375124303ef54f220267b334` |
+| `upstream:refs/heads/main` | `0ed497f066a68613375124303ef54f220267b334` |
 | `origin:refs/heads/main` | `27ff6a8767e728f879d52770c273d4f73214a430` |
 
-Live readback 中沒有 origin rc.30 release、development 與五個 backup refs；上方已記錄各 ref 預定發布的本地 OID。
+Live readback 顯示 origin rc.30 development 與 release 仍為已發布的 Bridge SHA `35869c53edb2b3da775f071e2f4c1c86178e07d1`；五個 rc.30 backup refs 均存在，其中 PostgreSQL backup 已前進至 Contract tip `8615f9a843efd8f5bed2e604f96e6b46507fbc55`。本 Task 沒有推送 development 或 release。
 
 ### 已驗證 epoch tags
 
@@ -434,11 +468,23 @@ Live readback 中沒有 origin rc.30 release、development 與五個 backup refs
 
 額外納入的 upstream 排除 refs：無。
 
-### 142 個完整 OID
+### 154 個完整 OID
 
 下列資料採 `Version|State|Full OID` 格式，順序與技術帳本完全相同。
 
 ```text
+v1.0.0-rc.30|Backup-only|8615f9a843efd8f5bed2e604f96e6b46507fbc55
+v1.0.0-rc.30|Released|85da814a0d8f0d7a10e6d479017aabcf3c829e88
+v1.0.0-rc.30|Released|6f2abbdf9810a5cc51b9c2cccdb4368bc7ca4870
+v1.0.0-rc.30|Released|35869c53edb2b3da775f071e2f4c1c86178e07d1
+v1.0.0-rc.30|Backup-only|e19302477e75e411e9e08563b77e1ed9db177707
+v1.0.0-rc.30|Released|61c001f8407980c750c40c238421134fc78bf1e1
+v1.0.0-rc.30|Released|df818ccd0f11428ef5a7de9fd33179c56ff929af
+v1.0.0-rc.30|Released|3c988a4f0d98e63bc20bb4e500ed25bd5d1be497
+v1.0.0-rc.30|Released|91f41f7b680e509d1c389f88a8fef03beb1928eb
+v1.0.0-rc.30|Released|a94284fe5c6b10112c43bfb7832caa82945c8dff
+v1.0.0-rc.30|Released|97c9413e88ce48033d2638529c61810902adc842
+v1.0.0-rc.30|Released|e18d488a6c1132d9267276f690fd0bf6659f7d91
 v1.0.0-rc.30|Released|75cca222f607b703cef48bcd3e478b101e28f062
 v1.0.0-rc.30|Released|57ebbda62da4afa2b5b41c113f3c26cc4c5c4f21
 v1.0.0-rc.30|Released|43b18f09db5e42b7e6a01677b6498e41f567c165
