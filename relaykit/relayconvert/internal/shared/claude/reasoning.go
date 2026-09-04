@@ -29,6 +29,17 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 	if preserveSuffix {
 		suffix = reasoning.Intent{}
 	}
+	if !preserveSuffix && suffix.IsEmpty() {
+		legacyBase, legacyIntent, found, err := reasoning.ParseClaudeModelSuffix(req.Model, opts.Claude.ThinkingAdapterEnabled)
+		if err != nil {
+			return err
+		}
+		if found {
+			baseModel = legacyBase
+			capabilityModel = legacyBase
+			suffix = legacyIntent
+		}
+	}
 	// A native Claude request without a host modifier is already in the target
 	// protocol, including Claude-compatible proxies that keep native controls
 	// instead of applying Anthropic model rules. Read portable effort for
@@ -102,6 +113,9 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 		return err
 	}
 	convdiag.Add(ctx, rendered.Diagnostics...)
+	if crossProtocol && reasoning.IsClaudePost46AdaptiveThinkingModel(capabilityModel) && rendered.Thinking != nil && rendered.Thinking.Type == "adaptive" && rendered.Thinking.Display == "" {
+		rendered.Thinking.Display = "summarized"
+	}
 	req.Model = baseModel
 	if rendered.Thinking != nil {
 		req.Thinking = rendered.Thinking

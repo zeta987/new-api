@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
@@ -74,10 +75,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	adaptor.Init(info)
 
 	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
-	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
-		!passThroughGlobal &&
-		!info.ChannelSetting.PassThroughBodyEnabled &&
-		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
+	responsesBridgeEnabled := info.RelayMode == relayconstant.RelayModeChatCompletions &&
+		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName)
+	useResponses, useRawPassThrough := resolveChatRequestHandling(info, passThroughGlobal, responsesBridgeEnabled)
+	if useResponses {
 		applySystemPromptIfNeeded(c, info, request)
 		usage, newApiErr := textRequestViaResponses(c, info, adaptor, request)
 		if newApiErr != nil {
@@ -97,7 +98,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	var requestBody io.Reader
 
-	if passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled {
+	if useRawPassThrough {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -222,4 +223,17 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	}
 	return nil
+}
+
+func resolveChatRequestHandling(info *relaycommon.RelayInfo, passThroughGlobal, responsesBridgeEnabled bool) (bool, bool) {
+	if info == nil {
+		return false, passThroughGlobal
+	}
+	_, _, isGLMAlias := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+	forceChatConversion := info.RelayMode == relayconstant.RelayModeChatCompletions && isGLMAlias
+	if forceChatConversion {
+		return false, false
+	}
+	useRawPassThrough := passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled
+	return responsesBridgeEnabled && !useRawPassThrough, useRawPassThrough
 }

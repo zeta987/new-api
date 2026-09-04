@@ -11,15 +11,28 @@ import (
 )
 
 var (
-	EffortSuffixes           = kitreasoning.EffortSuffixes
-	OpenAIEffortSuffixes     = kitreasoning.OpenAIEffortSuffixes
-	DeepSeekV4EffortSuffixes = kitreasoning.DeepSeekV4EffortSuffixes
+	ParseGPT6AstraReasoningModelSuffix = kitreasoning.ParseGPT6AstraReasoningModelSuffix
+	OpenAIReasoningWildcardModel       = kitreasoning.OpenAIReasoningWildcardModel
+	IsOpenAIReasoningWildcard          = kitreasoning.IsOpenAIReasoningWildcard
+	IsGPT6AstraModel                   = kitreasoning.IsGPT6AstraModel
+	EffortSuffixes                     = kitreasoning.EffortSuffixes
+	OpenAIEffortSuffixes               = kitreasoning.OpenAIEffortSuffixes
+	DeepSeekV4EffortSuffixes           = kitreasoning.DeepSeekV4EffortSuffixes
 )
 
 var (
-	TrimEffortSuffixWithSuffixes  = kitreasoning.TrimEffortSuffixWithSuffixes
-	ParseDeepSeekV4ThinkingSuffix = kitreasoning.ParseDeepSeekV4ThinkingSuffix
-	TrimGeminiThinkingSuffix      = kitreasoning.TrimGeminiThinkingSuffix
+	IsClaudeEffortLevel                 = kitreasoning.IsClaudeEffortLevel
+	TrimEffortSuffix                    = kitreasoning.TrimEffortSuffix
+	IsClaudeAdaptiveThinkingModel       = kitreasoning.IsClaudeAdaptiveThinkingModel
+	IsClaudePost46AdaptiveThinkingModel = kitreasoning.IsClaudePost46AdaptiveThinkingModel
+	TrimEffortSuffixWithSuffixes        = kitreasoning.TrimEffortSuffixWithSuffixes
+	GPT56ReasoningWildcardModel         = kitreasoning.GPT56ReasoningWildcardModel
+	IsGPT56ReasoningWildcard            = kitreasoning.IsGPT56ReasoningWildcard
+	ParseGPT56ReasoningModelSuffix      = kitreasoning.ParseGPT56ReasoningModelSuffix
+	ParseGLMReasoningEffortSuffix       = kitreasoning.ParseGLMReasoningEffortSuffix
+	IsGLMReasoningEffortModel           = kitreasoning.IsGLMReasoningEffortModel
+	ParseDeepSeekV4ThinkingSuffix       = kitreasoning.ParseDeepSeekV4ThinkingSuffix
+	TrimGeminiThinkingSuffix            = kitreasoning.TrimGeminiThinkingSuffix
 )
 
 // ParseOpenAIReasoningEffortFromModelSuffix applies RelayKit's positive family
@@ -27,6 +40,13 @@ var (
 // such as gpt-5.1-codex-max remain opaque.
 func ParseOpenAIReasoningEffortFromModelSuffix(modelName string) (string, string) {
 	return kitreasoning.ParseOpenAIReasoningEffortFromModelSuffix(modelName, model_setting.ShouldPreserveEffortTail)
+}
+
+func ParseOpenAIReasoningModelSuffix(modelName string) (string, string, string, bool) {
+	if model_setting.ShouldPreserveEffortTail(modelName) {
+		return modelName, "", "", false
+	}
+	return kitreasoning.ParseOpenAIReasoningModelSuffix(modelName)
 }
 
 // ParseLegacyModelSuffix parses the old naked aliases only for positively
@@ -78,6 +98,9 @@ func BaseModelName(modelName string) string {
 		return modelName
 	}
 	base := kitreasoning.ParseModelModifiers(modelName).Base
+	if normalized, _, _, ok := ParseGPT6AstraReasoningModelSuffix(base); ok {
+		return normalized
+	}
 	if model_setting.ShouldPreserveThinkingSuffix(base) {
 		return base
 	}

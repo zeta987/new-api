@@ -246,6 +246,32 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
+	capabilityModel := openAIReasoningCapabilityModel(info, request.Model)
+	if info.ChannelType == constant.ChannelTypeOpenAI && kitreasoning.IsGPT6AstraModel(capabilityModel) {
+		config := &dto.Reasoning{}
+		if len(request.Reasoning) > 0 {
+			if err := common.Unmarshal(request.Reasoning, config); err != nil {
+				return nil, kitreasoning.AsClientError(err)
+			}
+		}
+		if request.ReasoningEffort != "" {
+			config.Effort = request.ReasoningEffort
+		}
+		_, mode, effort, _ := kitreasoning.ParseGPT6AstraReasoningModelSuffix(capabilityModel)
+		if effort != "" {
+			config.Effort = effort
+		}
+		if err := validateAstraReasoning(config); err != nil {
+			return nil, kitreasoning.AsClientError(err)
+		}
+		if len(request.Tools) > 0 || len(request.Functions) > 0 || mode != "" || len(config.Mode) > 0 && string(config.Mode) != "null" {
+			return nil, kitreasoning.AsClientError(fmt.Errorf("gpt-6-astra tools and reasoning mode require the Responses API; use /v1/responses or enable Chat Completions to Responses conversion"))
+		}
+		request.Temperature = nil
+		request.TopP = nil
+		request.LogProbs = nil
+		request.TopLogProbs = nil
+	}
 	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure {
 		request.StreamOptions = nil
 	}
@@ -348,7 +374,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	}
 	isOModel := dto.IsOpenAIReasoningOModel(info.UpstreamModelName)
 	isGPT5Model := dto.IsOpenAIGPT5Model(info.UpstreamModelName)
-	if isOModel || isGPT5Model {
+	if isOModel || isGPT5Model || kitreasoning.IsGPT6AstraModel(capabilityModel) {
 		if lo.FromPtrOr(request.MaxCompletionTokens, uint(0)) == 0 && lo.FromPtrOr(request.MaxTokens, uint(0)) != 0 {
 			request.MaxCompletionTokens = request.MaxTokens
 			request.MaxTokens = nil
@@ -412,7 +438,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			info.UpstreamModelName = baseModel
 			request.Model = baseModel
 		}
-		if canonicalEffort := kitreasoning.OpenAIEffort(kitreasoning.EffectiveEffort(currentIntent)); canonicalEffort != "" {
+		if canonicalEffort := kitreasoning.OpenAIEffortForModel(capabilityModel, kitreasoning.EffectiveEffort(currentIntent)); canonicalEffort != "" {
 			request.ReasoningEffort = string(canonicalEffort)
 			info.SetReasoningEffort(string(canonicalEffort))
 		}
@@ -421,7 +447,37 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 
+	if info.ChannelType == constant.ChannelTypeOpenAI {
+		applyOpenAIChatGLMReasoningEffort(info, request)
+	}
 	return request, nil
+}
+
+func applyOpenAIChatGLMReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+	originModel := info.OriginModelName
+	if originModel == "" {
+		originModel = request.Model
+	}
+	baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(originModel)
+	if ok {
+		upstreamModel := info.UpstreamModelName
+		if upstreamModel == "" || upstreamModel == originModel {
+			upstreamModel = baseModel
+		}
+		request.Model = upstreamModel
+		request.ReasoningEffort = effort
+		info.UpstreamModelName = upstreamModel
+		info.SetReasoningEffort(effort)
+		return
+	}
+
+	upstreamModel := info.UpstreamModelName
+	if upstreamModel == "" {
+		upstreamModel = request.Model
+	}
+	if reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		info.SetReasoningEffort(request.ReasoningEffort)
+	}
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {
@@ -660,8 +716,42 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	//  转换模型推理力度后缀
-	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)
+	capabilityModel := openAIReasoningCapabilityModel(info, request.Model)
+	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(request.Model); ok {
+		return request, nil
+	}
+	if info != nil {
+		if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName); ok {
+			return request, nil
+		}
+	}
+	// Convert model suffixes into Responses reasoning fields.
+	originModel, mode, effort, hasReasoningSuffix := reasoning.ParseOpenAIReasoningModelSuffix(request.Model)
+	suffixCameFromRequestModel := hasReasoningSuffix
+	if !hasReasoningSuffix && info != nil {
+		_, mode, effort, hasReasoningSuffix = reasoning.ParseOpenAIReasoningModelSuffix(info.OriginModelName)
+	}
+	if hasReasoningSuffix {
+		if request.Reasoning == nil {
+			request.Reasoning = &dto.Reasoning{}
+		}
+		if effort != "" {
+			request.Reasoning.Effort = effort
+		}
+		if mode != "" {
+			modeJSON, err := common.Marshal(mode)
+			if err != nil {
+				return nil, fmt.Errorf("error marshalling reasoning mode: %w", err)
+			}
+			request.Reasoning.Mode = modeJSON
+		}
+		if suffixCameFromRequestModel {
+			request.Model = originModel
+			if info != nil && info.ChannelMeta != nil {
+				info.UpstreamModelName = originModel
+			}
+		}
+	}
 	preserveSuffix := model_setting.ShouldPreserveThinkingSuffix(request.Model) || (info != nil && model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName))
 	if preserveSuffix {
 		effort = ""
@@ -700,7 +790,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 			info.UpstreamModelName = originModel
 		}
 	}
-	if canonicalEffort := kitreasoning.OpenAIEffort(kitreasoning.EffectiveEffort(currentIntent)); canonicalEffort != "" {
+	if canonicalEffort := kitreasoning.OpenAIEffortForModel(capabilityModel, kitreasoning.EffectiveEffort(currentIntent)); canonicalEffort != "" {
 		if request.Reasoning == nil {
 			request.Reasoning = &dto.Reasoning{}
 		}
@@ -708,6 +798,9 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		if info != nil {
 			info.SetReasoningEffort(string(canonicalEffort))
 		}
+	}
+	if err := normalizeAstraResponses(&request, capabilityModel); err != nil {
+		return nil, kitreasoning.AsClientError(err)
 	}
 	return request, nil
 }

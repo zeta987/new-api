@@ -27,9 +27,15 @@ func ModelMappedHelper(c *gin.Context, info *relaycommon.RelayInfo, request dto.
 
 		// 支持链式模型重定向，最终使用链尾的模型
 		currentModel := info.OriginModelName
-		visitedModels := map[string]bool{
-			currentModel: true,
+		if mappedModel, exists := modelMap[currentModel]; !exists || mappedModel == "" {
+			if baseModel, _, ok := hostreasoning.ParseGLMReasoningEffortSuffix(currentModel); ok {
+				currentModel = baseModel
+			}
 		}
+		visitedModels := map[string]bool{
+			info.OriginModelName: true,
+		}
+		visitedModels[currentModel] = true
 		for {
 			mappedModel, exists := modelMap[currentModel]
 			baseModel := hostreasoning.BaseModelName(currentModel)

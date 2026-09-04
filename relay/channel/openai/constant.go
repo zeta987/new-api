@@ -1,6 +1,7 @@
 package openai
 
 var ModelList = []string{
+	"gpt-6-astra",
 	"gpt-3.5-turbo", "gpt-3.5-turbo-0613", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125",
 	"gpt-3.5-turbo-16k", "gpt-3.5-turbo-16k-0613",
 	"gpt-3.5-turbo-instruct", "gpt-3.5-turbo-instruct-0914",
@@ -48,6 +49,7 @@ var ModelList = []string{
 	"gpt-5.3-codex",
 	"gpt-5.4", "gpt-5.4-2026-03-05",
 	"gpt-5.4-pro", "gpt-5.4-pro-2026-03-05",
+	"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol",
 	"gpt-4o-audio-preview", "gpt-4o-audio-preview-2024-10-01", "gpt-4o-audio-preview-2024-12-17", "gpt-4o-audio-preview-2025-06-03",
 	"gpt-4o-realtime-preview", "gpt-4o-realtime-preview-2024-10-01", "gpt-4o-realtime-preview-2024-12-17", "gpt-4o-realtime-preview-2025-06-03",
 	"gpt-4o-mini-realtime-preview", "gpt-4o-mini-realtime-preview-2024-12-17",
