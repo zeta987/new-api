@@ -81,7 +81,8 @@ func TestOpenAIChatGLMConversionLeavesOtherModelsAndAzureUnchanged(t *testing.T)
 
 			assert.Equal(t, testCase.model, got.Model)
 			assert.Equal(t, "medium", got.ReasoningEffort)
-			assert.Empty(t, info.ReasoningEffort)
+			// rc.32 records explicit effort for all compatible channels.
+			assert.Equal(t, "medium", info.ReasoningEffort)
 		})
 	}
 }

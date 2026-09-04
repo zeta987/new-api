@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
@@ -185,7 +186,7 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, noAvailableChannelMessage(c, usingGroup, modelRequest.Model), types.ErrorCodeModelNotFound)
 						return
 					}
 				}
@@ -196,7 +197,7 @@ func Distribute() func(c *gin.Context) {
 				if kind == taskdto.FilterTaskPluginIdentity {
 					logTaskPluginChannelDecision(c, channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
 				}
-				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, noAvailableChannelMessage(c, common.GetContextKeyString(c, constant.ContextKeyUsingGroup), modelRequest.Model), types.ErrorCodeModelNotFound)
 				return
 			}
 		}
@@ -233,6 +234,21 @@ func glmReasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool
 		return []int{constant.ChannelTypeZhipu_v4}, true
 	}
 	return []int{}, true
+}
+
+// noAvailableChannelMessage explains a 503 for a task-plugin-claimed model.
+// A model claimed by a plugin is served only by that plugin's channels, so the
+// generic "no channel" text hides the real cause: the claiming plugin has no
+// enabled channel, and the operator must disable or override that plugin for
+// any other plugin or channel to take the model. Non-plugin requests keep the
+// generic message.
+func noAvailableChannelMessage(c *gin.Context, group, modelName string) string {
+	value, exists := c.Get(jsplugin.ContextKeyPinnedPlugin)
+	pinned, ok := value.(jsplugin.PinnedPlugin)
+	if exists && ok && pinned.Plugin != nil {
+		return i18n.T(c, i18n.MsgDistributorNoAvailableChannelTaskPlugin, map[string]any{"Group": group, "Model": modelName, "Plugin": pinned.Plugin.Meta.Key})
+	}
+	return i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": group, "Model": modelName})
 }
 
 func channelMatchesExpectedTaskPlugin(c *gin.Context, channel *model.Channel, expected string) bool {
@@ -584,6 +600,19 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	}
 
 	return &modelRequest, shouldSelectChannel, nil
+}
+
+// tokenModelLimitAllows reports whether a token model-limit map authorizes
+// model. Exact name, wildcard-normalized name, and routing-normalized name
+// (modifiers and legacy aliases stripped) are all accepted.
+func tokenModelLimitAllows(limit map[string]bool, model string) bool {
+	if limit[model] {
+		return true
+	}
+	if formatted := ratio_setting.FormatMatchingModelName(model); limit[formatted] {
+		return true
+	}
+	return limit[ratio_setting.RoutingMatchModelName(model)]
 }
 
 // 修复 #4834: GET /v1/video/generations/:task_id && /v1/video/:task_id 此前不解析 model，

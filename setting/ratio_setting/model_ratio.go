@@ -5,7 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/reasoning"
+	hostreasoning "github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -621,9 +621,6 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 			return 8, false
 		} else if strings.HasPrefix(name, "gemini-2.5-flash") { // 处理不同的flash模型倍率
 			if strings.HasPrefix(name, "gemini-2.5-flash-preview") {
-				if strings.HasSuffix(name, "-nothinking") {
-					return 4, false
-				}
 				return 3.5 / 0.15, false
 			}
 			if strings.HasPrefix(name, "gemini-2.5-flash-lite") {
@@ -766,12 +763,27 @@ func GetAudioCompletionRatioCopy() map[string]float64 {
 	return audioCompletionRatioMap.ReadAll()
 }
 
+// RoutingMatchModelName returns the name used for channel-ability and token-limit
+// fallback matching: strip @ modifiers and legacy aliases first, then apply
+// wildcard normalization.
+func RoutingMatchModelName(name string) string {
+	return FormatMatchingModelName(hostreasoning.BaseModelName(name))
+}
+
+// HasConfiguredModelRatio reports whether name has an explicit ratio entry
+// after wildcard normalization. Self-use fallback does not count.
+func HasConfiguredModelRatio(name string) bool {
+	name = FormatMatchingModelName(name)
+	_, ok := modelRatioMap.Get(name)
+	return ok
+}
+
 // 转换模型名，减少渠道必须配置各种带参数模型
 func FormatMatchingModelName(name string) string {
-	if baseModel, _, _, ok := reasoning.ParseGPT56ReasoningModelSuffix(name); ok {
+	if baseModel, _, _, ok := hostreasoning.ParseGPT56ReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
-	if baseModel, _, ok := reasoning.ParseGLMReasoningEffortSuffix(name); ok {
+	if baseModel, _, ok := hostreasoning.ParseGLMReasoningEffortSuffix(name); ok {
 		name = baseModel
 	}
 

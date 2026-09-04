@@ -17,7 +17,7 @@ func ModelMatchCandidates(modelName string) []string {
 	if wildcard, ok := reasoning.GPT56ReasoningWildcardModel(modelName); ok {
 		rawCandidates = append(rawCandidates, wildcard)
 	}
-	rawCandidates = append(rawCandidates, ratio_setting.FormatMatchingModelName(modelName))
+	rawCandidates = append(rawCandidates, ratio_setting.RoutingMatchModelName(modelName))
 
 	candidates := make([]string, 0, len(rawCandidates))
 	for _, candidate := range rawCandidates {

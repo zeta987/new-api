@@ -45,8 +45,8 @@ func TestOpenAIChatRequestToClaudeMessagesEnablesSonnet46AdaptiveThinking(t *tes
 	require.NotNil(t, claudeReq.Thinking)
 	require.Equal(t, "adaptive", claudeReq.Thinking.Type)
 	require.Equal(t, "high", gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
-	require.NotNil(t, claudeReq.Temperature)
-	require.Equal(t, 1.0, *claudeReq.Temperature)
+	// rc.32 leaves the adaptive model's default temperature implicit.
+	require.Nil(t, claudeReq.Temperature)
 	require.Nil(t, claudeReq.TopP)
 }
 

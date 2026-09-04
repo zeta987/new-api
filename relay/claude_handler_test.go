@@ -92,9 +92,8 @@ func TestClaudeHelperClearsTopPForSonnet46EffortSuffix(t *testing.T) {
 	require.NotNil(t, result.request.Thinking)
 	assert.Equal(t, "adaptive", result.request.Thinking.Type)
 	assert.Equal(t, "high", gjson.GetBytes(result.request.OutputConfig, "effort").String())
-	require.NotNil(t, result.request.Temperature)
-	assert.Equal(t, 1.0, *result.request.Temperature)
+	// rc.32 removes sampling fields during its centralized conversion.
+	assert.Nil(t, result.request.Temperature)
 	assert.Nil(t, result.request.TopP)
-	require.NotNil(t, result.request.TopK)
-	assert.Equal(t, 4, *result.request.TopK)
+	assert.Nil(t, result.request.TopK)
 }
