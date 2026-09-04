@@ -363,7 +363,7 @@ func FromOpenAIChat(req *dto.GeneralOpenAIRequest) (Intent, error) {
 		BudgetSource:    SourcePivot,
 	}
 	if req.ReasoningEffort != "" {
-		projectedEffort := OpenAIEffort(EffectiveEffort(pivot))
+		projectedEffort := OpenAIEffortForModel(req.Model, EffectiveEffort(pivot))
 		if Effort(req.ReasoningEffort) == projectedEffort {
 			intent.Effort = ""
 			intent.Mode = ModeUnset
@@ -384,7 +384,7 @@ func ApplyToOpenAIChat(req *dto.GeneralOpenAIRequest, intent Intent) error {
 		return err
 	}
 
-	if effort := OpenAIEffort(EffectiveEffort(intent)); effort != "" {
+	if effort := OpenAIEffortForModel(req.Model, EffectiveEffort(intent)); effort != "" {
 		req.ReasoningEffort = string(effort)
 	}
 
@@ -412,7 +412,7 @@ func ApplyToOpenAIResponses(req *dto.OpenAIResponsesRequest, intent Intent) erro
 		return err
 	}
 
-	if effort := OpenAIEffort(EffectiveEffort(intent)); effort != "" {
+	if effort := OpenAIEffortForModel(req.Model, EffectiveEffort(intent)); effort != "" {
 		summary := "detailed"
 		if effort == EffortNone || (intent.IncludeThoughts != nil && !*intent.IncludeThoughts) {
 			summary = ""
@@ -448,6 +448,9 @@ func OpenAIEffort(effort Effort) Effort {
 
 // OpenAIEffortForModel preserves the native max level of supported models.
 func OpenAIEffortForModel(model string, effort Effort) Effort {
+	if IsGPT6AstraModel(model) {
+		return effort
+	}
 	if _, _, known := splitGPT56Model(model); known || IsGLMReasoningEffortModel(model) {
 		return effort
 	}
@@ -489,7 +492,7 @@ func FromOpenAIResponses(req *dto.OpenAIResponsesRequest) (Intent, error) {
 		BudgetSource:    SourcePivot,
 	}
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
-		projectedEffort := OpenAIEffort(EffectiveEffort(pivot))
+		projectedEffort := OpenAIEffortForModel(req.Model, EffectiveEffort(pivot))
 		if Effort(req.Reasoning.Effort) == projectedEffort {
 			intent.Effort = ""
 			intent.Mode = ModeUnset

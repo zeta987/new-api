@@ -25,6 +25,7 @@ const (
 // 1 === ￥0.014 / 1k tokens
 
 var defaultModelRatio = map[string]float64{
+	"gpt-6-astra": 5, // Standard short-context input: $10 / 1M tokens.
 	//"midjourney":                50,
 	"gpt-4-gizmo-*":                             15,
 	"gpt-4o-gizmo-*":                            2.5,
@@ -545,6 +546,9 @@ func GetCompletionRatioInfo(name string) CompletionRatioInfo {
 }
 
 func getHardcodedCompletionModelRatio(name string) (float64, bool) {
+	if name == "gpt-6-astra" {
+		return 5, false
+	}
 
 	isReservedModel := strings.HasSuffix(name, "-all") || strings.HasSuffix(name, "-gizmo-*")
 	if isReservedModel {
@@ -781,6 +785,9 @@ func HasConfiguredModelRatio(name string) bool {
 // 转换模型名，减少渠道必须配置各种带参数模型
 func FormatMatchingModelName(name string) string {
 	if baseModel, _, _, ok := hostreasoning.ParseGPT56ReasoningModelSuffix(name); ok {
+		name = baseModel
+	}
+	if baseModel, _, _, ok := hostreasoning.ParseGPT6AstraReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
 	if baseModel, _, ok := hostreasoning.ParseGLMReasoningEffortSuffix(name); ok {

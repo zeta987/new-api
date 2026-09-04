@@ -44,7 +44,7 @@ type testResult struct {
 
 func normalizeChannelTestModel(modelName string) string {
 	normalized := strings.TrimSpace(modelName)
-	if reasoning.IsGPT56ReasoningWildcard(normalized) {
+	if reasoning.IsOpenAIReasoningWildcard(normalized) {
 		return strings.TrimSuffix(normalized, "-*")
 	}
 	return normalized

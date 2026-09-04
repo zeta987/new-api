@@ -5,6 +5,7 @@ import (
 )
 
 var defaultCacheRatio = map[string]float64{
+	"gpt-6-astra":                         0.1,
 	"gemini-3-flash-preview":              0.1,
 	"gemini-3-pro-preview":                0.1,
 	"gemini-3.1-pro-preview":              0.1,
@@ -99,6 +100,7 @@ var defaultCacheRatio = map[string]float64{
 }
 
 var defaultCreateCacheRatio = map[string]float64{
+	"gpt-6-astra":                         1.25,
 	"gpt-5.6-sol":                         1.25,
 	"gpt-5.6-terra":                       1.25,
 	"gpt-5.6-luna":                        1.25,

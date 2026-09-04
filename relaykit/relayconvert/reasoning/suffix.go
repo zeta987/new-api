@@ -128,6 +128,13 @@ func TrimEffortSuffixWithSuffixes(modelName string, suffixes []string) (string, 
 // complete name first so real model IDs that already end in an effort word
 // (for example gpt-5.1-codex-max) stay intact.
 func ParseOpenAIReasoningEffortFromModelSuffix(modelName string, preserveEffortTail func(string) bool) (string, string) {
+	if modelName == GPT6Astra || strings.HasPrefix(modelName, GPT6Astra+"-") {
+		base, mode, effort, ok := ParseGPT6AstraReasoningModelSuffix(modelName)
+		if !ok || mode != "" {
+			return "", modelName
+		}
+		return effort, base
+	}
 	if _, _, known := splitGPT56Model(modelName); known {
 		base, mode, effort, ok := ParseGPT56ReasoningModelSuffix(modelName)
 		if !ok || mode != "" {
@@ -361,6 +368,9 @@ func parseClaudeVersionSegment(part string) (int, bool) {
 }
 
 func ParseOpenAIReasoningModelSuffix(modelName string) (baseModel string, mode string, effort string, ok bool) {
+	if modelName == GPT6Astra || strings.HasPrefix(modelName, GPT6Astra+"-") {
+		return ParseGPT6AstraReasoningModelSuffix(modelName)
+	}
 	if _, _, isGPT56 := splitGPT56Model(modelName); isGPT56 {
 		return ParseGPT56ReasoningModelSuffix(modelName)
 	}
