@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -688,7 +689,7 @@ func GetUserModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    service.GetGroupsEnabledModels(groupsToQuery),
+		"data":    reasoning.ExpandOpenAIReasoningModels(service.GetGroupsEnabledModels(groupsToQuery)),
 	})
 }
 

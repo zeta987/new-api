@@ -385,6 +385,9 @@ func ModelPricingCandidates(name string) []string {
 	}
 	if strings.Contains(name, "*") {
 		if strings.Count(name, "*") == 1 && strings.HasSuffix(name, "-*") {
+			if base, known := hostreasoning.OpenAIReasoningBaseModel(name); known {
+				return []string{name, base}
+			}
 			return []string{name}
 		}
 		return nil
@@ -784,6 +787,11 @@ func HasConfiguredModelRatio(name string) bool {
 
 // 转换模型名，减少渠道必须配置各种带参数模型
 func FormatMatchingModelName(name string) string {
+	if hostreasoning.IsOpenAIReasoningWildcard(name) {
+		if base, known := hostreasoning.OpenAIReasoningBaseModel(name); known {
+			name = base
+		}
+	}
 	if baseModel, _, _, ok := hostreasoning.ParseGPT56ReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
