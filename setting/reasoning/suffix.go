@@ -11,9 +11,13 @@ import (
 )
 
 var (
-	EffortSuffixes           = kitreasoning.EffortSuffixes
-	OpenAIEffortSuffixes     = kitreasoning.OpenAIEffortSuffixes
-	DeepSeekV4EffortSuffixes = kitreasoning.DeepSeekV4EffortSuffixes
+	ParseGPT6AstraReasoningModelSuffix = kitreasoning.ParseGPT6AstraReasoningModelSuffix
+	OpenAIReasoningWildcardModel       = kitreasoning.OpenAIReasoningWildcardModel
+	IsOpenAIReasoningWildcard          = kitreasoning.IsOpenAIReasoningWildcard
+	IsGPT6AstraModel                   = kitreasoning.IsGPT6AstraModel
+	EffortSuffixes                     = kitreasoning.EffortSuffixes
+	OpenAIEffortSuffixes               = kitreasoning.OpenAIEffortSuffixes
+	DeepSeekV4EffortSuffixes           = kitreasoning.DeepSeekV4EffortSuffixes
 )
 
 var (
@@ -94,6 +98,9 @@ func BaseModelName(modelName string) string {
 		return modelName
 	}
 	base := kitreasoning.ParseModelModifiers(modelName).Base
+	if normalized, _, _, ok := ParseGPT6AstraReasoningModelSuffix(base); ok {
+		return normalized
+	}
 	if model_setting.ShouldPreserveThinkingSuffix(base) {
 		return base
 	}

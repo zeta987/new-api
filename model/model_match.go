@@ -9,12 +9,12 @@ import (
 // configuration wins, followed by a validated GPT-5.6 reasoning wildcard and
 // the normalized billing model.
 func ModelMatchCandidates(modelName string) []string {
-	if reasoning.IsGPT56ReasoningWildcard(modelName) {
+	if reasoning.IsOpenAIReasoningWildcard(modelName) {
 		return nil
 	}
 
 	rawCandidates := []string{modelName}
-	if wildcard, ok := reasoning.GPT56ReasoningWildcardModel(modelName); ok {
+	if wildcard, ok := reasoning.OpenAIReasoningWildcardModel(modelName); ok {
 		rawCandidates = append(rawCandidates, wildcard)
 	}
 	rawCandidates = append(rawCandidates, ratio_setting.RoutingMatchModelName(modelName))
