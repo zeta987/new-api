@@ -866,6 +866,9 @@ func (a *Adaptor) GetModelList() []string {
 	case constant.ChannelTypeOpenRouter:
 		return openrouter.ModelList
 	default:
+		if a.ChannelType == 0 || a.ChannelType == constant.ChannelTypeOpenAI {
+			return reasoning.ExpandOpenAIReasoningModels(ModelList)
+		}
 		return ModelList
 	}
 }
