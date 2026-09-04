@@ -124,6 +124,11 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 	if endpoints, ok := modelSupportEndpointTypes[model]; ok {
 		return endpoints
 	}
+	for _, candidate := range ModelMatchCandidates(model) {
+		if endpoints, ok := modelSupportEndpointTypes[candidate]; ok {
+			return endpoints
+		}
+	}
 	return make([]constant.EndpointType, 0)
 }
 

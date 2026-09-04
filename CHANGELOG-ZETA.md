@@ -24,6 +24,8 @@
 
 ## v1.0.0-rc.32
 
+Model-family discovery now supports base-only channel registration and pricing for GPT-5.6 Sol/Terra/Luna and GPT-6 Astra. Client model lists expand valid aliases automatically; explicit pricing overrides remain intact. See the [implementation and validation record](docs/releases/2026-09-05-model-family-discovery.md).
+
 本版為 GPT-6 Astra 加入模型別名支援。呼叫格式為 `gpt-6-astra[-standard|-pro][-low|-medium|-high|-xhigh|-max]`，例如 `gpt-6-astra-pro-max` 代表 pro 模式搭配 max 推理強度。
 
 | Item | Evidence |
