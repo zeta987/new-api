@@ -77,6 +77,36 @@ func TestResponsesResponseToChatCompletionsPreservesReasoningSummary(t *testing.
 	assert.Equal(t, "final", chat.Choices[0].Message.StringContent())
 }
 
+func TestResponsesResponseToChatCompletionsPreservesLegacyReasoningSummary(t *testing.T) {
+	resp := &dto.OpenAIResponsesResponse{
+		ID:     "resp_1",
+		Model:  "gpt-test",
+		Status: []byte(`"completed"`),
+		Output: []dto.ResponsesOutput{
+			{
+				Type: responsesOutputTypeReasoning,
+				Summary: []dto.ResponsesReasoningSummaryPart{
+					{Type: "summary_text", Text: "first summary"},
+					{Type: "other", Text: "ignored"},
+					{Type: "summary_text", Text: "second summary"},
+				},
+			},
+			{
+				Type: responsesOutputTypeMessage,
+				Role: "assistant",
+				Content: []dto.ResponsesOutputContent{
+					{Type: "output_text", Text: "final"},
+				},
+			},
+		},
+	}
+
+	chat, _, err := ResponsesResponseToChatCompletionsResponse(resp, "chatcmpl_1")
+	require.NoError(t, err)
+	assert.Equal(t, "first summary\n\nsecond summary", chat.Choices[0].Message.GetReasoningContent())
+	assert.Equal(t, "final", chat.Choices[0].Message.StringContent())
+}
+
 func TestResponsesResponseToChatCompletionsSeparatesInterleavedOutputItems(t *testing.T) {
 	resp := &dto.OpenAIResponsesResponse{
 		ID:     "resp_1",

@@ -311,6 +311,9 @@ func reasoningOutputText(output *dto.ResponsesOutput) string {
 		return text.String()
 	}
 	for _, part := range output.Summary {
+		if part.Type != "summary_text" {
+			continue
+		}
 		appendSeparatedText(&text, part.Text)
 	}
 	return text.String()

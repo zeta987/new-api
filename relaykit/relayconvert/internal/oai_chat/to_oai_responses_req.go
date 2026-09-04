@@ -307,6 +307,9 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 				if len(m) == 0 {
 					m = map[string]any{"type": tool.Type}
 				}
+				// Go does not omit zero-value structs, so remove the chat-only
+				// function shape from built-in Responses tools.
+				delete(m, "function")
 				tools = append(tools, m)
 			}
 		}
@@ -418,6 +421,28 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 	}
 	if err := reasoning.ApplyToOpenAIResponses(out, reasoningIntent); err != nil {
 		return nil, reasoning.AsClientError(err)
+	}
+	if len(req.Reasoning) > 0 {
+		var config dto.Reasoning
+		if err := kitutil.Unmarshal(req.Reasoning, &config); err != nil {
+			return nil, reasoning.AsClientError(err)
+		}
+		if strings.TrimSpace(string(config.Mode)) == "null" {
+			config.Mode = nil
+		}
+		if strings.TrimSpace(string(config.Context)) == "null" {
+			config.Context = nil
+		}
+		if len(config.Mode) > 0 || len(config.Context) > 0 || config.Summary != "" {
+			if out.Reasoning == nil {
+				out.Reasoning = &dto.Reasoning{}
+			}
+			out.Reasoning.Mode = config.Mode
+			out.Reasoning.Context = config.Context
+			if config.Summary != "" {
+				out.Reasoning.Summary = config.Summary
+			}
+		}
 	}
 
 	return out, nil
