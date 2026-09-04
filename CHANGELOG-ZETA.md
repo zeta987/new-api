@@ -22,6 +22,20 @@
 
 ---
 
+## v1.0.0-rc.32
+
+本版為 GPT-6 Astra 加入模型別名支援。呼叫格式為 `gpt-6-astra[-standard|-pro][-low|-medium|-high|-xhigh|-max]`，例如 `gpt-6-astra-pro-max` 代表 pro 模式搭配 max 推理強度。
+
+| Item | Evidence |
+| --- | --- |
+| Upstream integration | `b549c767674cb4924c9173b48583c3a7e5a710e7` |
+| Astra feature | `f68c8fad4c62929347cb8ac881fd20ebf1527076` |
+| Signed release merge | `dae0c9b169c1148a3621410b65b6e91a9e24c973` |
+| Verification and five themed backups | [rc.32 release report](docs/releases/2026-09-05-rc32-astra.md) |
+| Deployment | Local candidate only; not pushed or deployed |
+
+This entry is a new release-candidate appendix. The 157-OID historical ledger and its 2026-09-02 snapshot boundary below remain unchanged.
+
 ## v1.0.0-rc.30
 
 本版把整合釋出從 rc.29 推進到上游 `v1.0.0-rc.30`，並在合併時保住兩處與上游重疊的自訂行為：`model/log.go` 的用量日誌自訂邏輯，以及 `model/main.go` 的 PostgreSQL migrator 包裝層。上游新增的 `tokens.key` 舊唯一性遷移在 GORM `AutoMigrate` 之前執行，ZETA 的 dialector 包裝則在 `AutoMigrate` 期間持續生效，兩者並存。
