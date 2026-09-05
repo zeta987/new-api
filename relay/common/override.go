@@ -23,6 +23,7 @@ const (
 	paramOverrideContextRequestHeaders = "request_headers"
 	paramOverrideContextHeaderOverride = "header_override"
 	paramOverrideContextAuditRecorder  = "__param_override_audit_recorder"
+	paramOverrideContextRelayFormat    = "__param_override_relay_format"
 )
 
 var errSourceHeaderNotFound = errors.New("source header does not exist")
@@ -188,6 +189,9 @@ func ApplyParamOverrideWithRelayInfo(jsonData []byte, info *RelayInfo) ([]byte, 
 	}
 
 	overrideCtx := BuildParamOverrideContext(info)
+	if info != nil {
+		overrideCtx[paramOverrideContextRelayFormat] = info.GetFinalRequestRelayFormat()
+	}
 	var recorder *paramOverrideAuditRecorder
 	if shouldEnableParamOverrideAudit(paramOverride) {
 		recorder = &paramOverrideAuditRecorder{}
@@ -846,6 +850,7 @@ func escapeSjsonLiteralKey(key string) string {
 // 直接读写 []byte，每个操作只会产生一份新 buffer。
 func applyOperations(jsonData []byte, operations []ParamOperation, conditionContext map[string]interface{}) ([]byte, error) {
 	context := ensureContextMap(conditionContext)
+	relayFormat, _ := context[paramOverrideContextRelayFormat].(types.RelayFormat)
 	auditRecorder := getParamOverrideAuditRecorder(context)
 	contextJSON, err := marshalContextJSON(context)
 	if err != nil {
@@ -854,6 +859,12 @@ func applyOperations(jsonData []byte, operations []ParamOperation, conditionCont
 
 	result := jsonData
 	for _, op := range operations {
+		// Keep shared Chat/Responses channel overrides in the target schema.
+		// Resolve the alias before keep_origin checks so a suffix effort wins.
+		if relayFormat == types.RelayFormatOpenAIResponses &&
+			isPathBasedOperation(op.Mode) && op.Path == "reasoning_effort" {
+			op.Path = "reasoning.effort"
+		}
 		// 检查条件是否满足
 		ok, err := checkConditions(result, contextJSON, op.Conditions, op.Logic)
 		if err != nil {
