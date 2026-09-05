@@ -791,6 +791,8 @@ const ModelRatioVisualEditorComponent = forwardRef<
                   }
                   onClick={(event) => {
                     const target = event.target as HTMLElement
+                    // Portal menu clicks bubble through React's tree, not the DOM row.
+                    if (!event.currentTarget.contains(target)) return
                     if (target.closest('button, [role="checkbox"]')) return
                     handleEdit(row.original)
                   }}
