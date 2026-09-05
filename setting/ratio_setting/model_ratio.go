@@ -796,6 +796,9 @@ func FormatMatchingModelName(name string) string {
 	if baseModel, _, _, ok := hostreasoning.ParseGPT6AstraReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
+	if baseModel, _, ok := hostreasoning.ParseQwenReasoningEffortSuffix(name); ok {
+		name = baseModel
+	}
 	if baseModel, _, ok := hostreasoning.ParseGLMReasoningEffortSuffix(name); ok {
 		name = baseModel
 	}

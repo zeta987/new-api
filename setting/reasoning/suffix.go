@@ -29,11 +29,22 @@ var (
 	GPT56ReasoningWildcardModel         = kitreasoning.GPT56ReasoningWildcardModel
 	IsGPT56ReasoningWildcard            = kitreasoning.IsGPT56ReasoningWildcard
 	ParseGPT56ReasoningModelSuffix      = kitreasoning.ParseGPT56ReasoningModelSuffix
+	IsQwenReasoningModel                = kitreasoning.IsQwenReasoningModel
 	ParseGLMReasoningEffortSuffix       = kitreasoning.ParseGLMReasoningEffortSuffix
 	IsGLMReasoningEffortModel           = kitreasoning.IsGLMReasoningEffortModel
 	ParseDeepSeekV4ThinkingSuffix       = kitreasoning.ParseDeepSeekV4ThinkingSuffix
 	TrimGeminiThinkingSuffix            = kitreasoning.TrimGeminiThinkingSuffix
 )
+
+// ParseQwenReasoningEffortSuffix applies the host thinking-suffix blacklist to
+// both the complete alias and its parsed base model.
+func ParseQwenReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
+	baseModel, effort, ok = kitreasoning.ParseQwenReasoningEffortSuffix(modelName)
+	if !ok || model_setting.ShouldPreserveThinkingSuffix(modelName) || model_setting.ShouldPreserveThinkingSuffix(baseModel) {
+		return modelName, "", false
+	}
+	return baseModel, effort, true
+}
 
 // ParseOpenAIReasoningEffortFromModelSuffix applies RelayKit's positive family
 // whitelist and the host EffortTailModelIDs escape hatch so real model IDs
@@ -44,6 +55,12 @@ func ParseOpenAIReasoningEffortFromModelSuffix(modelName string) (string, string
 
 func ParseOpenAIReasoningModelSuffix(modelName string) (string, string, string, bool) {
 	if model_setting.ShouldPreserveEffortTail(modelName) {
+		return modelName, "", "", false
+	}
+	if IsQwenReasoningModel(modelName) {
+		return modelName, "", "", false
+	}
+	if base, _, hasEffort := kitreasoning.TrimEffortSuffixWithSuffixes(modelName, kitreasoning.OpenAIEffortSuffixes); hasEffort && IsQwenReasoningModel(base) {
 		return modelName, "", "", false
 	}
 	return kitreasoning.ParseOpenAIReasoningModelSuffix(modelName)
@@ -103,6 +120,9 @@ func BaseModelName(modelName string) string {
 	}
 	if model_setting.ShouldPreserveThinkingSuffix(base) {
 		return base
+	}
+	if normalized, _, ok := ParseQwenReasoningEffortSuffix(base); ok {
+		return normalized
 	}
 	legacyBase, _, found, err := ParseLegacyModelSuffix(
 		base,
