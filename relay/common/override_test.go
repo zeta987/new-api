@@ -2523,3 +2523,33 @@ func TestReasoningEffortOverrideIsAuditedWithoutDebugMode(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"set reasoning.effort = max"}, info.ParamOverrideAudit)
 }
+
+func TestResponsesOverrideAcceptsChatReasoningEffortPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		format     types.RelayFormat
+		input      string
+		mode       string
+		keepOrigin bool
+		want       string
+	}{
+		{"keep suffix effort", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"low","summary":"auto"}}`, "set", true, `{"reasoning":{"effort":"low","summary":"auto"}}`},
+		{"set missing default", types.RelayFormatOpenAIResponses, `{}`, "set", true, `{"reasoning":{"effort":"none"}}`},
+		{"explicit override", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"low"}}`, "set", false, `{"reasoning":{"effort":"none"}}`},
+		{"delete effort", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"low","summary":"auto"}}`, "delete", false, `{"reasoning":{"summary":"auto"}}`},
+		{"keep Chat field", types.RelayFormatOpenAI, `{"reasoning_effort":"low"}`, "set", true, `{"reasoning_effort":"low"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			operation := map[string]interface{}{
+				"mode": tt.mode, "path": "reasoning_effort", "value": "none", "keep_origin": tt.keepOrigin,
+				"conditions": []interface{}{map[string]interface{}{"path": "is_channel_test", "mode": "full", "value": false}},
+			}
+			info := &RelayInfo{RelayFormat: tt.format, ChannelMeta: &ChannelMeta{ParamOverride: map[string]interface{}{"operations": []interface{}{operation}}}}
+			out, err := ApplyParamOverrideWithRelayInfo([]byte(tt.input), info)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(out))
+			assert.Equal(t, "reasoning_effort", operation["path"], "shared channel configuration must stay unchanged")
+		})
+	}
+}

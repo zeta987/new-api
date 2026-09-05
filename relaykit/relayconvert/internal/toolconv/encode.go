@@ -137,7 +137,7 @@ func attachOpenAIResponsesRequest(request any, set Set) (any, []types.Conversion
 			}
 			webSearch := definition.WebSearch
 			toolType := "web_search"
-			if set.Source == types.RelayFormatOpenAIResponses && definition.NativeType != "" {
+			if (set.Source == types.RelayFormatOpenAIResponses || set.Source == types.RelayFormatOpenAI) && isOpenAIResponsesWebSearchType(definition.NativeType) {
 				toolType = definition.NativeType
 			}
 			tool := map[string]any{"type": toolType}
@@ -167,7 +167,7 @@ func attachOpenAIResponsesRequest(request any, set Set) (any, []types.Conversion
 			}
 			tools = append(tools, tool)
 		default:
-			if set.Source == types.RelayFormatOpenAIResponses && len(definition.Raw) > 0 {
+			if (set.Source == types.RelayFormatOpenAIResponses || set.Source == types.RelayFormatOpenAI) && len(definition.Raw) > 0 {
 				var tool any
 				if err := kitutil.Unmarshal(definition.Raw, &tool); err != nil {
 					return nil, diagnostics, err

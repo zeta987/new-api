@@ -22,6 +22,15 @@
 
 ---
 
+## v1.0.0-rc.33
+
+Integrates upstream rc.33 reasoning preservation and Astra expression pricing.
+Restores native tools supplied through existing Chat parameter overrides and
+adapts structured `reasoning_effort` override paths to Responses while preserving
+`keep_origin`. The original channel override passed real upstream curl requests
+for Luna `low` through both APIs and Luna `pro-max` through Responses.
+See the [implementation and validation record](docs/releases/2026-09-05-rc33-openai-compat.md).
+
 ## v1.0.0-rc.32
 
 Model-family discovery now supports base-only channel registration and pricing for GPT-5.6 Sol/Terra/Luna and GPT-6 Astra. Client model lists expand valid aliases automatically; explicit pricing overrides remain intact. See the [implementation and validation record](docs/releases/2026-09-05-model-family-discovery.md).
@@ -34,7 +43,7 @@ Model-family discovery now supports base-only channel registration and pricing f
 | Astra feature | `f68c8fad4c62929347cb8ac881fd20ebf1527076` |
 | Signed release merge | `dae0c9b169c1148a3621410b65b6e91a9e24c973` |
 | Verification and five themed backups | [rc.32 release report](docs/releases/2026-09-05-rc32-astra.md) |
-| Deployment | Local candidate only; not pushed or deployed |
+| Deployment | Published to Dev and Production at `2a673c04b2f2b22b85b700c188c5f5e5fc02e2be`; version and startup verified on 2026-09-05 |
 
 This entry is a new release-candidate appendix. The 157-OID historical ledger and its 2026-09-02 snapshot boundary below remain unchanged.
 
