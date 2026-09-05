@@ -35,6 +35,12 @@ func TestGPT6AstraBuiltinBilling(t *testing.T) {
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode("gpt-6-astra"))
 	expression, ok := billing_setting.GetBillingExpr("gpt-6-astra")
 	require.True(t, ok)
+	for _, alias := range []string{"gpt-6-astra-low", "gpt-6-astra-pro-max", "gpt-6-astra-*"} {
+		assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(alias))
+		actual, found := billing_setting.GetBillingExpr(alias)
+		require.True(t, found)
+		assert.Equal(t, expression, actual)
+	}
 
 	for _, tc := range []struct {
 		name                           string
@@ -108,4 +114,16 @@ func TestGPT6AstraBuiltinBilling(t *testing.T) {
 			assert.Equal(t, tc.expr != "", ok)
 		})
 	}
+	t.Run("explicit alias and wildcard prices override built-in", func(t *testing.T) {
+		*settings = billing_setting.BillingSetting{BillingMode: map[string]string{}, BillingExpr: map[string]string{}}
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
+		for _, priceKey := range []string{"gpt-6-astra-pro-max", "gpt-6-astra-*"} {
+			prices, err := common.Marshal(map[string]float64{priceKey: 0})
+			require.NoError(t, err)
+			require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(prices)))
+			assert.Equal(t, billing_setting.BillingModeRatio, billing_setting.GetBillingMode("gpt-6-astra-pro-max"))
+			_, found := billing_setting.GetBillingExpr("gpt-6-astra-pro-max")
+			assert.False(t, found)
+		}
+	})
 }

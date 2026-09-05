@@ -43,33 +43,42 @@ func init() {
 // Read accessors (hot path, must be fast)
 // ---------------------------------------------------------------------------
 
+func resolveBillingConfig(model string) (mode string, expr string, hasExpr bool) {
+	candidates := ratio_setting.ModelPricingCandidates(model)
+	for _, candidate := range candidates {
+		mode, hasMode := billingSetting.BillingMode[candidate]
+		if !hasMode {
+			continue
+		}
+		expr, hasExpr := billingSetting.BillingExpr[candidate]
+		if mode == BillingModeTieredExpr && !hasExpr {
+			expr, hasExpr = builtinBillingExpr[candidate]
+		}
+		return mode, expr, hasExpr
+	}
+	// Administrator prices take precedence over built-in family defaults.
+	if ratio_setting.HasConfiguredModelRatio(model) {
+		return BillingModeRatio, "", false
+	}
+	if _, configured := ratio_setting.GetModelPrice(model, false); configured {
+		return BillingModeRatio, "", false
+	}
+	for _, candidate := range candidates {
+		if expression, ok := builtinBillingExpr[candidate]; ok {
+			return BillingModeTieredExpr, expression, true
+		}
+	}
+	return BillingModeRatio, "", false
+}
+
 func GetBillingMode(model string) string {
-	if mode, ok := billingSetting.BillingMode[model]; ok {
-		return mode
-	}
-	if _, ok := builtinBillingExpr[model]; ok {
-		// Existing administrator-configured legacy prices take precedence over
-		// a newly introduced built-in expression unless a mode was explicit.
-		if ratio_setting.HasConfiguredModelRatio(model) {
-			return BillingModeRatio
-		}
-		if _, configured := ratio_setting.GetModelPrice(model, false); configured {
-			return BillingModeRatio
-		}
-		return BillingModeTieredExpr
-	}
-	return BillingModeRatio
+	mode, _, _ := resolveBillingConfig(model)
+	return mode
 }
 
 func GetBillingExpr(model string) (string, bool) {
-	if expr, ok := billingSetting.BillingExpr[model]; ok {
-		return expr, true
-	}
-	if GetBillingMode(model) == BillingModeTieredExpr {
-		expr, ok := builtinBillingExpr[model]
-		return expr, ok
-	}
-	return "", false
+	_, expr, hasExpr := resolveBillingConfig(model)
+	return expr, hasExpr
 }
 
 func GetBillingModeCopy() map[string]string {

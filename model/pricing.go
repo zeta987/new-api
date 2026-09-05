@@ -54,7 +54,7 @@ var (
 	vendorsList          []PricingVendor
 	supportedEndpointMap map[string]common.EndpointInfo
 	lastGetPricingTime   time.Time
-	updatePricingLock    sync.Mutex
+	updatePricingLock    sync.RWMutex
 
 	// 缓存映射：模型名 -> 启用分组 / 计费类型
 	modelEnableGroups     = make(map[string][]string)
@@ -68,15 +68,22 @@ var (
 )
 
 func GetPricing() []Pricing {
-	if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 {
-		updatePricingLock.Lock()
-		defer updatePricingLock.Unlock()
-		// Double check after acquiring the lock
-		if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 {
-			modelSupportEndpointsLock.Lock()
-			defer modelSupportEndpointsLock.Unlock()
-			updatePricing()
-		}
+	updatePricingLock.RLock()
+	cacheExpired := time.Since(lastGetPricingTime) > time.Minute || len(pricingMap) == 0
+	if !cacheExpired {
+		pricing := pricingMap
+		updatePricingLock.RUnlock()
+		return pricing
+	}
+	updatePricingLock.RUnlock()
+
+	updatePricingLock.Lock()
+	defer updatePricingLock.Unlock()
+	// Double check after acquiring the lock.
+	if time.Since(lastGetPricingTime) > time.Minute || len(pricingMap) == 0 {
+		modelSupportEndpointsLock.Lock()
+		defer modelSupportEndpointsLock.Unlock()
+		updatePricing()
 	}
 	return pricingMap
 }
@@ -92,10 +99,19 @@ func InvalidatePricingCache() {
 
 // GetVendors 返回当前定价接口使用到的供应商信息
 func GetVendors() []PricingVendor {
-	if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 {
-		// 保证先刷新一次
-		GetPricing()
+	updatePricingLock.RLock()
+	cacheExpired := time.Since(lastGetPricingTime) > time.Minute || len(pricingMap) == 0
+	if !cacheExpired {
+		vendors := vendorsList
+		updatePricingLock.RUnlock()
+		return vendors
 	}
+	updatePricingLock.RUnlock()
+
+	// 保证先刷新一次
+	GetPricing()
+	updatePricingLock.RLock()
+	defer updatePricingLock.RUnlock()
 	return vendorsList
 }
 
@@ -107,6 +123,11 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 	defer modelSupportEndpointsLock.RUnlock()
 	if endpoints, ok := modelSupportEndpointTypes[model]; ok {
 		return endpoints
+	}
+	for _, candidate := range ModelMatchCandidates(model) {
+		if endpoints, ok := modelSupportEndpointTypes[candidate]; ok {
+			return endpoints
+		}
 	}
 	return make([]constant.EndpointType, 0)
 }
@@ -405,24 +426,23 @@ func updatePricing() {
 			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
 		}
+		aliasTarget, aliasResolved := ResolveTaskModelAlias(pluginGeneration, model)
 		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
 			if expr, ok := billing_setting.GetBillingExpr(model); ok && strings.TrimSpace(expr) != "" {
 				pricing.BillingMode = billingMode
 				pricing.BillingExpr = expr
 			}
-		} else if target, resolved := ResolveTaskModelAlias(pluginGeneration, model); resolved && target.Declared != "" {
-			if tailMode := billing_setting.GetBillingMode(target.Declared); tailMode == "tiered_expr" {
-				if expr, ok := billing_setting.GetBillingExpr(target.Declared); ok && strings.TrimSpace(expr) != "" {
+		} else if aliasResolved && aliasTarget.Declared != "" {
+			if tailMode := billing_setting.GetBillingMode(aliasTarget.Declared); tailMode == "tiered_expr" {
+				if expr, ok := billing_setting.GetBillingExpr(aliasTarget.Declared); ok && strings.TrimSpace(expr) != "" {
 					pricing.BillingMode = tailMode
 					pricing.BillingExpr = expr
 				}
 			}
 		}
 		plugin, ok := pluginGeneration.GetByModel(model)
-		if !ok {
-			if target, resolved := ResolveTaskModelAlias(pluginGeneration, model); resolved {
-				plugin, ok = pluginGeneration.Get(target.PluginKey)
-			}
+		if !ok && aliasResolved {
+			plugin, ok = pluginGeneration.Get(aliasTarget.PluginKey)
 		}
 		if ok && plugin != nil && len(plugin.Meta.UsageSchema) > 0 {
 			pricing.BillingUsageSchema = make(map[string]jsplugin.UsageFieldSchema, len(plugin.Meta.UsageSchema))
