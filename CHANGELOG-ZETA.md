@@ -24,6 +24,8 @@
 
 ## v1.0.0-rc.33
 
+Added Qwen 3.8 and later `max`/`flash` effort-alias discovery for OpenAI-type channels. Administrators register and price only the base models; the gateway automatically exposes `-none`, `-low`, `-medium` and `-xhigh` aliases that map to the base model with a top-level `reasoning_effort` on OpenAI Chat requests, while a bare model without caller-supplied effort keeps the provider default. Local verification against real DashScope covered 18 requests returning HTTP 200 with 16 charges independently verified; production rollout is being prepared. Details: [model family discovery](docs/releases/2026-09-05-model-family-discovery.md).
+
 Astra requests with omitted effort no longer inherit an unsupported `none`
 from shared `keep_origin` channel defaults. Explicit effort values remain
 subject to model validation; bare Astra passed real Chat and Responses calls.

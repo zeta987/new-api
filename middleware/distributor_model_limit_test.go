@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -90,9 +91,38 @@ func TestGLMReasoningAllowedChannelTypesFollowRelayFormat(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			got, ok := glmReasoningAllowedChannelTypes(testCase.path, testCase.model)
+			got, ok := reasoningAllowedChannelTypes(testCase.path, testCase.model)
 			assert.Equal(t, testCase.ok, ok)
 			assert.Equal(t, testCase.want, got)
+		})
+	}
+}
+
+func TestQwenChatAliasChannelPolicy(t *testing.T) {
+	settings := model_setting.GetGlobalSettings()
+	previous := settings.ThinkingModelBlacklist
+	t.Cleanup(func() { settings.ThinkingModelBlacklist = previous })
+	settings.ThinkingModelBlacklist = append(append([]string(nil), previous...), "qwen3.9-max-low@temperature:0.2")
+	for _, tc := range []struct {
+		model string
+		path  string
+		want  bool
+	}{
+		{"qwen3.8-max-low", "/v1/chat/completions", true},
+		{"qwen3.8-flash-none@temperature:0.2", "/pg/chat/completions", true},
+		{"qwen3.9-max-low@temperature:0.2", "/v1/chat/completions", false},
+		{"qwen3.8-max", "/v1/chat/completions", false},
+		{"qwen3.8-max-low", "/v1/responses", false},
+		{"qwen3.8-max-low", "/v1/messages", false},
+	} {
+		t.Run(tc.model+tc.path, func(t *testing.T) {
+			allowed, restricted := reasoningAllowedChannelTypes(tc.path, tc.model)
+			assert.Equal(t, tc.want, restricted)
+			if tc.want {
+				assert.Equal(t, []int{constant.ChannelTypeOpenAI}, allowed)
+			} else {
+				assert.Nil(t, allowed)
+			}
 		})
 	}
 }
