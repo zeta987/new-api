@@ -24,6 +24,10 @@
 
 ## v1.0.0-rc.33
 
+Astra requests with omitted effort no longer inherit an unsupported `none`
+from shared `keep_origin` channel defaults. Explicit effort values remain
+subject to model validation; bare Astra passed real Chat and Responses calls.
+
 Integrates upstream rc.33 reasoning preservation and Astra expression pricing.
 Restores native tools supplied through existing Chat parameter overrides and
 adapts structured `reasoning_effort` override paths to Responses while preserving

@@ -2553,3 +2553,31 @@ func TestResponsesOverrideAcceptsChatReasoningEffortPath(t *testing.T) {
 		})
 	}
 }
+
+func TestAstraDoesNotInheritLegacyNoneDefault(t *testing.T) {
+	tests := []struct {
+		name, model, input, path, value, want string
+		format                                types.RelayFormat
+		keepOrigin                            bool
+	}{
+		{"Chat omitted effort", "gpt-6-astra", `{}`, "reasoning_effort", "none", `{}`, types.RelayFormatOpenAI, true},
+		{"Responses omitted effort", "gpt-6-astra", `{}`, "reasoning.effort", "none", `{}`, types.RelayFormatOpenAIResponses, true},
+		{"Responses legacy path", "gpt-6-astra", `{}`, "reasoning_effort", "none", `{}`, types.RelayFormatOpenAIResponses, true},
+		{"mapped Astra", "gpt-6-astra", `{"model":"vendor-astra"}`, "reasoning_effort", "none", `{"model":"vendor-astra"}`, types.RelayFormatOpenAI, true},
+		{"explicit low", "gpt-6-astra", `{"reasoning_effort":"low"}`, "reasoning_effort", "none", `{"reasoning_effort":"low"}`, types.RelayFormatOpenAI, true},
+		{"explicit none is preserved for validation", "gpt-6-astra", `{"reasoning_effort":"none"}`, "reasoning_effort", "none", `{"reasoning_effort":"none"}`, types.RelayFormatOpenAI, true},
+		{"forced override is preserved for validation", "gpt-6-astra", `{}`, "reasoning_effort", "none", `{"reasoning_effort":"none"}`, types.RelayFormatOpenAI, false},
+		{"valid channel default", "gpt-6-astra", `{}`, "reasoning_effort", "high", `{"reasoning_effort":"high"}`, types.RelayFormatOpenAI, true},
+		{"GPT56 keeps none default", "gpt-5.6-luna", `{}`, "reasoning_effort", "none", `{"reasoning_effort":"none"}`, types.RelayFormatOpenAI, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			operation := map[string]interface{}{"mode": "set", "path": tt.path, "value": tt.value, "keep_origin": tt.keepOrigin}
+			info := &RelayInfo{RelayFormat: tt.format, OriginModelName: tt.model, ChannelMeta: &ChannelMeta{UpstreamModelName: "vendor-model", ParamOverride: map[string]interface{}{"operations": []interface{}{operation}}}}
+			out, err := ApplyParamOverrideWithRelayInfo([]byte(tt.input), info)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(out))
+			assert.Equal(t, tt.value, operation["value"])
+		})
+	}
+}

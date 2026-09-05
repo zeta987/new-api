@@ -75,3 +75,18 @@ Regression cases were consolidated into existing test files.
 Claude Fable 5.1 with effort high reviewed the tool fix and the final rc.33
 effort, override, and billing integration. No blocking findings remained.
 Deployment evidence is recorded separately after promotion.
+
+## Astra omitted-effort follow-up
+
+A bare Astra request could still inherit `none` from a shared legacy channel
+default (`set`, `keep_origin: true`). Astra rejects that value. The override
+executor now leaves effort absent for this specific default and lets the
+upstream model choose its default. Explicit request values, forced overrides,
+valid channel defaults, and GPT-5.6 behavior remain unchanged.
+
+With the original channel override and `^gpt-6.*$` conversion policy on the
+local database copy, both Chat and Responses requests for bare `gpt-6-astra`
+returned HTTP 200 and `RC33-OK` from the configured real upstream. Scoped
+`go test ./relay/common ./relay/channel/openai`, `go vet ./relay/common`,
+formatting, and the complete backend build passed. Claude Fable 5.1 at high
+effort reviewed the follow-up without blocking findings.
