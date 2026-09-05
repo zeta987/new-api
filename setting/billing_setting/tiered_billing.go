@@ -44,13 +44,29 @@ func init() {
 // ---------------------------------------------------------------------------
 
 func resolveBillingConfig(model string) (mode string, expr string, hasExpr bool) {
-	for _, candidate := range ratio_setting.ModelPricingCandidates(model) {
+	candidates := ratio_setting.ModelPricingCandidates(model)
+	for _, candidate := range candidates {
 		mode, hasMode := billingSetting.BillingMode[candidate]
 		if !hasMode {
 			continue
 		}
 		expr, hasExpr := billingSetting.BillingExpr[candidate]
+		if mode == BillingModeTieredExpr && !hasExpr {
+			expr, hasExpr = builtinBillingExpr[candidate]
+		}
 		return mode, expr, hasExpr
+	}
+	// Administrator prices take precedence over built-in family defaults.
+	if ratio_setting.HasConfiguredModelRatio(model) {
+		return BillingModeRatio, "", false
+	}
+	if _, configured := ratio_setting.GetModelPrice(model, false); configured {
+		return BillingModeRatio, "", false
+	}
+	for _, candidate := range candidates {
+		if expression, ok := builtinBillingExpr[candidate]; ok {
+			return BillingModeTieredExpr, expression, true
+		}
 	}
 	return BillingModeRatio, "", false
 }
@@ -66,11 +82,26 @@ func GetBillingExpr(model string) (string, bool) {
 }
 
 func GetBillingModeCopy() map[string]string {
-	return lo.Assign(billingSetting.BillingMode)
+	modes := lo.Assign(billingSetting.BillingMode)
+	for model := range builtinBillingExpr {
+		if _, configured := modes[model]; !configured && GetBillingMode(model) == BillingModeTieredExpr {
+			modes[model] = BillingModeTieredExpr
+		}
+	}
+	return modes
 }
 
 func GetBillingExprCopy() map[string]string {
-	return lo.Assign(billingSetting.BillingExpr)
+	expressions := lo.Assign(billingSetting.BillingExpr)
+	for model := range builtinBillingExpr {
+		if _, configured := expressions[model]; configured {
+			continue
+		}
+		if expression, ok := GetBillingExpr(model); ok {
+			expressions[model] = expression
+		}
+	}
+	return expressions
 }
 
 func GetPricingSyncData(base map[string]any) map[string]any {

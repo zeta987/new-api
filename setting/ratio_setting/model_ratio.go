@@ -25,7 +25,6 @@ const (
 // 1 === ￥0.014 / 1k tokens
 
 var defaultModelRatio = map[string]float64{
-	"gpt-6-astra": 5, // Standard short-context input: $10 / 1M tokens.
 	//"midjourney":                50,
 	"gpt-4-gizmo-*":                             15,
 	"gpt-4o-gizmo-*":                            2.5,
@@ -777,11 +776,10 @@ func RoutingMatchModelName(name string) string {
 	return FormatMatchingModelName(hostreasoning.BaseModelName(name))
 }
 
-// HasConfiguredModelRatio reports whether name has an explicit ratio entry
-// after wildcard normalization. Self-use fallback does not count.
+// HasConfiguredModelRatio uses the same family and wildcard precedence as
+// pricing lookup. Self-use fallback does not count.
 func HasConfiguredModelRatio(name string) bool {
-	name = FormatMatchingModelName(name)
-	_, ok := modelRatioMap.Get(name)
+	_, ok := getModelPricingValue(modelRatioMap, name)
 	return ok
 }
 

@@ -6,8 +6,11 @@ import (
 	"testing"
 )
 
-func TestAstraPricingUsesBaseForReasoningAliases(t *testing.T) {
+func TestAstraLegacyPricingUsesBaseForReasoningAliases(t *testing.T) {
 	InitRatioSettings()
+	saved := ModelRatio2JSONString()
+	t.Cleanup(func() { require.NoError(t, UpdateModelRatioByJSONString(saved)) })
+	require.NoError(t, UpdateModelRatioByJSONString(`{"gpt-6-astra":5}`))
 	for _, model := range []string{"gpt-6-astra", "gpt-6-astra-pro-max", "gpt-6-astra-standard-high"} {
 		ratio, found, _ := GetModelRatio(model)
 		require.True(t, found)
