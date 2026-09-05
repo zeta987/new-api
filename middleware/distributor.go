@@ -18,8 +18,10 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	kitreasoning "github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 
@@ -46,7 +48,7 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
-		if allowedTypes, ok := glmReasoningAllowedChannelTypes(c.Request.URL.Path, modelRequest.Model); ok {
+		if allowedTypes, ok := reasoningAllowedChannelTypes(c.Request.URL.Path, modelRequest.Model); ok {
 			constraints.AddFilter(taskdto.ChannelFilter{
 				Kind:                taskdto.FilterAllowedChannelTypes,
 				AllowedChannelTypes: allowedTypes,
@@ -219,7 +221,14 @@ func tokenAllowsModel(tokenModelLimit map[string]bool, modelName string) bool {
 	return false
 }
 
-func glmReasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
+func reasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
+	isChat := requestPath == "/v1/chat/completions" || strings.HasPrefix(requestPath, "/pg/chat/completions")
+	if isChat && !model_setting.ShouldPreserveThinkingSuffix(modelName) {
+		base := kitreasoning.ParseModelModifiers(modelName).Base
+		if _, _, ok := reasoning.ParseQwenReasoningEffortSuffix(base); ok {
+			return []int{constant.ChannelTypeOpenAI}, true
+		}
+	}
 	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(modelName); !ok {
 		return nil, false
 	}

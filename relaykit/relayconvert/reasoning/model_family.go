@@ -3,6 +3,12 @@ package reasoning
 // OpenAIReasoningBaseModel recognizes only registered model families and their
 // validated aliases. Unrecognized vendor IDs remain opaque.
 func OpenAIReasoningBaseModel(name string) (string, bool) {
+	if IsQwenReasoningModel(name) {
+		return name, true
+	}
+	if base, _, ok := ParseQwenReasoningEffortSuffix(name); ok {
+		return base, true
+	}
 	if name == GPT6Astra || name == GPT6Astra+"-*" {
 		return GPT6Astra, true
 	}
@@ -23,6 +29,14 @@ func OpenAIReasoningModelNames(name string) []string {
 	base, known := OpenAIReasoningBaseModel(name)
 	if !known || (name != base && name != base+"-*") {
 		return []string{name}
+	}
+	if IsQwenReasoningModel(name) {
+		names := make([]string, 0, 5)
+		names = append(names, base)
+		for _, effort := range []string{"none", "low", "medium", "xhigh"} {
+			names = append(names, base+"-"+effort)
+		}
+		return names
 	}
 	names := make([]string, 0, 21)
 	if name == base {
