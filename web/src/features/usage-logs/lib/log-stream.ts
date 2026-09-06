@@ -20,10 +20,14 @@ import { SSE } from 'sse.js'
 
 import { getCommonHeaders } from '@/lib/api'
 
+import { usageLogsRetryAfterDelay } from './background-refresh'
+
 interface UsageLogStream {
-  addEventListener(type: string, listener: () => void): void
+  addEventListener(type: string, listener: (event: Event) => void): void
   stream(): void
   close(): void
+  reconnectDelay?: number
+  xhr?: Pick<XMLHttpRequest, 'getResponseHeader'> | null
 }
 
 type UsageLogStreamFactory = () => UsageLogStream
@@ -31,6 +35,8 @@ type UsageLogStreamFactory = () => UsageLogStream
 function createUsageLogStream(): UsageLogStream {
   return new SSE('/api/log/stream', {
     autoReconnect: true,
+    reconnectDelay: 10_000,
+    start: false,
     headers: {
       ...getCommonHeaders(),
       Accept: 'text/event-stream',
@@ -41,11 +47,23 @@ function createUsageLogStream(): UsageLogStream {
 
 export function subscribeUsageLogStream(
   listener: () => void,
-  createStream: UsageLogStreamFactory = createUsageLogStream
+  createStream: UsageLogStreamFactory = createUsageLogStream,
+  onRateLimit?: (delay: number) => void
 ): () => void {
   const source = createStream()
-  source.addEventListener('ready', listener)
+  source.addEventListener('ready', () => {
+    source.reconnectDelay = 10_000
+    listener()
+  })
   source.addEventListener('log', listener)
+  source.addEventListener('error', (event) => {
+    if (!('responseCode' in event) || event.responseCode !== 429) return
+    const delay = usageLogsRetryAfterDelay(
+      source.xhr?.getResponseHeader('Retry-After')
+    )
+    source.reconnectDelay = Math.max(10_000, delay)
+    onRateLimit?.(delay)
+  })
   source.stream()
 
   return () => source.close()

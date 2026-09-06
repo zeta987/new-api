@@ -23,6 +23,8 @@ import { subscribeUsageLogStream } from './log-stream'
 class FakeUsageLogStream extends EventTarget {
   started = false
   closed = false
+  reconnectDelay = 3000
+  xhr = { getResponseHeader: () => '180' }
 
   stream() {
     this.started = true
@@ -34,6 +36,26 @@ class FakeUsageLogStream extends EventTarget {
 }
 
 describe('usage log stream', () => {
+  test('honors a rate-limited handshake before reconnecting and refreshing', () => {
+    const stream = new FakeUsageLogStream()
+    let cooldown = 0
+    const unsubscribe = subscribeUsageLogStream(
+      () => undefined,
+      () => stream,
+      (delay) => {
+        cooldown = delay
+      }
+    )
+
+    stream.dispatchEvent(
+      Object.assign(new Event('error'), { responseCode: 429 })
+    )
+
+    expect(stream.reconnectDelay).toBe(180_000)
+    expect(cooldown).toBe(180_000)
+    unsubscribe()
+  })
+
   test('refreshes after connecting and whenever the server reports a log', () => {
     const stream = new FakeUsageLogStream()
     let notifications = 0

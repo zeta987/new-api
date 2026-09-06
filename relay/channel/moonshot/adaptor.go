@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	channelconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/claude"
@@ -21,6 +22,36 @@ import (
 )
 
 type Adaptor struct {
+	kimiFormulaNames []string
+}
+
+// PreparePostOverrideRequest consumes the gateway-only kimi_tools marker while
+// TextHelper still owns the post-override JSON bytes. The adaptor instance is
+// request-scoped, so the parsed Formula selection can be handed to DoRequest
+// without reading ordinary Moonshot request bodies.
+func (a *Adaptor) PreparePostOverrideRequest(jsonData []byte) ([]byte, error) {
+	a.kimiFormulaNames = nil
+	var request map[string]json.RawMessage
+	if err := common.Unmarshal(jsonData, &request); err != nil {
+		return nil, err
+	}
+	marker, ok := request[kimiToolsField]
+	if !ok {
+		return jsonData, nil
+	}
+	delete(request, kimiToolsField)
+	formulaNames, err := parseKimiFormulaNames(marker)
+	if err != nil {
+		return nil, newKimiLoopError("kimi_tool_loop_invalid_tools", http.StatusBadRequest, err.Error())
+	}
+	cleaned, err := common.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	if len(formulaNames) > 0 {
+		a.kimiFormulaNames = append([]string(nil), formulaNames...)
+	}
+	return cleaned, nil
 }
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
@@ -148,6 +179,11 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
+	if info != nil && info.RelayMode == constant.RelayModeChatCompletions && len(a.kimiFormulaNames) > 0 {
+		formulaNames := a.kimiFormulaNames
+		a.kimiFormulaNames = nil
+		return doKimiFormulaRequest(a, c, info, requestBody, formulaNames)
+	}
 	return channel.DoApiRequest(a, c, info, requestBody)
 }
 

@@ -176,6 +176,14 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				return newAPIErrorFromParamOverride(err)
 			}
 		}
+		if preparer, ok := adaptor.(interface {
+			PreparePostOverrideRequest([]byte) ([]byte, error)
+		}); ok {
+			jsonData, err = preparer.PreparePostOverrideRequest(jsonData)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
 
 		logger.LogDebug(c, "text request body: %s", jsonData)
 

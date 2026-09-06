@@ -92,6 +92,9 @@ export type DataTablePageProps<TData> = {
    */
   isFetching?: boolean
 
+  /** Allow inspection of existing rows during read-only background refreshes. */
+  interactiveWhileFetching?: boolean
+
   /**
    * Empty-state title (used for both desktop {@link TableEmpty} and mobile fallback).
    */
@@ -437,7 +440,9 @@ function renderMobile<TData>(
           pinnedColumns={props.pinnedColumns}
           containerClassName={cn(
             'transition-opacity duration-150',
-            isFetchingOnly && 'pointer-events-none opacity-60',
+            isFetchingOnly &&
+              !props.interactiveWhileFetching &&
+              'pointer-events-none opacity-60',
             props.tableClassName
           )}
           getRowClassName={(row) =>
@@ -496,7 +501,9 @@ function renderDesktop<TData>(
         className={cn(
           fixedHeight && 'min-h-0 flex-1 overflow-y-auto',
           'transition-opacity duration-150',
-          isFetchingOnly && 'pointer-events-none opacity-60'
+          isFetchingOnly &&
+            !props.interactiveWhileFetching &&
+            'pointer-events-none opacity-60'
         )}
       >
         <DataTableCardGrid
@@ -538,7 +545,9 @@ function renderDesktop<TData>(
       containerClassName={cn(
         fixedHeight && 'min-h-0 flex-1',
         'transition-opacity duration-150',
-        isFetchingOnly && 'pointer-events-none opacity-60',
+        isFetchingOnly &&
+          !props.interactiveWhileFetching &&
+          'pointer-events-none opacity-60',
         props.tableClassName
       )}
       getRowClassName={(row) =>

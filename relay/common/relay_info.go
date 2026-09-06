@@ -81,6 +81,17 @@ type TokenCountMeta struct {
 	estimatePromptTokens int
 }
 
+// KimiToolLoopInfo records request-local usage and accounting state for a
+// server-managed Kimi Formula tool loop. Tool-call maps use the canonical
+// Formula names: web-search, fetch, and code-runner.
+type KimiToolLoopInfo struct {
+	Usages             []dto.Usage
+	ToolCalls          map[string]int
+	AttemptedToolCalls map[string]int
+	Completed          bool
+	ErrorCode          string
+}
+
 type RelayInfo struct {
 	TokenId           int
 	TokenKey          string
@@ -176,6 +187,7 @@ type RelayInfo struct {
 	// and again before settlement. Non-nil only when billing mode is "tiered_expr".
 	TieredBillingSnapshot *billingexpr.BillingSnapshot
 	BillingRequestInput   *billingexpr.RequestInput
+	KimiToolLoop          *KimiToolLoopInfo
 
 	Request dto.Request
 
