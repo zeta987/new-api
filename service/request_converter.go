@@ -20,9 +20,6 @@ func init() {
 			if ctx != nil {
 				ginCtx, _ = ctx.Value(gin.ContextKey).(*gin.Context)
 			}
-			if ginCtx == nil {
-				return "", "", fmt.Errorf("media conversion requires a Gin request context")
-			}
 			return GetBase64Data(ginCtx, source, reason...)
 		},
 		DecodeBase64FileData: DecodeBase64FileData,

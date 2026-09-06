@@ -1,7 +1,10 @@
 package service
 
 import (
+	"encoding/base64"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -10,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,14 +60,47 @@ func TestGeminiImageConversionPreservesRequestContext(t *testing.T) {
 			require.Len(t, sources, 1)
 		})
 	}
-	t.Run("missing request context", func(t *testing.T) {
-		var request dto.GeneralOpenAIRequest
-		require.NoError(t, common.UnmarshalJsonStr(`{"model":"gemini-3.5-flash-lite","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,`+png+`"}}]}]}`, &request))
-		var err error
-		require.NotPanics(t, func() {
-			_, err = ConvertRequest(nil, &relaycommon.RelayInfo{}, types.RelayFormatGemini, &request)
+	t.Run("optional request context", func(t *testing.T) {
+		imageBytes, err := base64.StdEncoding.DecodeString(png)
+		require.NoError(t, err)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(imageBytes)
+		}))
+		defer server.Close()
+		serverURL, err := url.Parse(server.URL)
+		require.NoError(t, err)
+		fetchSetting := system_setting.GetFetchSetting()
+		previousFetch := *fetchSetting
+		previousWorker := system_setting.WorkerUrl
+		previousDownloadLimit := constant.MaxFileDownloadMB
+		*fetchSetting = system_setting.FetchSetting{EnableSSRFProtection: true, AllowPrivateIp: true, AllowedPorts: []string{serverURL.Port()}}
+		system_setting.WorkerUrl = ""
+		constant.MaxFileDownloadMB = 1
+		t.Cleanup(func() {
+			*fetchSetting = previousFetch
+			system_setting.WorkerUrl = previousWorker
+			constant.MaxFileDownloadMB = previousDownloadLimit
 		})
-		require.ErrorContains(t, err, "media conversion requires a Gin request context")
+		initDefaultHTTPClientFixture(t)
+		for _, imageURL := range []string{"data:image/png;base64," + png, server.URL + "/image.png"} {
+			var request dto.GeneralOpenAIRequest
+			require.NoError(t, common.UnmarshalJsonStr(`{"model":"gemini-3.5-flash-lite","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"`+imageURL+`"}}]}]}`, &request))
+			var result *relayconvert.RequestResult
+			var err error
+			require.NotPanics(t, func() {
+				result, err = ConvertRequest(nil, &relaycommon.RelayInfo{}, types.RelayFormatGemini, &request)
+			})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			converted, ok := result.Value.(*dto.GeminiChatRequest)
+			require.True(t, ok)
+			require.Len(t, converted.Contents, 1)
+			require.Len(t, converted.Contents[0].Parts, 1)
+			require.NotNil(t, converted.Contents[0].Parts[0].InlineData)
+			assert.Equal(t, "image/png", converted.Contents[0].Parts[0].InlineData.MimeType)
+			assert.Equal(t, png, converted.Contents[0].Parts[0].InlineData.Data)
+		}
 	})
 }
 
