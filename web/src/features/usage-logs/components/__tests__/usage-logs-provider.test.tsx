@@ -199,7 +199,7 @@ function LiveLogsProbe() {
 
 describe('usage logs background refresh', () => {
   let queryClient: QueryClient
-  let navigateToErrorPage: ReturnType<typeof vi.fn>
+  let navigateToErrorPage: () => void
   let originalAdapter: typeof api.defaults.adapter
   let requests: string[]
   let rejectUntil: number
