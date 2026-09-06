@@ -1,14 +1,71 @@
 package service
 
 import (
+	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGeminiImageConversionPreservesRequestContext(t *testing.T) {
+	previousDebug := common.DebugEnabled
+	common.DebugEnabled = true
+	t.Cleanup(func() { common.DebugEnabled = previousDebug })
+	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+
+	for _, entry := range []string{"default", "by-id", "via"} {
+		t.Run(entry, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Set(common.RequestIdKey, "gemini-image-regression")
+			t.Cleanup(func() { CleanupFileSources(c) })
+			var request dto.GeneralOpenAIRequest
+			require.NoError(t, common.UnmarshalJsonStr(`{"model":"gemini-3.5-flash-lite-minimal","messages":[{"role":"user","content":[{"type":"text","text":"Describe this image."},{"type":"image_url","image_url":{"url":"data:image/png;base64,`+png+`"}}]}]}`, &request))
+			info := &relaycommon.RelayInfo{}
+			var result *relayconvert.RequestResult
+			var err error
+			require.NotPanics(t, func() {
+				switch entry {
+				case "by-id":
+					result, err = ConvertRequestByID(c, info, relayconvert.ConverterOpenAIChatToGeminiContent, &request)
+				case "via":
+					result, err = ConvertRequestVia(c, info, &request, types.RelayFormatGemini)
+				default:
+					result, err = ConvertRequest(c, info, types.RelayFormatGemini, &request)
+				}
+			})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			converted, ok := result.Value.(*dto.GeminiChatRequest)
+			require.True(t, ok)
+			require.Len(t, converted.Contents, 1)
+			require.Len(t, converted.Contents[0].Parts, 2)
+			assert.Equal(t, "Describe this image.", converted.Contents[0].Parts[0].Text)
+			require.NotNil(t, converted.Contents[0].Parts[1].InlineData)
+			assert.Equal(t, "image/png", converted.Contents[0].Parts[1].InlineData.MimeType)
+			assert.Equal(t, png, converted.Contents[0].Parts[1].InlineData.Data)
+			sources, exists := c.Get(string(constant.ContextKeyFileSourcesToCleanup))
+			require.True(t, exists, "converted media must be registered for request cleanup")
+			require.Len(t, sources, 1)
+		})
+	}
+	t.Run("missing request context", func(t *testing.T) {
+		var request dto.GeneralOpenAIRequest
+		require.NoError(t, common.UnmarshalJsonStr(`{"model":"gemini-3.5-flash-lite","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,`+png+`"}}]}]}`, &request))
+		var err error
+		require.NotPanics(t, func() {
+			_, err = ConvertRequest(nil, &relaycommon.RelayInfo{}, types.RelayFormatGemini, &request)
+		})
+		require.ErrorContains(t, err, "media conversion requires a Gin request context")
+	})
+}
 
 func TestResponseConverterFacades(t *testing.T) {
 	cache5m, cache1h := NormalizeCacheCreationSplit(10, 3, 2)
