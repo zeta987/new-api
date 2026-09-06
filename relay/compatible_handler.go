@@ -13,7 +13,6 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
-	kitreasoning "github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
@@ -236,15 +235,5 @@ func resolveChatRequestHandling(info *relaycommon.RelayInfo, passThroughGlobal, 
 		return false, false
 	}
 	useRawPassThrough := passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled
-	isQwenAlias := false
-	if !model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) {
-		originBase := kitreasoning.ParseModelModifiers(info.OriginModelName).Base
-		_, _, isQwenAlias = reasoning.ParseQwenReasoningEffortSuffix(originBase)
-	}
-	qwenSuffixIntent := info.ReasoningState() != nil && reasoning.IsQwenReasoningModel(info.UpstreamModelName)
-	if info.ChannelType == constant.ChannelTypeOpenAI &&
-		info.RelayMode == relayconstant.RelayModeChatCompletions && (isQwenAlias || qwenSuffixIntent) {
-		return false, useRawPassThrough
-	}
 	return responsesBridgeEnabled && !useRawPassThrough, useRawPassThrough
 }
