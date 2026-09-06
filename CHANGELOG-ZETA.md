@@ -24,6 +24,8 @@
 
 ## v1.0.0-rc.33
 
+rc.33 (2026-09-06) fixes an HTTP 500 when Pot submits `image_url` content through OpenAI Chat Completions converted to Gemini. A diagnostic collector wrapping the context caused a `*gin.Context` assertion to lose the original pointer, and the `Debug=true` media log then panicked on a typed nil. The converter now recovers the original Gin request via `gin.ContextKey`, preserving its media cache and cleanup, while a missing Gin context remains supported through a separate media logging context that also protects standalone Base64 and URL conversions. Tests cover three conversion facades, nil-context Base64, a real httptest URL, and the existing Claude multimodal contract. Real Google POSTs returned HTTP 200 RED on gemini-3.5-flash-lite-minimal (non-stream) and gemini-3.5-flash-lite-low (stream). No schema, dependency, or frontend changes.
+
 Added Qwen 3.8 and later `max`/`flash` effort-alias discovery for OpenAI-type channels. Administrators register and price only the base models; the gateway automatically exposes `-none`, `-low`, `-medium` and `-xhigh` aliases that map to the base model with a top-level `reasoning_effort` on OpenAI Chat requests, while a bare model without caller-supplied effort keeps the provider default. Local verification against real DashScope covered 18 requests returning HTTP 200 with 16 charges independently verified; production rollout is being prepared. Details: [model family discovery](docs/releases/2026-09-05-model-family-discovery.md).
 
 Astra requests with omitted effort no longer inherit an unsupported `none`
