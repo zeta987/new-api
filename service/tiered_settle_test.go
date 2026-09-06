@@ -1,14 +1,19 @@
 package service
 
 import (
+	"errors"
 	"math"
 	"math/rand"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	kittypes "github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -317,9 +322,14 @@ func TestTryTieredSettle_NoRequestInput_FallsBackToDefault(t *testing.T) {
 type recordingBillingSettler struct {
 	preConsumedQuota int
 	reserveTargets   []int
+	settleTargets    []int
+	reserveErr       error
 }
 
-func (*recordingBillingSettler) Settle(int) error { return nil }
+func (s *recordingBillingSettler) Settle(actualQuota int) error {
+	s.settleTargets = append(s.settleTargets, actualQuota)
+	return nil
+}
 
 func (*recordingBillingSettler) Refund(*gin.Context) {}
 
@@ -331,10 +341,405 @@ func (s *recordingBillingSettler) GetPreConsumedQuota() int {
 
 func (s *recordingBillingSettler) Reserve(targetQuota int) error {
 	s.reserveTargets = append(s.reserveTargets, targetQuota)
+	if s.reserveErr != nil {
+		return s.reserveErr
+	}
 	if targetQuota > s.preConsumedQuota {
 		s.preConsumedQuota = targetQuota
 	}
 	return nil
+}
+
+func TestEstimateKimiToolLoopQuotaUsesExpandedTierInput(t *testing.T) {
+	const expr = `len <= 100 ? tier("short", p * 1 + c * 2 + cr * 0.1) : tier("long", p * 3 + c * 4 + cr * 0.2)`
+	info := makeRelayInfo(expr, 1, 80, 50)
+
+	assert.Equal(t, 360, EstimateKimiToolLoopQuota(info, 200, 30))
+	assert.Equal(t, 400, EstimateKimiToolLoopQuota(info, 200, 0))
+	assert.Equal(t, 0, EstimateKimiToolLoopQuota(info, -1, -1))
+}
+
+func TestEstimateKimiToolLoopQuotaCheckedRejectsExpressionFailure(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:               "tiered_expr",
+			ExprString:                "invalid +-+ expr",
+			ExprHash:                  billingexpr.ExprHashString("invalid +-+ expr"),
+			EstimatedCompletionTokens: 20,
+			EstimatedQuotaAfterGroup:  1,
+		},
+	}
+
+	quota, apiErr := EstimateKimiToolLoopQuotaChecked(info, 200, 20)
+	assert.Equal(t, 0, quota)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, kittypes.ErrorCodeModelPriceError, apiErr.GetErrorCode())
+	assert.True(t, kittypes.IsSkipRetryError(apiErr))
+	assert.Equal(t, common.MaxQuota, EstimateKimiToolLoopQuota(info, 200, 20))
+}
+
+func TestReserveKimiToolLoopQuotaIncludesPerRoundUsagePendingToolsAndNextCall(t *testing.T) {
+	const expr = `len <= 100 ? tier("short", p * 1 + c * 2 + cr * 0.1) : tier("long", p * 3 + c * 4 + cr * 0.2)`
+	operation_setting.SetToolPriceForTest("kimi_web_search", 5)
+	t.Cleanup(func() {
+		operation_setting.DeleteToolPriceForTest("kimi_web_search")
+	})
+
+	billing := &recordingBillingSettler{preConsumedQuota: 100}
+	info := makeRelayInfo(expr, 1, 80, 20)
+	info.Billing = billing
+	info.PriceData.GroupRatioInfo.GroupRatio = 1
+	info.KimiToolLoop = &relaycommon.KimiToolLoopInfo{
+		Usages: []dto.Usage{
+			{
+				PromptTokens:     80,
+				CompletionTokens: 10,
+				TotalTokens:      90,
+				PromptTokensDetails: dto.InputTokenDetails{
+					CachedTokens: 20,
+				},
+			},
+			{
+				PromptTokens:     150,
+				CompletionTokens: 20,
+				TotalTokens:      170,
+				PromptTokensDetails: dto.InputTokenDetails{
+					CachedTokens: 40,
+				},
+			},
+		},
+		ToolCalls:          map[string]int{"web-search": 0},
+		AttemptedToolCalls: map[string]int{"web-search": 1},
+	}
+
+	require.Nil(t, ReserveKimiToolLoopQuota(nil, info, 360))
+	require.Equal(t, []int{3110}, billing.reserveTargets)
+	assert.Equal(t, 3110, info.FinalPreConsumedQuota)
+
+	info.KimiToolLoop.ToolCalls["web-search"] = 1
+	require.Nil(t, ReserveKimiToolLoopQuota(nil, info, 0))
+	require.Equal(t, []int{3110, 2750}, billing.reserveTargets)
+}
+
+func TestReserveKimiToolLoopQuotaReturnsSkipRetryError(t *testing.T) {
+	billing := &recordingBillingSettler{reserveErr: errors.New("reserve failed")}
+	info := &relaycommon.RelayInfo{
+		Billing:      billing,
+		KimiToolLoop: &relaycommon.KimiToolLoopInfo{},
+	}
+
+	apiErr := ReserveKimiToolLoopQuota(nil, info, 1)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, kittypes.ErrorCodeUpdateDataError, apiErr.GetErrorCode())
+	assert.True(t, kittypes.IsSkipRetryError(apiErr))
+}
+
+func TestReserveKimiToolLoopQuotaStartsBillingForFreeModelPaidToolAndSettlesPartialFailure(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+	operation_setting.SetToolPriceForTest("kimi_web_search", 5)
+	t.Cleanup(func() {
+		operation_setting.DeleteToolPriceForTest("kimi_web_search")
+	})
+
+	const (
+		userID    = 730
+		channelID = 731
+		tokenID   = 732
+		tokenKey  = "test-kimi-lazy-billing"
+	)
+	seedUser(t, userID, 10_000)
+	seedChannel(t, channelID)
+	seedToken(t, tokenID, userID, tokenKey, 10_000)
+	info := &relaycommon.RelayInfo{
+		UserId:           userID,
+		TokenId:          tokenID,
+		TokenKey:         tokenKey,
+		OriginModelName:  "kimi-k3-free",
+		BillingModelName: "kimi-k3-free",
+		StartTime:        time.Now(),
+		ChannelMeta:      &relaycommon.ChannelMeta{ChannelId: channelID},
+		UserSetting: dto.UserSetting{
+			BillingPreference: "wallet_only",
+		},
+		PriceData: types.PriceData{
+			FreeModel:      true,
+			ModelRatio:     0,
+			ModelPrice:     0,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		KimiToolLoop: &relaycommon.KimiToolLoopInfo{
+			ToolCalls:          map[string]int{},
+			AttemptedToolCalls: map[string]int{"web-search": 1},
+		},
+	}
+	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Set("token_quota", 10_000)
+
+	require.Nil(t, ReserveKimiToolLoopQuota(ctx, info, 0))
+	require.NotNil(t, info.Billing)
+	assert.False(t, info.PriceData.FreeModel)
+	assert.Equal(t, 2500, info.FinalPreConsumedQuota)
+	userQuota, err := model.GetUserQuota(userID, false)
+	require.NoError(t, err)
+	assert.Equal(t, 7500, userQuota)
+	token, err := model.GetTokenById(tokenID)
+	require.NoError(t, err)
+	assert.Equal(t, 7500, token.RemainQuota)
+
+	info.KimiToolLoop.ToolCalls["web-search"] = 1
+	info.KimiToolLoop.Usages = []dto.Usage{{PromptTokens: 20, CompletionTokens: 10, TotalTokens: 30}}
+	info.KimiToolLoop.ErrorCode = "kimi_tool_loop_chat_failed"
+	PostTextConsumeQuota(ctx, info, &dto.Usage{PromptTokens: 20, CompletionTokens: 10, TotalTokens: 30}, nil)
+
+	userQuota, err = model.GetUserQuota(userID, false)
+	require.NoError(t, err)
+	assert.Equal(t, 7500, userQuota)
+	token, err = model.GetTokenById(tokenID)
+	require.NoError(t, err)
+	assert.Equal(t, 7500, token.RemainQuota)
+	var logs []model.Log
+	require.NoError(t, model.LOG_DB.Where("user_id = ?", userID).Find(&logs).Error)
+	require.Len(t, logs, 1)
+	assert.Equal(t, 2500, logs[0].Quota)
+}
+
+func TestReserveKimiToolLoopQuotaRejectsPaidToolWhenWalletInsufficient(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+	operation_setting.SetToolPriceForTest("kimi_web_search", 5)
+	t.Cleanup(func() {
+		operation_setting.DeleteToolPriceForTest("kimi_web_search")
+	})
+
+	const (
+		userID   = 733
+		tokenID  = 734
+		tokenKey = "test-kimi-insufficient"
+	)
+	seedUser(t, userID, 2000)
+	seedToken(t, tokenID, userID, tokenKey, 10_000)
+	info := &relaycommon.RelayInfo{
+		UserId:           userID,
+		TokenId:          tokenID,
+		TokenKey:         tokenKey,
+		OriginModelName:  "kimi-k3-free",
+		BillingModelName: "kimi-k3-free",
+		UserSetting: dto.UserSetting{
+			BillingPreference: "wallet_only",
+		},
+		PriceData: types.PriceData{
+			FreeModel:      true,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		KimiToolLoop: &relaycommon.KimiToolLoopInfo{
+			AttemptedToolCalls: map[string]int{"web-search": 1},
+		},
+	}
+	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Set("token_quota", 10_000)
+
+	apiErr := ReserveKimiToolLoopQuota(ctx, info, 0)
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, kittypes.ErrorCodeInsufficientUserQuota, apiErr.GetErrorCode())
+	assert.Equal(t, 403, apiErr.StatusCode)
+	assert.True(t, kittypes.IsSkipRetryError(apiErr))
+	assert.Nil(t, info.Billing)
+	assert.True(t, info.PriceData.FreeModel)
+	userQuota, err := model.GetUserQuota(userID, false)
+	require.NoError(t, err)
+	assert.Equal(t, 2000, userQuota)
+	token, err := model.GetTokenById(tokenID)
+	require.NoError(t, err)
+	assert.Equal(t, 10_000, token.RemainQuota)
+}
+
+func TestKimiToolLoopOversizedAggregateKeepsWalletStatsAndLogAligned(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+
+	const (
+		userID        = 735
+		channelID     = 736
+		expectedQuota = 1_073_741_824
+	)
+	seedUser(t, userID, expectedQuota+1000)
+	seedChannel(t, channelID)
+	expr := `tier("base", p)`
+	info := &relaycommon.RelayInfo{
+		UserId:           userID,
+		IsPlayground:     true,
+		OriginModelName:  "kimi-k3",
+		BillingModelName: "kimi-k3",
+		StartTime:        time.Now(),
+		ChannelMeta:      &relaycommon.ChannelMeta{ChannelId: channelID},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			BillingMode:  "tiered_expr",
+			ExprString:   expr,
+			ExprHash:     billingexpr.ExprHashString(expr),
+			GroupRatio:   1,
+			QuotaPerUnit: testQuotaPerUnit,
+		},
+		PriceData: types.PriceData{
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		KimiToolLoop: &relaycommon.KimiToolLoopInfo{
+			Usages:    []dto.Usage{{PromptTokens: math.MaxInt, CompletionTokens: 1}},
+			Completed: false,
+			ErrorCode: "kimi_tool_loop_chat_failed",
+		},
+	}
+	ctx, _ := gin.CreateTestContext(nil)
+
+	PostTextConsumeQuota(ctx, info, &dto.Usage{PromptTokens: math.MaxInt, CompletionTokens: 1}, nil)
+
+	var user model.User
+	require.NoError(t, model.DB.First(&user, userID).Error)
+	assert.Equal(t, 1000, user.Quota)
+	assert.Equal(t, expectedQuota, user.UsedQuota)
+	assert.Equal(t, 1, user.RequestCount)
+	var channel model.Channel
+	require.NoError(t, model.DB.First(&channel, channelID).Error)
+	assert.Equal(t, int64(expectedQuota), channel.UsedQuota)
+	var logs []model.Log
+	require.NoError(t, model.LOG_DB.Where("user_id = ?", userID).Find(&logs).Error)
+	require.Len(t, logs, 1)
+	assert.Equal(t, expectedQuota, logs[0].Quota)
+}
+
+func TestCalculateKimiToolLoopSurchargeUsesExplicitPriceKeys(t *testing.T) {
+	prices := map[string]float64{
+		"kimi_web_search":  1,
+		"kimi_fetch":       2,
+		"kimi_code_runner": 3,
+	}
+	for name, price := range prices {
+		operation_setting.SetToolPriceForTest(name, price)
+		name := name
+		t.Cleanup(func() {
+			operation_setting.DeleteToolPriceForTest(name)
+		})
+	}
+	info := &relaycommon.RelayInfo{
+		BillingModelName: "kimi-k3",
+		KimiToolLoop: &relaycommon.KimiToolLoopInfo{ToolCalls: map[string]int{
+			"web-search":  1,
+			"fetch":       2,
+			"code-runner": 3,
+		}},
+	}
+	info.PriceData.GroupRatioInfo.GroupRatio = 1
+
+	surcharge, items, unpriced := calculateKimiToolLoopSurcharge(info, false)
+
+	assert.True(t, decimal.NewFromInt(7000).Equal(surcharge), "got %s", surcharge)
+	require.Len(t, items, 3)
+	assert.Equal(t, "kimi_code_runner", items[0].Name)
+	assert.Equal(t, "kimi_fetch", items[1].Name)
+	assert.Equal(t, "kimi_web_search", items[2].Name)
+	assert.Empty(t, unpriced)
+}
+
+func TestKimiToolLoopPartialSettlementUsesSuccessfulToolsOnce(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+	operation_setting.SetToolPriceForTest("kimi_web_search", 5)
+	t.Cleanup(func() {
+		operation_setting.DeleteToolPriceForTest("kimi_web_search")
+		operation_setting.DeleteToolPriceForTest("kimi_fetch")
+	})
+
+	const expr = `len <= 100 ? tier("short", p * 1 + c * 2 + cr * 0.1) : tier("long", p * 3 + c * 4 + cr * 0.2)`
+	billing := &recordingBillingSettler{preConsumedQuota: 4000}
+	info := makeRelayInfo(expr, 1, 80, 20)
+	info.Billing = billing
+	info.UserId = 720
+	info.ChannelMeta = &relaycommon.ChannelMeta{ChannelId: 721}
+	info.StartTime = time.Now()
+	info.OriginModelName = "kimi-k3"
+	info.BillingModelName = "kimi-k3"
+	info.PriceData.GroupRatioInfo.GroupRatio = 1
+	info.KimiToolLoop = &relaycommon.KimiToolLoopInfo{
+		Usages: []dto.Usage{
+			{PromptTokens: 80, CompletionTokens: 10, TotalTokens: 90, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 20}},
+			{PromptTokens: 150, CompletionTokens: 20, TotalTokens: 170, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 40}},
+		},
+		ToolCalls:          map[string]int{"web-search": 1},
+		AttemptedToolCalls: map[string]int{"web-search": 1, "fetch": 1},
+		Completed:          false,
+		ErrorCode:          "fiber_failed",
+	}
+	seedUser(t, info.UserId, 100_000)
+	seedChannel(t, info.ChannelId)
+
+	ctx, _ := gin.CreateTestContext(nil)
+	PostTextConsumeQuota(ctx, info, &dto.Usage{
+		PromptTokens:     230,
+		CompletionTokens: 30,
+		TotalTokens:      260,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 60,
+		},
+	}, nil)
+
+	require.Equal(t, []int{2750}, billing.settleTargets)
+}
+
+func TestAppendKimiToolLoopAuditInfoContainsOnlyAccountingMetadata(t *testing.T) {
+	operation_setting.SetToolPriceForTest("kimi_web_search", 5)
+	t.Cleanup(func() {
+		operation_setting.DeleteToolPriceForTest("kimi_web_search")
+		operation_setting.DeleteToolPriceForTest("kimi_fetch")
+	})
+
+	info := makeRelayInfo(flatExpr, 1, 1, 1)
+	info.OriginModelName = "kimi-k3"
+	info.BillingModelName = "kimi-k3"
+	info.PriceData.GroupRatioInfo.GroupRatio = 1
+	info.KimiToolLoop = &relaycommon.KimiToolLoopInfo{
+		Usages:             []dto.Usage{{PromptTokens: 1}, {CompletionTokens: 1}},
+		ToolCalls:          map[string]int{"web-search": 1},
+		AttemptedToolCalls: map[string]int{"web-search": 1, "fetch": 1},
+		Completed:          false,
+		ErrorCode:          "fiber_failed",
+	}
+	other := model.NewLogOther()
+
+	appendKimiToolLoopAuditInfo(other, info)
+
+	snapshot := other.Snapshot()
+	auditInfo := snapshot["audit_info"].(map[string]any)
+	loopInfo := auditInfo["kimi_tool_loop"].(map[string]any)
+	assert.Equal(t, 2, loopInfo["round_count"])
+	assert.Equal(t, map[string]int{"web-search": 1}, loopInfo["tool_calls"])
+	assert.Equal(t, map[string]int{"web-search": 1, "fetch": 1}, loopInfo["attempted_tool_calls"])
+	assert.Equal(t, false, loopInfo["completed"])
+	assert.Equal(t, "fiber_failed", loopInfo["error_code"])
+	assert.Equal(t, []string{"fetch"}, loopInfo["unpriced_tools"])
+	assert.Equal(t, "tiered_expr", loopInfo["billing_mode"])
+	assert.Equal(t, info.TieredBillingSnapshot.ExprHash, loopInfo["expr_hash"])
+	assert.Equal(t, []map[string]any{
+		{
+			"prompt_tokens":     1,
+			"completion_tokens": 0,
+			"total_tokens":      1,
+			"cached_tokens":     0,
+			"quota":             1,
+			"matched_tier":      "default",
+		},
+		{
+			"prompt_tokens":     0,
+			"completion_tokens": 1,
+			"total_tokens":      1,
+			"cached_tokens":     0,
+			"quota":             5,
+			"matched_tier":      "default",
+		},
+	}, loopInfo["rounds"])
+	assert.NotContains(t, loopInfo, "prompt")
+	assert.NotContains(t, loopInfo, "messages")
+	assert.NotContains(t, loopInfo, "tool_results")
 }
 
 func TestPrepareTieredBillingForSelectedGroupUpdatesReservation(t *testing.T) {
