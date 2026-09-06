@@ -73,6 +73,7 @@ export function CommonLogsStats() {
         : DEFAULT_LOG_STATS
     },
     placeholderData: (previousData) => previousData,
+    retry: false,
   })
 
   if (isLoading) {

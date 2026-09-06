@@ -33,7 +33,7 @@ import { installBuildMetadata } from '@/lib/build-metadata'
 import { applyFaviconToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
-import { handleServerError } from '@/lib/handle-server-error'
+import { handleQueryError, handleServerError } from '@/lib/handle-server-error'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -83,12 +83,7 @@ const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error) => {
-      if (error instanceof AxiosError) {
-        if (error.response?.status === 500) {
-          toast.error(i18next.t('Internal Server Error!'))
-          router.navigate({ to: '/500' })
-        }
-      }
+      handleQueryError(error, () => router.navigate({ to: '/500' }))
     },
   }),
 })
