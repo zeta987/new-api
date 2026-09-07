@@ -22,6 +22,21 @@ import { toast } from 'sonner'
 
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
 
+export function handleQueryError(
+  error: unknown,
+  onInternalServerError: () => void
+): void {
+  if (
+    !(error instanceof AxiosError) ||
+    error.response?.status !== 500 ||
+    error.config?.skipServerErrorPage
+  ) {
+    return
+  }
+  toast.error(i18next.t('Internal Server Error!'))
+  onInternalServerError()
+}
+
 export function handleServerError(error: unknown) {
   // eslint-disable-next-line no-console
   console.log(error)
