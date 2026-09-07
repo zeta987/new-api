@@ -39,6 +39,43 @@ func TestChatCompletionsRequestToResponsesRequestInstructionsAndTools(t *testing
 	assert.Equal(t, "function_call_output", gjson.GetBytes(got.Input, "3.type").String())
 }
 
+func TestChatCompletionsRequestToResponsesRequestPreservesBuiltInToolShape(t *testing.T) {
+	raw := []byte(`{
+		"model": "gpt-test",
+		"messages": [
+			{"role": "user", "content": "search the docs"}
+		],
+		"tools": [
+			{
+				"type": "web_search_preview",
+				"filters": {
+					"allowed_domains": ["example.com"]
+				}
+			},
+			{
+				"type": "code_interpreter",
+				"container": {
+					"type": "auto"
+				}
+			}
+		]
+	}`)
+
+	var req dto.GeneralOpenAIRequest
+	require.NoError(t, kitutil.Unmarshal(raw, &req))
+
+	out, err := ChatCompletionsRequestToResponsesRequest(&req)
+	require.NoError(t, err)
+
+	tools := gjson.ParseBytes(out.Tools)
+	assert.Equal(t, "web_search_preview", tools.Get("0.type").String())
+	assert.False(t, tools.Get("0.function").Exists())
+	assert.Equal(t, "example.com", tools.Get("0.filters.allowed_domains.0").String())
+	assert.Equal(t, "code_interpreter", tools.Get("1.type").String())
+	assert.False(t, tools.Get("1.function").Exists())
+	assert.Equal(t, "auto", tools.Get("1.container.type").String())
+}
+
 func TestChatCompletionsRequestToResponsesRequestPreservesPromptCacheKey(t *testing.T) {
 	t.Run("present", func(t *testing.T) {
 		key := "session-\"quoted\"\\path\n世界"
