@@ -22,6 +22,28 @@
 
 ---
 
+## v1.0.0-rc.34
+
+Merged upstream `0c76e4dae77a279e015329b7478e6f02d6b62edd` into the released rc.33 line at signed source commit `089b56aa8352f1db9702893d71d453985dad4718` on 2026-09-07. Preserves all released model families, Kimi Formula tools, Chat/Responses native tools, Gemini image context, billing overrides, live usage logs, pricing deletion, and PostgreSQL uniqueness guards. Upstream now provides centralized OpenAI Chat capabilities and PostgreSQL CHAR normalization; the remaining custom behavior is retained around those implementations.
+
+The integration also fixes Combobox portals inside modal drawers, preserves native trigger semantics, closes SQLite test connections, and adapts the upstream validation fixtures to the existing custom pricing and log providers. No customization was retired in full. Seven disjoint signed backups reconstruct all runtime changes relative to the clean rc.34 tag; governance and historical release documents remain in the release graph.
+
+| Backup theme | Signed commit |
+| --- | --- |
+| reasoning-model-support | `a84a313076788c115a4c663d12f46cff9b0d8666` |
+| chatcompletions-responses-compat | `5549040809e967fbb51bdcd488ca8261cae64ee5` |
+| usage-logs-realtime-refresh | `9cd1fee50201323519ffd05c7f706cb00c5b5098` |
+| channel-affinity-test-isolation | `da8c8a48c213f35a9cfcfa934e81f37fda7b5bf6` |
+| postgres-automigrate-compat | `1e3bd9a0b841585d3dffd52b3451202259221670` |
+| model-pricing-deletion | `0dd028b9c9629815a955d2dcc231c1f06a95c51e` |
+| frontend-upgrade-compat | `71bb0b318a0a80c367b23060b364168cc2cfbc5b` |
+
+Validation: `go test -p 1 ./... -count=1`, `go build ./...`, `go vet ./...`, independent `GOWORK=off` RelayKit tests/build, and `bun run build:check` passed. All 687 frontend tests in 93 files passed with `--maxWorkers=2 --testTimeout=30000`. Full lint retains 310 existing errors versus 359 on rc.33; the isolated formatter check retains 23 existing files versus 26 on rc.33, with no new failures. Initial parallel Windows HTTP/2 and short UI timeout failures were resolved by bounded sequential package execution and explicit asynchronous UI waits; no assertions were skipped. Overall coverage was not measured.
+
+Real SQLite 3.50.4, MySQL 5.7.44, and PostgreSQL 9.6.24 passed fresh creation, actual rc.33-to-rc.34 upgrade, repeated startup, separate log database, data/index preservation, and rc.33 rollback-reader checks. The production PostgreSQL 18.6 backup was also restored locally and passed upgrade, repeated startup, and rollback-reader checks across all 37 tables. Backup SHA256: `73F0EB0FA36396F24FB6DDF3D5E76EEB735078ABB0B1558F87CD8150CB8DEBD9`. Restore with PostgreSQL 18 `pg_restore --no-owner --no-privileges --exit-on-error` into a new database before redirecting a recovered service; application rollback alone does not restore database contents.
+
+Local authenticated browser verification covered real gateway Chat and Responses requests against an isolated mock upstream, effort/model normalization, billing log creation, automatic updates on an already-open page, and preservation of the open details dialog. The rollout uses the upstream `ACCOUNT_PASSWORD_HASH_ALGORITHM=bcrypt` bridge so newly set passwords remain readable by rc.33 during rollback. Deployment receipts and the protected database archive are retained in the ignored local release evidence directory.
+
 ## v1.0.0-rc.33
 
 rc.33 (2026-09-06) fixes an HTTP 500 when Pot submits `image_url` content through OpenAI Chat Completions converted to Gemini. A diagnostic collector wrapping the context caused a `*gin.Context` assertion to lose the original pointer, and the `Debug=true` media log then panicked on a typed nil. The converter now recovers the original Gin request via `gin.ContextKey`, preserving its media cache and cleanup, while a missing Gin context remains supported through a separate media logging context that also protects standalone Base64 and URL conversions. Tests cover three conversion facades, nil-context Base64, a real httptest URL, and the existing Claude multimodal contract. Real Google POSTs returned HTTP 200 RED on gemini-3.5-flash-lite-minimal (non-stream) and gemini-3.5-flash-lite-low (stream). No schema, dependency, or frontend changes.
