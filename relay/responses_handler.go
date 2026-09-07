@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -15,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
 )
@@ -80,7 +82,8 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	}
 	adaptor.Init(info)
 	var requestBody io.Reader
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	passThroughGlobal := model_setting.GetGlobalSettings().PassThroughRequestEnabled
+	if shouldUseRawResponsesPassThrough(info, passThroughGlobal) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
@@ -171,4 +174,19 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		service.PostTextConsumeQuota(c, info, usageDto, nil)
 	}
 	return nil
+}
+
+func shouldUseRawResponsesPassThrough(info *relaycommon.RelayInfo, passThroughGlobal bool) bool {
+	if info == nil {
+		return passThroughGlobal
+	}
+	configured := passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled
+	if !configured {
+		return false
+	}
+	if info.ChannelType != constant.ChannelTypeZhipu_v4 || info.RelayMode != relayconstant.RelayModeResponses {
+		return true
+	}
+	_, _, isGLMAlias := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+	return !isGLMAlias
 }

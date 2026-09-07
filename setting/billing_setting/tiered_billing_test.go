@@ -5,12 +5,54 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGPT56TieredBillingWildcardUsesOneCandidate(t *testing.T) {
+	originalModes := lo.Assign(billingSetting.BillingMode)
+	originalExprs := lo.Assign(billingSetting.BillingExpr)
+	t.Cleanup(func() {
+		billingSetting.BillingMode = originalModes
+		billingSetting.BillingExpr = originalExprs
+	})
+
+	billingSetting.BillingMode = map[string]string{
+		"gpt-5.6-*": BillingModeTieredExpr,
+	}
+	billingSetting.BillingExpr = map[string]string{
+		"gpt-5.6-*": "p + c",
+	}
+
+	assert.Equal(t, BillingModeTieredExpr, GetBillingMode("gpt-5.6-luna-pro-max"))
+	expr, ok := GetBillingExpr("gpt-5.6-luna-pro-max")
+	require.True(t, ok)
+	assert.Equal(t, "p + c", expr)
+}
+
+func TestGPT56TieredBillingDoesNotMixCandidateKeys(t *testing.T) {
+	originalModes := lo.Assign(billingSetting.BillingMode)
+	originalExprs := lo.Assign(billingSetting.BillingExpr)
+	t.Cleanup(func() {
+		billingSetting.BillingMode = originalModes
+		billingSetting.BillingExpr = originalExprs
+	})
+
+	billingSetting.BillingMode = map[string]string{
+		"gpt-5.6-luna-*": BillingModeTieredExpr,
+	}
+	billingSetting.BillingExpr = map[string]string{
+		"gpt-5.6-*": "p + c",
+	}
+
+	assert.Equal(t, BillingModeTieredExpr, GetBillingMode("gpt-5.6-luna-pro-max"))
+	_, ok := GetBillingExpr("gpt-5.6-luna-pro-max")
+	assert.False(t, ok)
+}
 
 func TestSmokeTestTaskExprValidatesDeclaredUsageVectors(t *testing.T) {
 	videoSchema := map[string]jsplugin.UsageFieldSchema{

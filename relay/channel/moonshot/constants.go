@@ -1,6 +1,13 @@
 package moonshot
 
 var ModelList = []string{
+	"kimi-k3",
+	"kimi-k3-none",
+	"kimi-k3-low",
+	"kimi-k3-high",
+	"kimi-k3-max",
+	"kimi-k2.6",
+	"kimi-k2.6-thinking",
 	"kimi-k2.5",
 	"kimi-k2-0905-preview",
 	"kimi-k2-turbo-preview",

@@ -1,0 +1,92 @@
+{
+  "operations": [
+    {
+      "mode": "set",
+      "path": "kimi_tools",
+      "value": []
+    },
+    {
+      "mode": "append",
+      "path": "kimi_tools",
+      "value": [
+        "web-search",
+        "fetch"
+      ],
+      "conditions": [
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "上網"
+        },
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "搜尋"
+        },
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "搜索"
+        }
+      ],
+      "logic": "OR"
+    },
+    {
+      "mode": "append",
+      "path": "kimi_tools",
+      "value": [
+        "code-runner"
+      ],
+      "conditions": [
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "代碼"
+        },
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "程式碼"
+        },
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "求解"
+        },
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "計算"
+        },
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "驗證"
+        },
+        {
+          "path": "messages|@reverse|#(role==\"user\").content",
+          "mode": "contains",
+          "value": "驗算"
+        }
+      ],
+      "logic": "OR"
+    },
+    {
+      "mode": "delete",
+      "path": "kimi_tools",
+      "conditions": [
+        {
+          "path": "is_channel_test",
+          "mode": "full",
+          "value": true
+        },
+        {
+          "path": "kimi_tools.#",
+          "mode": "full",
+          "value": 0
+        }
+      ],
+      "logic": "OR"
+    }
+  ]
+}

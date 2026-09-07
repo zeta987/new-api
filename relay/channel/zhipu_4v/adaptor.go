@@ -14,6 +14,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
@@ -90,10 +91,56 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
+	applyGLMReasoningEffort(info, request)
 	if lo.FromPtrOr(request.TopP, 0) >= 1 {
 		request.TopP = lo.ToPtr(0.99)
 	}
 	return requestOpenAI2Zhipu(*request), nil
+}
+
+func applyGLMReasoningEffort(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
+	if info != nil {
+		info.ReasoningEffort = ""
+	}
+
+	upstreamModel := request.Model
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName != "" {
+		upstreamModel = info.UpstreamModelName
+	}
+
+	baseModel, effort, ok := resolveGLMReasoningEffort(info, upstreamModel)
+
+	if ok {
+		request.Model = baseModel
+		request.ReasoningEffort = effort
+		if info != nil && info.ChannelMeta != nil {
+			info.UpstreamModelName = baseModel
+		}
+		if info != nil {
+			info.ReasoningEffort = effort
+		}
+		return
+	}
+
+	if reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		request.Model = upstreamModel
+		if info != nil {
+			info.ReasoningEffort = request.ReasoningEffort
+		}
+	}
+}
+
+func resolveGLMReasoningEffort(info *relaycommon.RelayInfo, upstreamModel string) (string, string, bool) {
+	baseModel, effort, ok := reasoning.ParseGLMReasoningEffortSuffix(upstreamModel)
+	if ok || info == nil || !reasoning.IsGLMReasoningEffortModel(upstreamModel) {
+		return baseModel, effort, ok
+	}
+
+	_, originEffort, originOK := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+	if originOK {
+		return upstreamModel, originEffort, true
+	}
+	return upstreamModel, "", false
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {
@@ -105,6 +152,32 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if info != nil {
+		info.ReasoningEffort = ""
+	}
+
+	upstreamModel := request.Model
+	if info != nil && info.ChannelMeta != nil && info.UpstreamModelName != "" {
+		upstreamModel = info.UpstreamModelName
+	}
+	baseModel, effort, ok := resolveGLMReasoningEffort(info, upstreamModel)
+	if ok {
+		request.Model = baseModel
+		if request.Reasoning == nil {
+			request.Reasoning = &dto.Reasoning{}
+		}
+		request.Reasoning.Effort = effort
+		if info != nil && info.ChannelMeta != nil {
+			info.UpstreamModelName = baseModel
+		}
+		if info != nil {
+			info.ReasoningEffort = effort
+		}
+		return request, nil
+	}
+	if reasoning.IsGLMReasoningEffortModel(upstreamModel) && info != nil && request.Reasoning != nil {
+		info.ReasoningEffort = request.Reasoning.Effort
+	}
 	return request, nil
 }
 

@@ -340,6 +340,50 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	return resp, nil
 }
 
+// DoApiRequestWithContext sends an upstream request to an explicit URL while
+// inheriting cancellation, proxy settings, and header policy from the client
+// request. A copied Gin/request context prevents internal multi-request flows
+// from closing or otherwise mutating the outer client request.
+func DoApiRequestWithContext(a Adaptor, c *gin.Context, info *common.RelayInfo, requestContext context.Context, method, fullRequestURL string, requestBody io.Reader) (*http.Response, error) {
+	if c == nil || c.Request == nil {
+		return nil, errors.New("client request is missing")
+	}
+	if requestContext == nil {
+		requestContext = c.Request.Context()
+	}
+	logger.LogDebug(c, "fullRequestURL: %s", common.SanitizeURLForLog(fullRequestURL))
+	req, err := http.NewRequestWithContext(requestContext, method, fullRequestURL, requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("new request failed: %w", err)
+	}
+	ApplyUpstreamBodyMetadata(req, requestBody)
+	internalContext := c.Copy()
+	internalContext.Request = c.Request.Clone(requestContext)
+	internalContext.Request.Body = http.NoBody
+	internalContext.Request.Method = method
+	internalContext.Writer = c.Writer
+	headers := req.Header
+	err = a.SetupRequestHeader(internalContext, &headers, info)
+	if err != nil {
+		return nil, fmt.Errorf("setup request header failed: %w", err)
+	}
+	// 在 SetupRequestHeader 之后应用 Header Override，确保用户设置优先级最高
+	// 这样可以覆盖默认的 Authorization header 设置
+	headerOverride, err := processHeaderOverride(info, internalContext)
+	if err != nil {
+		return nil, err
+	}
+	applyHeaderOverrideToRequest(req, headerOverride)
+	resp, err := doRequest(internalContext, req, info)
+	if err != nil {
+		return nil, fmt.Errorf("do request failed: %w", err)
+	}
+	if upstreamRequestID := internalContext.GetString(common2.UpstreamRequestIdKey); upstreamRequestID != "" {
+		c.Set(common2.UpstreamRequestIdKey, upstreamRequestID)
+	}
+	return resp, nil
+}
+
 func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
@@ -553,8 +597,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		c.Set(common2.UpstreamRequestIdKey, upID)
 	}
 
-	_ = req.Body.Close()
-	_ = c.Request.Body.Close()
+	if req.Body != nil {
+		_ = req.Body.Close()
+	}
+	if c != nil && c.Request != nil && c.Request.Body != nil {
+		_ = c.Request.Body.Close()
+	}
 	return resp, nil
 }
 

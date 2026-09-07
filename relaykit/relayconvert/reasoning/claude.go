@@ -36,6 +36,7 @@ func claudeCapabilitiesFor(model string) claudeCapabilities {
 	switch {
 	case strings.HasPrefix(model, "claude-fable-5"),
 		strings.HasPrefix(model, "claude-mythos-5"):
+		capabilities.supportsEffort = true
 		capabilities.adaptive = true
 		capabilities.supportsManual = false
 		capabilities.defaultThinking = true

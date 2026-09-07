@@ -13,7 +13,9 @@ var EffortSuffixes = []string{"-max", "-xhigh", "-high", "-medium", "-low", "-mi
 
 var OpenAIEffortSuffixes = []string{"-max", "-xhigh", "-high", "-medium", "-low", "-minimal", "-none"}
 
-var DeepSeekV4EffortSuffixes = []string{"-none", "-max"}
+var DeepSeekV4EffortSuffixes = []string{"-none", "-low", "-max"}
+
+var gpt56Models = []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
 
 var (
 	legacyOpenAIModelPattern = regexp.MustCompile(`^(gpt-[a-z0-9][a-z0-9._-]*|o[1-9][a-z0-9._-]*)$`)
@@ -126,6 +128,20 @@ func TrimEffortSuffixWithSuffixes(modelName string, suffixes []string) (string, 
 // complete name first so real model IDs that already end in an effort word
 // (for example gpt-5.1-codex-max) stay intact.
 func ParseOpenAIReasoningEffortFromModelSuffix(modelName string, preserveEffortTail func(string) bool) (string, string) {
+	if modelName == GPT6Astra || strings.HasPrefix(modelName, GPT6Astra+"-") {
+		base, mode, effort, ok := ParseGPT6AstraReasoningModelSuffix(modelName)
+		if !ok || mode != "" {
+			return "", modelName
+		}
+		return effort, base
+	}
+	if _, _, known := splitGPT56Model(modelName); known {
+		base, mode, effort, ok := ParseGPT56ReasoningModelSuffix(modelName)
+		if !ok || mode != "" {
+			return "", modelName
+		}
+		return effort, base
+	}
 	if preserveEffortTail != nil && preserveEffortTail(modelName) {
 		return "", modelName
 	}
@@ -274,9 +290,208 @@ func ParseDeepSeekV4ThinkingSuffix(modelName string) (baseModel string, thinking
 	switch suffix {
 	case "none":
 		return baseModel, "disabled", "", true
-	case "max":
-		return baseModel, "enabled", "max", true
+	case "low", "max":
+		return baseModel, "enabled", suffix, true
 	default:
 		return modelName, "", "", false
+	}
+}
+
+func IsClaudeEffortLevel(effort string) bool {
+	switch effort {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
+}
+
+func TrimEffortSuffix(modelName string) (string, string, bool) {
+	return TrimEffortSuffixWithSuffixes(modelName, EffortSuffixes)
+}
+
+func IsClaudeAdaptiveThinkingModel(modelName string) bool {
+	major, minor, ok := parseClaudeModelVersion(modelName)
+	if !ok {
+		return false
+	}
+	return major > 4 || (major == 4 && minor >= 6)
+}
+
+func IsClaudePost46AdaptiveThinkingModel(modelName string) bool {
+	major, minor, ok := parseClaudeModelVersion(modelName)
+	if !ok {
+		return false
+	}
+	return major > 4 || (major == 4 && minor > 6)
+}
+
+func parseClaudeModelVersion(modelName string) (int, int, bool) {
+	if baseModel, _, ok := TrimEffortSuffix(modelName); ok {
+		modelName = baseModel
+	}
+	modelName = strings.TrimSuffix(modelName, "-thinking")
+	parts := strings.Split(modelName, "-")
+	if len(parts) < 2 || parts[0] != "claude" {
+		return 0, 0, false
+	}
+
+	for i := 1; i < len(parts); i++ {
+		major, ok := parseClaudeVersionSegment(parts[i])
+		if !ok {
+			continue
+		}
+
+		minor := 0
+		if i+1 < len(parts) {
+			if parsedMinor, ok := parseClaudeVersionSegment(parts[i+1]); ok {
+				minor = parsedMinor
+			}
+		}
+		return major, minor, true
+	}
+
+	return 0, 0, false
+}
+
+func parseClaudeVersionSegment(part string) (int, bool) {
+	if part == "" || len(part) > 2 {
+		return 0, false
+	}
+	for _, char := range part {
+		if char < '0' || char > '9' {
+			return 0, false
+		}
+	}
+	value, err := strconv.Atoi(part)
+	return value, err == nil
+}
+
+func ParseOpenAIReasoningModelSuffix(modelName string) (baseModel string, mode string, effort string, ok bool) {
+	if modelName == GPT6Astra || strings.HasPrefix(modelName, GPT6Astra+"-") {
+		return ParseGPT6AstraReasoningModelSuffix(modelName)
+	}
+	if _, _, isGPT56 := splitGPT56Model(modelName); isGPT56 {
+		return ParseGPT56ReasoningModelSuffix(modelName)
+	}
+
+	baseModel, effort, ok = TrimEffortSuffixWithSuffixes(modelName, OpenAIEffortSuffixes)
+	if !ok {
+		return modelName, "", "", false
+	}
+	return baseModel, "", effort, true
+}
+
+func GPT56ReasoningWildcardModel(modelName string) (string, bool) {
+	baseModel, _, _, ok := ParseGPT56ReasoningModelSuffix(modelName)
+	if !ok {
+		return "", false
+	}
+	return baseModel + "-*", true
+}
+
+func IsGPT56ReasoningWildcard(modelName string) bool {
+	for _, candidate := range gpt56Models {
+		if modelName == candidate+"-*" {
+			return true
+		}
+	}
+	return false
+}
+
+func ParseGPT56ReasoningModelSuffix(modelName string) (baseModel string, mode string, effort string, ok bool) {
+	baseModel, suffix, isGPT56 := splitGPT56Model(modelName)
+	if !isGPT56 || suffix == "" {
+		return modelName, "", "", false
+	}
+
+	parts := strings.Split(suffix, "-")
+	switch len(parts) {
+	case 1:
+		if canonicalMode, validMode := canonicalGPT56ReasoningMode(parts[0]); validMode {
+			return baseModel, canonicalMode, "", true
+		}
+		if isGPT56ReasoningEffort(parts[0]) {
+			return baseModel, "", parts[0], true
+		}
+	case 2:
+		canonicalMode, validMode := canonicalGPT56ReasoningMode(parts[0])
+		if validMode && isGPT56ReasoningEffort(parts[1]) {
+			return baseModel, canonicalMode, parts[1], true
+		}
+	}
+
+	return modelName, "", "", false
+}
+
+func IsGLMReasoningEffortModel(modelName string) bool {
+	if !strings.HasPrefix(modelName, "glm-") {
+		return false
+	}
+	remainder := strings.TrimPrefix(modelName, "glm-")
+	if remainder == "" || strings.HasPrefix(remainder, "-") {
+		return false
+	}
+	if lastHyphen := strings.LastIndex(remainder, "-"); lastHyphen >= 0 {
+		remainder = remainder[lastHyphen+1:]
+	}
+	return !isGLMReasoningEffort(remainder)
+}
+
+func ParseGLMReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
+	lastHyphen := strings.LastIndex(modelName, "-")
+	if lastHyphen < 0 {
+		return modelName, "", false
+	}
+	effort = modelName[lastHyphen+1:]
+	if !isGLMReasoningEffort(effort) {
+		return modelName, "", false
+	}
+	baseModel = modelName[:lastHyphen]
+	if !IsGLMReasoningEffortModel(baseModel) {
+		return modelName, "", false
+	}
+	return baseModel, effort, true
+}
+
+func isGLMReasoningEffort(effort string) bool {
+	switch effort {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitGPT56Model(modelName string) (baseModel string, suffix string, ok bool) {
+	for _, candidate := range gpt56Models {
+		if modelName == candidate {
+			return candidate, "", true
+		}
+		prefix := candidate + "-"
+		if strings.HasPrefix(modelName, prefix) {
+			return candidate, strings.TrimPrefix(modelName, prefix), true
+		}
+	}
+	return "", "", false
+}
+
+func canonicalGPT56ReasoningMode(mode string) (string, bool) {
+	switch mode {
+	case "pro":
+		return "pro", true
+	case "standard", "stanard":
+		return "standard", true
+	default:
+		return "", false
+	}
+}
+
+func isGPT56ReasoningEffort(effort string) bool {
+	switch effort {
+	case "none", "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
 	}
 }
