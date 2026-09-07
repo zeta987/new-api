@@ -94,8 +94,15 @@ function OptionCombobox(props: LegacyComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
   const anchor = useComboboxAnchor()
+  const portalContainer = React.useRef<HTMLElement | null>(null)
   const selected = props.options.find((option) => option.value === props.value)
   const displayedValue = selected?.label ?? props.value ?? ''
+  const handleOpenChange = (nextOpen: boolean) => {
+    portalContainer.current =
+      anchor.current?.closest<HTMLElement>('[role="dialog"]') ?? null
+    setOpen(nextOpen)
+    setSearch('')
+  }
   return (
     <ComboboxPrimitive.Root
       items={props.options}
@@ -107,16 +114,16 @@ function OptionCombobox(props: LegacyComboboxProps) {
       onInputValueChange={(value, details) => {
         if (details.reason === 'input-change') setSearch(value)
       }}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen)
-        setSearch('')
-      }}
+      onOpenChange={handleOpenChange}
       onValueChange={(option) => {
         if (option) props.onValueChange?.(option.value)
       }}
       filter={(option, query) => {
         const term = query.trim().toLowerCase()
-        return option.label.toLowerCase().includes(term) || option.value.toLowerCase().includes(term)
+        return (
+          option.label.toLowerCase().includes(term) ||
+          option.value.toLowerCase().includes(term)
+        )
       }}
       isItemEqualToValue={(item, value) => item.value === value.value}
     >
@@ -127,24 +134,39 @@ function OptionCombobox(props: LegacyComboboxProps) {
           disabled={props.disabled}
           onBlur={props.onBlur}
           onFocus={() => {
-            if (props.openOnFocus !== false) setOpen(true)
+            if (props.openOnFocus !== false) handleOpenChange(true)
           }}
           aria-label={props['aria-label']}
           aria-labelledby={props['aria-labelledby']}
           aria-describedby={props['aria-describedby']}
           aria-invalid={props['aria-invalid']}
-          placeholder={props.searchPlaceholder ?? props.placeholder ?? t('Search...')}
+          placeholder={
+            props.searchPlaceholder ?? props.placeholder ?? t('Search...')
+          }
           triggerAriaLabel={props['aria-label'] ?? t('Open')}
           className='h-full min-h-8 w-full'
         />
       </div>
-      <ComboboxContent anchor={anchor}>
-        <ComboboxEmpty>{props.emptyText ?? t('No results found')}</ComboboxEmpty>
+      <ComboboxContent anchor={anchor} container={portalContainer}>
+        <ComboboxEmpty>
+          {props.emptyText ?? t('No results found')}
+        </ComboboxEmpty>
         <ComboboxList>
           {(option: ComboboxInputOption) => (
-            <ComboboxItem key={option.value} value={option} disabled={option.disabled}>
+            <ComboboxItem
+              key={option.value}
+              value={option}
+              disabled={option.disabled}
+            >
               {option.icon && <span aria-hidden>{option.icon}</span>}
-              <span className='min-w-0 break-words'>{option.label}{option.description && <span className='text-muted-foreground block text-xs break-all'>{option.description}</span>}</span>
+              <span className='min-w-0 break-words'>
+                {option.label}
+                {option.description && (
+                  <span className='text-muted-foreground block text-xs break-all'>
+                    {option.description}
+                  </span>
+                )}
+              </span>
             </ComboboxItem>
           )}
         </ComboboxList>
@@ -219,6 +241,7 @@ function ComboboxInput({
           <InputGroupButton
             size='icon-xs'
             variant='ghost'
+            nativeButton
             render={<ComboboxTrigger aria-label={triggerAriaLabel} />}
             data-slot='input-group-button'
             className='group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent'
@@ -239,14 +262,17 @@ function ComboboxContent({
   align = 'start',
   alignOffset = 0,
   anchor,
+  container,
   ...props
 }: ComboboxPrimitive.Popup.Props &
   Pick<
     ComboboxPrimitive.Positioner.Props,
     'side' | 'align' | 'sideOffset' | 'alignOffset' | 'anchor'
-  >) {
+  > & {
+    container?: ComboboxPrimitive.Portal.Props['container']
+  }) {
   return (
-    <ComboboxPrimitive.Portal>
+    <ComboboxPrimitive.Portal container={container}>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
