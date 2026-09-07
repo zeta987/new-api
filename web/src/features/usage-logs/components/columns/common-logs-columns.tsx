@@ -122,9 +122,8 @@ function buildTypeDetailSegments(
   other: LogOtherData | null,
   t: (key: string, opts?: Record<string, unknown>) => string
 ): DetailSegment[] {
-  // Audit (type=3) and login (type=7) logs: render localized content from the
-  // structured op descriptor instead of the raw (English-fallback) content.
-  if (log.type === 3 || log.type === 7) {
+  // Top-up, audit, and login logs can carry a localized operation descriptor.
+  if (log.type === 1 || log.type === 3 || log.type === 7) {
     const text = renderAuditContent(other, t)
     return text ? [{ text }] : []
   }
@@ -738,6 +737,7 @@ export function useCommonLogsColumns(
       header: t('Details'),
       cell: function DetailsCell({ row }) {
         const { showLogDetails } = useUsageLogsContext()
+        const { t } = useTranslation()
         const log = row.original
         const other = parseLogOther(log.other)
 

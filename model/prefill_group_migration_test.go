@@ -75,10 +75,10 @@ func TestMigratePrefillGroupUniquenessPostgreSQL(t *testing.T) {
 		t.Skip("TEST_POSTGRES_DSN is not configured")
 	}
 
-	db, err := gorm.Open(postgresMigrationDialector{Dialector: postgres.New(postgres.Config{
+	db, err := gorm.Open(postgresMigrationDialector{Dialector: postgres.Dialector{Config: &postgres.Config{
 		DSN:                  dsn,
 		PreferSimpleProtocol: true,
-	})}, &gorm.Config{})
+	}}}, &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
