@@ -24,6 +24,17 @@
 
 ## v1.0.0-rc.34
 
+Post-deployment dashboard fix: embedded frontend assets no longer consume the
+page rate-limit budget. Session refresh has a separate IP budget, configurable
+with `AUTH_REFRESH_RATE_LIMIT` and `AUTH_REFRESH_RATE_LIMIT_DURATION` (120 requests
+per 60 seconds by default), while login attempts retain the critical limiter.
+Rate-limit responses forbid caching. The frontend honors `Retry-After`, and
+temporary authentication bootstrap failures reach the existing error page
+without redirecting the user to sign-in or clearing the session. Regression
+tests exercise both actual router registrations and authentication bootstrap;
+13 local HTTP requests also verify asset loading, independent counters, and
+continued rejection of excess page, refresh, and login requests.
+
 Merged upstream `0c76e4dae77a279e015329b7478e6f02d6b62edd` into the released rc.33 line at signed source commit `089b56aa8352f1db9702893d71d453985dad4718` on 2026-09-07. Preserves all released model families, Kimi Formula tools, Chat/Responses native tools, Gemini image context, billing overrides, live usage logs, pricing deletion, and PostgreSQL uniqueness guards. Upstream now provides centralized OpenAI Chat capabilities and PostgreSQL CHAR normalization; the remaining custom behavior is retained around those implementations.
 
 The integration also fixes Combobox portals inside modal drawers, preserves native trigger semantics, closes SQLite test connections, and adapts the upstream validation fixtures to the existing custom pricing and log providers. No customization was retired in full. Seven disjoint signed backups reconstruct all runtime changes relative to the clean rc.34 tag; governance and historical release documents remain in the release graph.

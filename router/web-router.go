@@ -27,9 +27,9 @@ func SetWebRouter(router *gin.Engine, assets WebAssets, pluginDispatcher gin.Han
 		middleware.RouteTag("web"),
 		gzip.Gzip(gzip.DefaultCompression),
 		middleware.AccessTokenAudit(),
-		middleware.GlobalWebRateLimit(),
 		middleware.Cache(),
 		static.Serve("/", frontendFS),
+		middleware.GlobalWebRateLimit(),
 		func(c *gin.Context) {
 			if strings.HasPrefix(c.Request.RequestURI, "/v1") || strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/assets") {
 				controller.RelayNotFound(c)
