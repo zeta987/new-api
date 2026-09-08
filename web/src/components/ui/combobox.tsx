@@ -37,6 +37,7 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from '@/components/ui/input-group'
+import { usePortalContainer } from '@/components/ui/portal-container'
 import { cn } from '@/lib/utils'
 
 type LegacyComboboxProps = {
@@ -47,12 +48,14 @@ type LegacyComboboxProps = {
   searchPlaceholder?: string
   emptyText?: string
   allowCustomValue?: boolean
+  showSelectedIcon?: boolean
   className?: string
   id?: string
   openOnFocus?: boolean
   disabled?: boolean
   name?: string
   onBlur?: React.FocusEventHandler<HTMLInputElement>
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
   ref?: React.Ref<HTMLInputElement>
   'aria-label'?: string
   'aria-labelledby'?: string
@@ -74,6 +77,9 @@ function Combobox(
     return (
       <LegacyComboboxInput
         id={props.id}
+        aria-label={props['aria-label']}
+        aria-labelledby={props['aria-labelledby']}
+        onKeyDown={props.onKeyDown}
         options={props.options}
         value={props.value ?? ''}
         onValueChange={(value) => props.onValueChange?.(value)}
@@ -133,6 +139,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
           id={props.id}
           disabled={props.disabled}
           onBlur={props.onBlur}
+          onKeyDown={props.onKeyDown}
           onFocus={() => {
             if (props.openOnFocus !== false) handleOpenChange(true)
           }}
@@ -145,7 +152,13 @@ function OptionCombobox(props: LegacyComboboxProps) {
           }
           triggerAriaLabel={props['aria-label'] ?? t('Open')}
           className='h-full min-h-8 w-full'
-        />
+        >
+          {props.showSelectedIcon && !open && selected?.icon && (
+            <InputGroupAddon align='inline-start' aria-hidden='true'>
+              {selected.icon}
+            </InputGroupAddon>
+          )}
+        </ComboboxInput>
       </div>
       <ComboboxContent anchor={anchor} container={portalContainer}>
         <ComboboxEmpty>
@@ -271,8 +284,9 @@ function ComboboxContent({
   > & {
     container?: ComboboxPrimitive.Portal.Props['container']
   }) {
+  const inheritedContainer = usePortalContainer()
   return (
-    <ComboboxPrimitive.Portal container={container}>
+    <ComboboxPrimitive.Portal container={container ?? inheritedContainer}>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
