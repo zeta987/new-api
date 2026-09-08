@@ -76,6 +76,43 @@ func TestChatCompletionsRequestToResponsesRequestPreservesBuiltInToolShape(t *te
 	assert.Equal(t, "auto", tools.Get("1.container.type").String())
 }
 
+func TestChatCompletionsRequestToResponsesRequestPreservesRequestOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		options string
+	}{
+		{name: "present", options: `,"service_tier":"flex","prompt_cache_retention":"24h","safety_identifier":"audit-user"`},
+		{name: "absent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var req dto.GeneralOpenAIRequest
+			require.NoError(t, kitutil.Unmarshal([]byte(`{"model":"gpt-5.6","messages":[{"role":"user","content":"hello"}]`+tc.options+`}`), &req))
+			got, err := ChatCompletionsRequestToResponsesRequest(&req)
+			require.NoError(t, err)
+			encoded, err := kitutil.Marshal(got)
+			require.NoError(t, err)
+			if tc.name == "present" {
+				assert.Equal(t, `"flex"`, gjson.GetBytes(encoded, "service_tier").Raw)
+				assert.Equal(t, `"24h"`, gjson.GetBytes(encoded, "prompt_cache_retention").Raw)
+				assert.Equal(t, `"audit-user"`, gjson.GetBytes(encoded, "safety_identifier").Raw)
+			} else {
+				assert.False(t, gjson.GetBytes(encoded, "service_tier").Exists())
+				assert.False(t, gjson.GetBytes(encoded, "prompt_cache_retention").Exists())
+				assert.False(t, gjson.GetBytes(encoded, "safety_identifier").Exists())
+			}
+		})
+	}
+
+	t.Run("invalid service tier", func(t *testing.T) {
+		_, err := ChatCompletionsRequestToResponsesRequest(&dto.GeneralOpenAIRequest{
+			Model:       "gpt-5.6",
+			Messages:    []dto.Message{{Role: "user", Content: "hello"}},
+			ServiceTier: json.RawMessage(`42`),
+		})
+		require.ErrorContains(t, err, "service_tier")
+	})
+}
+
 func TestChatCompletionsRequestToResponsesRequestPreservesPromptCacheKey(t *testing.T) {
 	t.Run("present", func(t *testing.T) {
 		key := "session-\"quoted\"\\path\n世界"

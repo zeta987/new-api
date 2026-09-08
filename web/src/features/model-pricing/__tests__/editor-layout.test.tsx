@@ -244,19 +244,38 @@ it.each(['default', 'unset'] as const)(
         screen.queryByRole('switch', { name: 'Expose ratio API' })
       ).not.toBeInTheDocument()
     }
+    const globalSave = screen.queryByRole('button', {
+      name: 'Save model prices',
+    })
+    if (variant === 'default') {
+      expect(globalSave).toBeVisible()
+    } else {
+      expect(globalSave).not.toBeInTheDocument()
+    }
     await user.click(await screen.findByRole('button', { name: 'Edit' }))
     await user.click(screen.getByRole('tab', { name: 'Per-request' }))
     const price = screen.getByRole('textbox', { name: 'Fixed price' })
     await user.clear(price)
     await user.type(price, '0.25')
     const region = screen.getByRole('region', { name: 'Edit model pricing' })
-    const button = screen.getByRole('button', { name: 'Save model prices' })
+    const editorForm = region.closest('form')
+    if (!editorForm) throw new Error('The pricing editor must have a form')
+    const button = within(editorForm).getByRole('button', {
+      name: 'Save model prices',
+    })
+    if (globalSave) {
+      expect(globalSave).toBeVisible()
+      expect(editorForm).not.toContainElement(globalSave)
+    }
     expect(region).not.toContainElement(button)
     expect(button.parentElement?.parentElement).toHaveClass('shrink-0')
     await user.click(button)
     await waitFor(() => expect(save).toHaveBeenCalledOnce())
     expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ ExposeRatioEnabled: variant === 'default' }),
+      expect.objectContaining({
+        ExposeRatioEnabled: variant === 'default',
+        ModelPrice: JSON.stringify({ 'example-model': 0.25 }),
+      }),
       undefined
     )
   }
