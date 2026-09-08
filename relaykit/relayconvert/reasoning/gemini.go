@@ -72,7 +72,10 @@ func RenderGemini(model string, intent Intent, maxOutputTokens *uint, adapterBud
 
 	capabilities := geminiCapabilitiesFor(model)
 	if capabilities.kind == geminiThinkingNotConfigurable {
-		if !intent.HasStrength() && capabilities.supportsIncludeThoughts {
+		// Fixed-thinking image models can expose thoughts without a strength control.
+		if capabilities.supportsIncludeThoughts &&
+			(intent.Mode == ModeUnset || intent.Mode == ModeEnabled) &&
+			intent.Effort == "" && intent.BudgetTokens == nil {
 			return GeminiRender{Config: &dto.GeminiThinkingConfig{IncludeThoughts: intent.IncludeThoughts}, EffectiveEffort: EffortHigh}, nil
 		}
 		return GeminiRender{}, fmt.Errorf("model %q does not support configurable thinking", model)

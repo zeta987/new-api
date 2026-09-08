@@ -226,7 +226,7 @@ func reasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
 	if isChat && !model_setting.ShouldPreserveThinkingSuffix(modelName) {
 		base := kitreasoning.ParseModelModifiers(modelName).Base
 		if _, _, ok := reasoning.ParseQwenReasoningEffortSuffix(base); ok {
-			return []int{constant.ChannelTypeOpenAI}, true
+			return []int{constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter}, true
 		}
 	}
 	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(modelName); !ok {
@@ -240,7 +240,7 @@ func reasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
 		}, true
 	}
 	if requestPath == "/v1/responses" {
-		return []int{constant.ChannelTypeZhipu_v4}, true
+		return []int{constant.ChannelTypeZhipu_v4, constant.ChannelTypeOpenRouter}, true
 	}
 	return []int{}, true
 }
