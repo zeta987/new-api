@@ -34,9 +34,13 @@ func TestResolveChatRequestHandlingRespectsProtocolPolicy(t *testing.T) {
 		wantResponses      bool
 		wantRawPassThrough bool
 	}{
-		{name: "glm alias bypasses responses bridge", model: "glm-5.3-flash-high", responsesBridge: true},
-		{name: "glm alias bypasses global pass through", model: "glm-5.3-flash-high", globalPass: true},
-		{name: "glm alias bypasses channel pass through", model: "glm-5.3-flash-high", channelPass: true},
+		{name: "glm alias bypasses responses bridge", model: "glm-5.3-flash-high", channelType: constant.ChannelTypeOpenAI, responsesBridge: true},
+		{name: "glm alias bypasses global pass through", model: "glm-5.3-flash-high", channelType: constant.ChannelTypeZhipu_v4, globalPass: true},
+		{name: "glm alias bypasses channel pass through", model: "glm-5.3-flash-high", channelType: constant.ChannelTypeOpenAI, channelPass: true},
+		{name: "openrouter glm alias uses responses bridge", model: "glm-5.3-flash-high", channelType: constant.ChannelTypeOpenRouter, responsesBridge: true, wantResponses: true},
+		{name: "openrouter glm alias keeps chat without bridge", model: "glm-5.3-low", channelType: constant.ChannelTypeOpenRouter},
+		{name: "openrouter glm alias respects global pass through", model: "glm-5.3-max", channelType: constant.ChannelTypeOpenRouter, responsesBridge: true, globalPass: true, wantRawPassThrough: true},
+		{name: "openrouter glm alias respects channel pass through", model: "glm-5.3-flash-low", channelType: constant.ChannelTypeOpenRouter, responsesBridge: true, channelPass: true, wantRawPassThrough: true},
 		{name: "ordinary model uses responses bridge", model: "gpt-4.1", responsesBridge: true, wantResponses: true},
 		{name: "ordinary model uses global pass through", model: "gpt-4.1", globalPass: true, wantRawPassThrough: true},
 		{name: "bare glm keeps configured pass through", model: "glm-5.3-flash", channelPass: true, wantRawPassThrough: true},
@@ -83,22 +87,7 @@ func TestQwenAliasesRelayResponsesEffortAndOverrideTools(t *testing.T) {
 	for _, base := range []string{"qwen3.8-max", "qwen3.8-flash"} {
 		for _, effort := range []string{"none", "low", "medium", "xhigh"} {
 			t.Run(base+"-"+effort, func(t *testing.T) {
-				type capturedRequest struct {
-					path string
-					body []byte
-				}
-				captured := make(chan capturedRequest, 1)
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					body, err := io.ReadAll(r.Body)
-					if err != nil {
-						http.Error(w, err.Error(), http.StatusBadRequest)
-						return
-					}
-					captured <- capturedRequest{path: r.URL.Path, body: body}
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(`{"id":"resp_qwen","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}`))
-				}))
-				defer server.Close()
+				captured, server := captureResponsesUpstream(t)
 
 				alias := base + "-" + effort
 				request := &dto.GeneralOpenAIRequest{
@@ -147,4 +136,97 @@ func TestQwenAliasesRelayResponsesEffortAndOverrideTools(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestOpenRouterAliasesRelayMappedResponsesTools(t *testing.T) {
+	policy := model_setting.ChatCompletionsToResponsesPolicy{
+		Enabled: true, ChannelTypes: []int{constant.ChannelTypeOpenRouter},
+		ModelPatterns: []string{`^(qwen|glm)-?.*$`},
+	}
+	for _, testCase := range []struct {
+		alias    string
+		upstream string
+		effort   string
+	}{
+		{"qwen3.8-max-low", "qwen/qwen3.8-max-0902", "low"},
+		{"qwen3.8-flash-none", "qwen/qwen3.8-flash", "none"},
+		{"glm-5.3-flash-max", "z-ai/glm-5.3-flash", "max"},
+	} {
+		t.Run(testCase.alias, func(t *testing.T) {
+			captured, server := captureResponsesUpstream(t)
+			request := &dto.GeneralOpenAIRequest{
+				Model: testCase.alias, Messages: []dto.Message{{Role: "user", Content: "請計算"}},
+			}
+			info := &relaycommon.RelayInfo{
+				Request: request, OriginModelName: testCase.alias,
+				RelayMode: relayconstant.RelayModeChatCompletions, RelayFormat: types.RelayFormatOpenAI,
+				RequestConversionChain: []types.RelayFormat{types.RelayFormatOpenAI},
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelType: constant.ChannelTypeOpenRouter, UpstreamModelName: testCase.alias,
+					ChannelBaseUrl: server.URL, ApiKey: "test-key",
+					ParamOverride: map[string]interface{}{
+						"operations": []interface{}{
+							map[string]interface{}{"mode": "set", "path": "reasoning", "value": map[string]interface{}{"effort": testCase.effort}},
+							map[string]interface{}{"mode": "set", "path": "tools", "value": []interface{}{
+								map[string]interface{}{"type": "openrouter:shell", "custom": map[string]interface{}{"type": "openrouter:shell", "parameters": map[string]interface{}{"engine": "openrouter"}}},
+							}},
+						},
+					},
+				},
+			}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+			c.Request.Header.Set("Content-Type", "application/json")
+			mapping, err := common.Marshal(map[string]string{testCase.alias: testCase.upstream})
+			require.NoError(t, err)
+			c.Set("model_mapping", string(mapping))
+			require.NoError(t, helper.ModelMappedHelper(c, info, request))
+			require.NoError(t, helper.ApplyReasoningModelSuffix(c, info, request))
+			bridge := service.ShouldChatCompletionsUseResponsesPolicy(policy, 1, info.ChannelType, info.OriginModelName)
+			useResponses, useRaw := resolveChatRequestHandling(info, false, bridge)
+			require.True(t, useResponses)
+			require.False(t, useRaw)
+			adaptor := &openaichannel.Adaptor{}
+			adaptor.Init(info)
+			usage, apiErr := textRequestViaResponses(c, info, adaptor, request)
+			require.Nil(t, apiErr)
+			require.NotNil(t, usage)
+			select {
+			case upstream := <-captured:
+				assert.Equal(t, "/v1/responses", upstream.path)
+				var body map[string]interface{}
+				require.NoError(t, common.Unmarshal(upstream.body, &body))
+				assert.Equal(t, testCase.upstream, body["model"])
+				assert.NotContains(t, body, "messages")
+				reasoning, ok := body["reasoning"].(map[string]interface{})
+				require.True(t, ok)
+				assert.Equal(t, testCase.effort, reasoning["effort"])
+				assert.Equal(t, []interface{}{map[string]interface{}{"type": "openrouter:shell", "parameters": map[string]interface{}{"engine": "openrouter"}}}, body["tools"])
+			default:
+				t.Fatal("upstream did not receive a Responses request")
+			}
+		})
+	}
+}
+
+type capturedResponsesRequest struct {
+	path string
+	body []byte
+}
+
+func captureResponsesUpstream(t *testing.T) (<-chan capturedResponsesRequest, *httptest.Server) {
+	t.Helper()
+	captured := make(chan capturedResponsesRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		captured <- capturedResponsesRequest{path: r.URL.Path, body: body}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_audit","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}`))
+	}))
+	t.Cleanup(server.Close)
+	return captured, server
 }

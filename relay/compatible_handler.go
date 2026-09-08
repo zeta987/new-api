@@ -238,7 +238,7 @@ func resolveChatRequestHandling(info *relaycommon.RelayInfo, passThroughGlobal, 
 		return false, passThroughGlobal
 	}
 	_, _, isGLMAlias := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
-	forceChatConversion := info.RelayMode == relayconstant.RelayModeChatCompletions && isGLMAlias
+	forceChatConversion := info.RelayMode == relayconstant.RelayModeChatCompletions && isGLMAlias && info.ChannelType != constant.ChannelTypeOpenRouter
 	if forceChatConversion {
 		return false, false
 	}

@@ -77,10 +77,10 @@ func TestGLMReasoningAllowedChannelTypesFollowRelayFormat(t *testing.T) {
 			ok:    true,
 		},
 		{
-			name:  "responses only allows zhipu v4",
+			name:  "responses allows zhipu v4 and openrouter",
 			path:  "/v1/responses",
 			model: "glm-5.3-flash-max",
-			want:  []int{constant.ChannelTypeZhipu_v4},
+			want:  []int{constant.ChannelTypeZhipu_v4, constant.ChannelTypeOpenRouter},
 			ok:    true,
 		},
 		{name: "claude format rejects alias", path: "/v1/messages", model: "glm-5.3-flash-high", want: []int{}, ok: true},
@@ -119,7 +119,7 @@ func TestQwenChatAliasChannelPolicy(t *testing.T) {
 			allowed, restricted := reasoningAllowedChannelTypes(tc.path, tc.model)
 			assert.Equal(t, tc.want, restricted)
 			if tc.want {
-				assert.Equal(t, []int{constant.ChannelTypeOpenAI}, allowed)
+				assert.Equal(t, []int{constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter}, allowed)
 			} else {
 				assert.Nil(t, allowed)
 			}
