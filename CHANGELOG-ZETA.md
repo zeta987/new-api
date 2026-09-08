@@ -22,6 +22,74 @@
 
 ---
 
+## v1.0.0-rc.36
+
+Integrated upstream `ea7cb0ba4e0f82e2bfa5e55752eb68bdf902f71b` from the
+released rc.34 head `0accceb3d1bf5c0aae3783a6db87872bafd41d24` on
+2026-09-09. Signed integration `60532325f9ac4df3b410ddd59c879d340adef2a6`
+preserves every released customization; promotion source
+`ed39fd4caec4ec7d2642b9ed8ea2b16e549fc121` includes the audited fixes below.
+Only upstream-equivalent hunks were removed from reusable backups. No entire
+customization was retired.
+
+The channel and routing audit fixes three contracts: Chat-to-Responses now
+retains allowed service tier, prompt cache retention, and safety identifier;
+Responses conversion preserves mapped effort instead of reapplying the original
+suffix; channel 44's configuration candidate recognizes supported GPT mode and
+effort aliases when attaching independently triggered web and code tools.
+The configuration correction changes no model names or mappings. A real pinned
+channel 44 request confirmed that bare `gpt-4o-mini` is accepted by OpenRouter.
+
+Upstream pricing and log-detail test fixtures were adapted to the preserved
+global save action and real usage-log provider. Production UI behavior was
+retained. Full root Go tests/build/vet and independent `GOWORK=off` relaykit
+tests/build/vet passed. Frontend typecheck/build passed; 8 customization test
+files and 35 changed upstream test files passed after two fixture corrections.
+Full lint retains 293 existing errors versus 310 on the unchanged rc.34 base,
+and the protected-header formatter retains 19 existing files versus 23; no new
+diagnostics were introduced. Repository-wide coverage was not measured.
+
+Real SQLite 3.50.4, MySQL 5.7.44, PostgreSQL 9.6.24, and PostgreSQL 18.6 passed
+fresh creation, actual rc.34 upgrades, repeated startup, independent log stores,
+schema/data/index preservation, large plugin-icon persistence, and rc.34 reader
+checks. Model management, pricing, and batch-redemption deletion contracts ran
+against the real MySQL and both PostgreSQL versions as well as SQLite. The
+production PostgreSQL 18.6 archive was restored locally and passed upgrade,
+repeat startup, and old-reader verification across all 37 tables. Its SHA-256
+is `F839D97D03A1DF2C1DE82FCD598DC0EDA2DEEFC5034604B859D5A1D61B91C141`.
+Restore with PostgreSQL 18 `pg_restore --no-owner --no-privileges
+--exit-on-error` into a new database; an application rollback does not restore
+database contents. The upstream `task_plugins.icon` addition is additive.
+
+The local HTTP gateway passed 21 cases, including native and bridged mapped
+effort, forwarded request fields, channel 44 aliases, query strings, and the
+existing provider/image paths. Its upstream was a local mock. Channel 44 also
+passed 108 explicit Go override-engine cases. A prior live Qwen Flash request
+timed out; this audit does not establish its cause or universal provider
+availability. Existing always-on tool policies and the owner's explicit
+DeepSeek expiry-model mapping are preserved.
+
+All seven signed backups are based directly on the clean rc.36 tag. Their
+combined patches reconstruct all 188 runtime customization files; governance
+and historical documents remain in the release graph. The shared router's log
+stream and auth-refresh limiter hunks remain in their respective themes.
+
+| Backup theme | Signed commit |
+| --- | --- |
+| reasoning-model-support | `ba8e3d2417ebc98f721886aeb9fba5220712635f` |
+| chatcompletions-responses-compat | `5911ef1dbd2146d36044a61ff5df352da05329ce` |
+| usage-logs-realtime-refresh | `ffcb1cde05749a6f9eae4472b06df9cfb314ac9f` |
+| channel-affinity-test-isolation | `e002ad663f5bf4277d0d9f60ba3606af5d293c9a` |
+| postgres-automigrate-compat | `b7084d16c3d0b824e519107f7bef6809d2ac47d6` |
+| model-pricing-deletion | `a3ca2d9dd0cc91ccfc8feeebcbf595f847011146` |
+| frontend-upgrade-compat | `31b26b3d02000f017a264c8e682b712b28d5a71c` |
+
+The complete authentication 429 recovery and existing bcrypt transition
+setting are retained. Authentication review consulted OWASP ASVS 5.0.0 and the
+Authentication and Session Management Cheat Sheets; this release makes no
+blanket ASVS compliance claim. Protected snapshots, matrix results, and runtime
+receipts are kept in the ignored local rc36 evidence directory.
+
 ## v1.0.0-rc.34
 
 Post-deployment dashboard fix: embedded frontend assets no longer consume the
