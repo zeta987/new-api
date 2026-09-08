@@ -494,7 +494,8 @@ export function parseTaskResult() { return {}; }
 					require.True(t, exists)
 					before, err := model.GetModelPricingSnapshot([]string{name})
 					require.NoError(t, err)
-					require.Empty(t, before.Entries[0].Configured)
+					require.NotContains(t, before.Entries[0].Configured, "ModelPrice")
+					require.NotContains(t, before.Entries[0].Configured, "ModelRatio")
 					change = model.ModelPricingChange{ModelName: name, ExpectedVersion: before.Entries[0].Version, Pricing: model.PricingValues{"ModelPrice": float64(0)}}
 					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{change}))
 					custom, err := model.GetModelPricingSnapshot([]string{name})
@@ -504,7 +505,7 @@ export function parseTaskResult() { return {}; }
 					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{change}))
 					reset, err := model.GetModelPricingSnapshot([]string{name})
 					require.NoError(t, err)
-					assert.Empty(t, reset.Entries[0].Configured)
+					assert.Equal(t, before.Entries[0].Configured, reset.Entries[0].Configured)
 					assert.Equal(t, builtin, reset.Entries[0].Effective["billing_setting.billing_expr"])
 				}
 			})

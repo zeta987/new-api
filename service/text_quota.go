@@ -31,6 +31,12 @@ type ToolSurchargeItem struct {
 	Price float64 `json:"price"`
 }
 
+var kimiFormulaToolPriceKeys = map[string]string{
+	"web-search":  "kimi_web_search",
+	"fetch":       "kimi_fetch",
+	"code-runner": "kimi_code_runner",
+}
+
 func appendToolSurchargeLogInfo(other *model.LogOther, items []ToolSurchargeItem) {
 	if len(items) == 0 {
 		return
@@ -145,6 +151,79 @@ func mergeToolSurchargeItems(items []ToolSurchargeItem) []ToolSurchargeItem {
 	return merged
 }
 
+func positiveKimiToolCounts(source map[string]int) map[string]int {
+	counts := make(map[string]int, len(source))
+	for name, count := range source {
+		if count > 0 {
+			counts[name] = count
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	return counts
+}
+
+func kimiToolLoopCounts(loop *relaycommon.KimiToolLoopInfo, includeAttempts bool) map[string]int {
+	if loop == nil {
+		return nil
+	}
+	counts := positiveKimiToolCounts(loop.ToolCalls)
+	if includeAttempts {
+		if counts == nil {
+			counts = make(map[string]int, len(loop.AttemptedToolCalls))
+		}
+		for name, count := range loop.AttemptedToolCalls {
+			if count > counts[name] {
+				counts[name] = count
+			}
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	return counts
+}
+
+func calculateKimiToolLoopSurcharge(relayInfo *relaycommon.RelayInfo, includeAttempts bool) (decimal.Decimal, []ToolSurchargeItem, []string) {
+	if relayInfo == nil || relayInfo.KimiToolLoop == nil {
+		return decimal.Zero, nil, nil
+	}
+
+	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil && snap.BillingMode == "tiered_expr" {
+		groupRatio = snap.GroupRatio
+	}
+	modelName := relayInfo.GetBillingModelName()
+	counts := kimiToolLoopCounts(relayInfo.KimiToolLoop, includeAttempts)
+	items := make([]ToolSurchargeItem, 0, len(counts))
+	unpricedTools := make([]string, 0)
+	for formulaName, count := range counts {
+		priceKey, supported := kimiFormulaToolPriceKeys[formulaName]
+		price := float64(0)
+		if supported {
+			price = operation_setting.GetToolPriceForModel(priceKey, modelName)
+		}
+		if !supported || price <= 0 || math.IsNaN(price) || math.IsInf(price, 0) {
+			unpricedTools = append(unpricedTools, formulaName)
+			continue
+		}
+		items = append(items, ToolSurchargeItem{Name: priceKey, Count: count, Price: price})
+	}
+	items = mergeToolSurchargeItems(items)
+	sort.Strings(unpricedTools)
+
+	surcharge := decimal.Zero
+	for _, item := range items {
+		surcharge = surcharge.Add(decimal.NewFromFloat(item.Price).
+			Mul(decimal.NewFromInt(int64(item.Count))).
+			Div(decimal.NewFromInt(1000)).
+			Mul(decimal.NewFromFloat(groupRatio)).
+			Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
+	}
+	return surcharge, items, unpricedTools
+}
+
 func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, summary *textQuotaSummary) decimal.Decimal {
 	dGroupRatio := decimal.NewFromFloat(summary.GroupRatio)
 	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
@@ -229,6 +308,10 @@ func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaS
 // effectiveBillingUsage; PostTextConsumeQuota performs that remap once and shares
 // the result with tiered billing, affinity observation and logging.
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
+	return calculateTextQuotaSummaryWithToolSurcharge(ctx, relayInfo, usage, true)
+}
+
+func calculateTextQuotaSummaryWithToolSurcharge(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, includeToolSurcharge bool) textQuotaSummary {
 	summary := textQuotaSummary{
 		ModelName:            relayInfo.GetBillingModelName(),
 		TokenName:            ctx.GetString("token_name"),
@@ -298,7 +381,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 
 	ratio := dModelRatio.Mul(dGroupRatio)
-	summary.ToolCallSurchargeQuota = calculateTextToolCallSurcharge(ctx, relayInfo, &summary)
+	if includeToolSurcharge {
+		summary.ToolCallSurchargeQuota = calculateTextToolCallSurcharge(ctx, relayInfo, &summary)
+	}
 
 	var audioInputQuota decimal.Decimal
 	if !relayInfo.PriceData.UsePrice {
@@ -381,6 +466,241 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	return summary
 }
 
+func boundedKimiUsageCount(value int) int {
+	if value <= 0 {
+		return 0
+	}
+	if value > common.MaxQuota {
+		return common.MaxQuota
+	}
+	return value
+}
+
+func boundedKimiTokenTotal(promptTokens, completionTokens int) int {
+	promptTokens = boundedKimiUsageCount(promptTokens)
+	completionTokens = boundedKimiUsageCount(completionTokens)
+	if promptTokens > common.MaxQuota-completionTokens {
+		return common.MaxQuota
+	}
+	return promptTokens + completionTokens
+}
+
+func normalizeKimiToolLoopUsage(usage *dto.Usage) *dto.Usage {
+	if usage == nil {
+		return nil
+	}
+	normalized := *usage
+	normalized.PromptTokens = boundedKimiUsageCount(usage.PromptTokens)
+	normalized.CompletionTokens = boundedKimiUsageCount(usage.CompletionTokens)
+	normalized.TotalTokens = boundedKimiTokenTotal(normalized.PromptTokens, normalized.CompletionTokens)
+	normalized.PromptCacheHitTokens = boundedKimiUsageCount(usage.PromptCacheHitTokens)
+	normalized.InputTokens = boundedKimiUsageCount(usage.InputTokens)
+	normalized.OutputTokens = boundedKimiUsageCount(usage.OutputTokens)
+	normalized.PromptTokensDetails.CachedTokens = boundedKimiUsageCount(usage.PromptTokensDetails.CachedTokens)
+	normalized.PromptTokensDetails.CachedCreationTokens = boundedKimiUsageCount(usage.PromptTokensDetails.CachedCreationTokens)
+	normalized.PromptTokensDetails.CacheWriteTokens = boundedKimiUsageCount(usage.PromptTokensDetails.CacheWriteTokens)
+	normalized.PromptTokensDetails.TextTokens = boundedKimiUsageCount(usage.PromptTokensDetails.TextTokens)
+	normalized.PromptTokensDetails.AudioTokens = boundedKimiUsageCount(usage.PromptTokensDetails.AudioTokens)
+	normalized.PromptTokensDetails.ImageTokens = boundedKimiUsageCount(usage.PromptTokensDetails.ImageTokens)
+	normalized.CompletionTokenDetails.TextTokens = boundedKimiUsageCount(usage.CompletionTokenDetails.TextTokens)
+	normalized.CompletionTokenDetails.AudioTokens = boundedKimiUsageCount(usage.CompletionTokenDetails.AudioTokens)
+	normalized.CompletionTokenDetails.ImageTokens = boundedKimiUsageCount(usage.CompletionTokenDetails.ImageTokens)
+	normalized.CompletionTokenDetails.ReasoningTokens = boundedKimiUsageCount(usage.CompletionTokenDetails.ReasoningTokens)
+	normalized.ClaudeCacheCreation5mTokens = boundedKimiUsageCount(usage.ClaudeCacheCreation5mTokens)
+	normalized.ClaudeCacheCreation1hTokens = boundedKimiUsageCount(usage.ClaudeCacheCreation1hTokens)
+	if usage.InputTokensDetails != nil {
+		inputDetails := *usage.InputTokensDetails
+		inputDetails.CachedTokens = boundedKimiUsageCount(usage.InputTokensDetails.CachedTokens)
+		inputDetails.CachedCreationTokens = boundedKimiUsageCount(usage.InputTokensDetails.CachedCreationTokens)
+		inputDetails.CacheWriteTokens = boundedKimiUsageCount(usage.InputTokensDetails.CacheWriteTokens)
+		inputDetails.TextTokens = boundedKimiUsageCount(usage.InputTokensDetails.TextTokens)
+		inputDetails.AudioTokens = boundedKimiUsageCount(usage.InputTokensDetails.AudioTokens)
+		inputDetails.ImageTokens = boundedKimiUsageCount(usage.InputTokensDetails.ImageTokens)
+		normalized.InputTokensDetails = &inputDetails
+	}
+	return &normalized
+}
+
+func evaluateKimiToolLoopRoundQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) (int, string, error) {
+	if relayInfo == nil || usage == nil {
+		return 0, "", nil
+	}
+	if ctx == nil {
+		ctx = &gin.Context{}
+	}
+	usage = normalizeKimiToolLoopUsage(usage)
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil && snap.BillingMode == "tiered_expr" {
+		requestInput := billingexpr.RequestInput{}
+		if relayInfo.BillingRequestInput != nil {
+			requestInput = *relayInfo.BillingRequestInput
+		}
+		params := BuildTieredTokenParams(
+			usage,
+			usageSemanticFromUsage(relayInfo, usage) == "anthropic",
+			billingexpr.UsedVars(snap.ExprString),
+		)
+		result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, params, requestInput)
+		if err != nil {
+			return 0, "", err
+		}
+		noteQuotaClamp(relayInfo, result.Clamp)
+		return result.ActualQuotaAfterGroup, result.MatchedTier, nil
+	}
+
+	shadowInfo := *relayInfo
+	shadowInfo.KimiToolLoop = nil
+	summary := calculateTextQuotaSummaryWithToolSurcharge(ctx, &shadowInfo, usage, false)
+	noteQuotaClamp(relayInfo, shadowInfo.QuotaClamp)
+	return summary.Quota, "", nil
+}
+
+func calculateKimiToolLoopRoundQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) int {
+	quota, _, err := evaluateKimiToolLoopRoundQuota(ctx, relayInfo, usage)
+	if err == nil {
+		return quota
+	}
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil && snap.EstimatedQuotaAfterGroup > 0 {
+		return snap.EstimatedQuotaAfterGroup
+	}
+	return 0
+}
+
+func calculateKimiToolLoopTokenQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) int {
+	if relayInfo == nil || relayInfo.KimiToolLoop == nil {
+		return 0
+	}
+	total := decimal.Zero
+	for index := range relayInfo.KimiToolLoop.Usages {
+		usage := effectiveBillingUsage(&relayInfo.KimiToolLoop.Usages[index])
+		roundQuota := calculateKimiToolLoopRoundQuota(ctx, relayInfo, usage)
+		total = total.Add(decimal.NewFromInt(int64(roundQuota)))
+	}
+	quota, clamp := common.QuotaFromDecimalChecked(total)
+	noteQuotaClamp(relayInfo, clamp)
+	return quota
+}
+
+// EstimateKimiToolLoopQuota evaluates one prospective model round using the
+// frozen request pricing state. The prompt estimate must include the expanded
+// transcript and injected Formula declarations.
+func EstimateKimiToolLoopQuota(relayInfo *relaycommon.RelayInfo, estimatedPromptTokens, maxCompletionTokens int) int {
+	quota, apiErr := EstimateKimiToolLoopQuotaChecked(relayInfo, estimatedPromptTokens, maxCompletionTokens)
+	if apiErr != nil {
+		return common.MaxQuota
+	}
+	return quota
+}
+
+// EstimateKimiToolLoopQuotaChecked is the network-facing estimator. It returns
+// a skip-retry pricing error instead of silently reusing the initial estimate
+// when the frozen expression cannot price the expanded next round.
+func EstimateKimiToolLoopQuotaChecked(relayInfo *relaycommon.RelayInfo, estimatedPromptTokens, maxCompletionTokens int) (int, *types.NewAPIError) {
+	if relayInfo == nil || estimatedPromptTokens < 0 || maxCompletionTokens < 0 {
+		return 0, nil
+	}
+	if maxCompletionTokens == 0 {
+		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
+			maxCompletionTokens = snap.EstimatedCompletionTokens
+		}
+	}
+	usage := &dto.Usage{
+		PromptTokens:     estimatedPromptTokens,
+		CompletionTokens: maxCompletionTokens,
+	}
+	quota, _, err := evaluateKimiToolLoopRoundQuota(&gin.Context{}, relayInfo, usage)
+	if err != nil {
+		return 0, types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())
+	}
+	if relayInfo.TieredBillingSnapshot == nil && relayInfo.PriceData.QuotaToPreConsume > quota {
+		return relayInfo.PriceData.QuotaToPreConsume, nil
+	}
+	return quota, nil
+}
+
+// ReserveKimiToolLoopQuota raises the existing billing reservation to cover
+// completed model rounds, every prospective Formula execution, and one next
+// model call. Final settlement uses successful tools only.
+func ReserveKimiToolLoopQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, nextEstimate int) *types.NewAPIError {
+	if relayInfo == nil || relayInfo.KimiToolLoop == nil {
+		return nil
+	}
+	if nextEstimate < 0 {
+		nextEstimate = 0
+	}
+	tokenQuota := calculateKimiToolLoopTokenQuota(ctx, relayInfo)
+	toolSurcharge, _, _ := calculateKimiToolLoopSurcharge(relayInfo, true)
+	target, clamp := common.QuotaFromDecimalChecked(
+		decimal.NewFromInt(int64(tokenQuota)).
+			Add(toolSurcharge).
+			Add(decimal.NewFromInt(int64(nextEstimate))),
+	)
+	noteQuotaClamp(relayInfo, clamp)
+	if target <= 0 {
+		return nil
+	}
+	if relayInfo.Billing == nil {
+		if ctx == nil {
+			ctx = &gin.Context{}
+		}
+		if apiErr := PreConsumeBilling(ctx, target, relayInfo); apiErr != nil {
+			return apiErr
+		}
+		relayInfo.PriceData.FreeModel = false
+		return nil
+	}
+	if err := relayInfo.Billing.Reserve(target); err != nil {
+		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
+	relayInfo.FinalPreConsumedQuota = relayInfo.Billing.GetPreConsumedQuota()
+	return nil
+}
+
+func appendKimiToolLoopAuditInfo(other *model.LogOther, relayInfo *relaycommon.RelayInfo) {
+	if other == nil || relayInfo == nil || relayInfo.KimiToolLoop == nil {
+		return
+	}
+	loop := relayInfo.KimiToolLoop
+	_, _, unpricedTools := calculateKimiToolLoopSurcharge(relayInfo, true)
+	rounds := make([]map[string]any, 0, len(loop.Usages))
+	for index := range loop.Usages {
+		usage := normalizeKimiToolLoopUsage(effectiveBillingUsage(&loop.Usages[index]))
+		quota, matchedTier, err := evaluateKimiToolLoopRoundQuota(&gin.Context{}, relayInfo, usage)
+		if err != nil {
+			quota = calculateKimiToolLoopRoundQuota(&gin.Context{}, relayInfo, usage)
+		}
+		rounds = append(rounds, map[string]any{
+			"prompt_tokens":     usage.PromptTokens,
+			"completion_tokens": usage.CompletionTokens,
+			"total_tokens":      boundedKimiTokenTotal(usage.PromptTokens, usage.CompletionTokens),
+			"cached_tokens":     usage.PromptTokensDetails.CachedTokens,
+			"quota":             quota,
+			"matched_tier":      matchedTier,
+		})
+	}
+	audit := map[string]any{
+		"round_count":          len(loop.Usages),
+		"rounds":               rounds,
+		"tool_calls":           positiveKimiToolCounts(loop.ToolCalls),
+		"attempted_tool_calls": positiveKimiToolCounts(loop.AttemptedToolCalls),
+		"completed":            loop.Completed,
+	}
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil && snap.BillingMode == "tiered_expr" {
+		audit["billing_mode"] = snap.BillingMode
+		audit["expr_hash"] = snap.ExprHash
+	} else if relayInfo.PriceData.UsePrice {
+		audit["billing_mode"] = "legacy_price"
+	} else {
+		audit["billing_mode"] = "legacy_ratio"
+	}
+	if loop.ErrorCode != "" {
+		audit["error_code"] = loop.ErrorCode
+	}
+	if len(unpricedTools) > 0 {
+		audit["unpriced_tools"] = unpricedTools
+	}
+	other.SetAudit("kimi_tool_loop", audit)
+}
+
 func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {
 	if usage != nil && usage.UsageSemantic != "" {
 		return usage.UsageSemantic
@@ -394,6 +714,9 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
 	originUsage := usage
 	billingUsage := effectiveBillingUsage(usage)
+	if relayInfo.KimiToolLoop != nil {
+		billingUsage = normalizeKimiToolLoopUsage(billingUsage)
+	}
 	if usage == nil {
 		extraContent = append(extraContent, "上游无计费信息")
 	}
@@ -406,7 +729,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	var tieredResult *billingexpr.TieredResult
 	tieredBillingApplied := false
-	if originUsage != nil {
+	if relayInfo.KimiToolLoop != nil && len(relayInfo.KimiToolLoop.Usages) > 0 {
+		loopTokenQuota := calculateKimiToolLoopTokenQuota(ctx, relayInfo)
+		loopSurcharge, loopItems, _ := calculateKimiToolLoopSurcharge(relayInfo, false)
+		summary.ToolSurchargeItems = mergeToolSurchargeItems(append(summary.ToolSurchargeItems, loopItems...))
+		summary.ToolCallSurchargeQuota = summary.ToolCallSurchargeQuota.Add(loopSurcharge)
+		quota, clamp := common.QuotaFromDecimalChecked(
+			decimal.NewFromInt(int64(loopTokenQuota)).Add(summary.ToolCallSurchargeQuota),
+		)
+		noteQuotaClamp(relayInfo, clamp)
+		summary.Quota = quota
+	} else if originUsage != nil {
 		var tieredUsedVars map[string]bool
 		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
 			tieredUsedVars = billingexpr.UsedVars(snap.ExprString)
@@ -517,6 +850,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	appendKimiToolLoopAuditInfo(other, relayInfo)
 
 	attachQuotaSaturation(ctx, relayInfo, other)
 

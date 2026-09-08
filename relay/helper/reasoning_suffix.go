@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
@@ -37,13 +39,15 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 	if info.ChannelMeta != nil {
 		upstream = info.UpstreamModelName
 	}
-	originParsed, err := parseRequestModelName(origin, opts)
+	parseQwenAlias := info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeOpenAI && info.RelayMode == relayconstant.RelayModeChatCompletions
+	originParsed, originHasQwenAlias, err := parseRequestModelName(origin, opts, parseQwenAlias)
 	if err != nil {
 		return reasoning.AsClientError(err)
 	}
 	upstreamParsed := originParsed
+	upstreamHasQwenAlias := originHasQwenAlias
 	if upstream != origin {
-		upstreamParsed, err = parseRequestModelName(upstream, opts)
+		upstreamParsed, upstreamHasQwenAlias, err = parseRequestModelName(upstream, opts, parseQwenAlias)
 		if err != nil {
 			return reasoning.AsClientError(err)
 		}
@@ -101,6 +105,12 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 		if err := applyModelControls(outbound, selected); err != nil {
 			return reasoning.AsClientError(err)
 		}
+		if (originHasQwenAlias || upstreamHasQwenAlias) && selected.intent.Effort != "" && selected.intent.BudgetTokens == nil {
+			if qwenRequest, ok := outbound.(*dto.GeneralOpenAIRequest); ok {
+				qwenRequest.EnableThinking = nil
+				qwenRequest.ThinkingBudget = nil
+			}
+		}
 		outbound.SetModelName(info.UpstreamModelName)
 	}
 	if info.Request != nil {
@@ -120,27 +130,46 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 	return nil
 }
 
-func parseRequestModelName(name string, opts *convmeta.Options) (parsedModelModifiers, error) {
+func parseRequestModelName(name string, opts *convmeta.Options, parseQwenAlias bool) (parsedModelModifiers, bool, error) {
 	if opts.ShouldPreserveThinkingSuffix(name) {
-		return parsedModelModifiers{base: name}, nil
+		return parsedModelModifiers{base: name}, false, nil
 	}
 	parsed, err := parseExplicitModelModifiers(name)
 	if err != nil {
-		return parsedModelModifiers{}, err
+		return parsedModelModifiers{}, false, err
 	}
 	if opts.ShouldPreserveThinkingSuffix(parsed.base) {
-		return parsed, nil
+		return parsed, false, nil
+	}
+	if parseQwenAlias {
+		qwenBase, rawEffort, found := hostreasoning.ParseQwenReasoningEffortSuffix(parsed.base)
+		if found {
+			parsed.base = qwenBase
+			if !parsed.hasThinking {
+				effort, parseErr := reasoning.ParseEffort(rawEffort)
+				if parseErr != nil {
+					return parsedModelModifiers{}, false, parseErr
+				}
+				mode := reasoning.ModeEnabled
+				if effort == reasoning.EffortNone {
+					mode = reasoning.ModeDisabled
+				}
+				parsed.intent = reasoning.Intent{Mode: mode, Effort: effort, Source: reasoning.SourceSuffix}
+				parsed.hasThinking = true
+			}
+			return parsed, true, nil
+		}
 	}
 	legacyBase, legacyIntent, legacyFound, err := parseHostModelSuffix(parsed.base, opts)
 	if err != nil {
-		return parsedModelModifiers{}, err
+		return parsedModelModifiers{}, false, err
 	}
 	parsed.base = legacyBase
 	if legacyFound && !parsed.hasThinking {
 		parsed.intent = legacyIntent
 		parsed.hasThinking = true
 	}
-	return parsed, nil
+	return parsed, false, nil
 }
 
 func overlayMappedModelModifiers(origin parsedModelModifiers, mapped parsedModelModifiers, diagnostics []types.ConversionDiagnostic) (parsedModelModifiers, []types.ConversionDiagnostic) {

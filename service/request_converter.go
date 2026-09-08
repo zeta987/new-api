@@ -13,10 +13,13 @@ import (
 
 func init() {
 	relayconvert.SetMediaResolver(relayconvert.MediaResolver{
-		// relayconvert is gin-free; recover the gin context when the caller
-		// passed one so file caching/cleanup keeps working.
+		// Conversion diagnostics wrap the context; Gin's key preserves access
+		// to the original request for media caching, logging, and cleanup.
 		GetBase64Data: func(ctx context.Context, source types.FileSource, reason ...string) (string, string, error) {
-			ginCtx, _ := ctx.(*gin.Context)
+			var ginCtx *gin.Context
+			if ctx != nil {
+				ginCtx, _ = ctx.Value(gin.ContextKey).(*gin.Context)
+			}
 			return GetBase64Data(ginCtx, source, reason...)
 		},
 		DecodeBase64FileData: DecodeBase64FileData,
