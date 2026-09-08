@@ -100,8 +100,15 @@ function OptionCombobox(props: LegacyComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
   const anchor = useComboboxAnchor()
+  const portalContainer = React.useRef<HTMLElement | null>(null)
   const selected = props.options.find((option) => option.value === props.value)
   const displayedValue = selected?.label ?? props.value ?? ''
+  const handleOpenChange = (nextOpen: boolean) => {
+    portalContainer.current =
+      anchor.current?.closest<HTMLElement>('[role="dialog"]') ?? null
+    setOpen(nextOpen)
+    setSearch('')
+  }
   return (
     <ComboboxPrimitive.Root
       items={props.options}
@@ -113,10 +120,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
       onInputValueChange={(value, details) => {
         if (details.reason === 'input-change') setSearch(value)
       }}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen)
-        setSearch('')
-      }}
+      onOpenChange={handleOpenChange}
       onValueChange={(option) => {
         if (option) props.onValueChange?.(option.value)
       }}
@@ -137,7 +141,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
           onBlur={props.onBlur}
           onKeyDown={props.onKeyDown}
           onFocus={() => {
-            if (props.openOnFocus !== false) setOpen(true)
+            if (props.openOnFocus !== false) handleOpenChange(true)
           }}
           aria-label={props['aria-label']}
           aria-labelledby={props['aria-labelledby']}
@@ -156,7 +160,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
           )}
         </ComboboxInput>
       </div>
-      <ComboboxContent anchor={anchor}>
+      <ComboboxContent anchor={anchor} container={portalContainer}>
         <ComboboxEmpty>
           {props.emptyText ?? t('No results found')}
         </ComboboxEmpty>
@@ -250,6 +254,7 @@ function ComboboxInput({
           <InputGroupButton
             size='icon-xs'
             variant='ghost'
+            nativeButton
             render={<ComboboxTrigger aria-label={triggerAriaLabel} />}
             data-slot='input-group-button'
             className='group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent'
@@ -270,15 +275,18 @@ function ComboboxContent({
   align = 'start',
   alignOffset = 0,
   anchor,
+  container,
   ...props
 }: ComboboxPrimitive.Popup.Props &
   Pick<
     ComboboxPrimitive.Positioner.Props,
     'side' | 'align' | 'sideOffset' | 'alignOffset' | 'anchor'
-  >) {
-  const container = usePortalContainer()
+  > & {
+    container?: ComboboxPrimitive.Portal.Props['container']
+  }) {
+  const inheritedContainer = usePortalContainer()
   return (
-    <ComboboxPrimitive.Portal container={container}>
+    <ComboboxPrimitive.Portal container={container ?? inheritedContainer}>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}

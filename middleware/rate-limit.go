@@ -137,6 +137,7 @@ func memoryRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark s
 // The in-memory limiter cannot report the remaining window, so callers
 // without a TTL pass the full window duration as a conservative upper bound.
 func writeRateLimited(c *gin.Context, retryAfterSeconds int64) {
+	c.Header("Cache-Control", "no-store")
 	if retryAfterSeconds > 0 {
 		c.Header("Retry-After", strconv.FormatInt(retryAfterSeconds, 10))
 	}
@@ -176,6 +177,18 @@ func CriticalRateLimit() func(c *gin.Context) {
 		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
 	}
 	return defNext
+}
+
+// AuthRefreshRateLimit keeps routine session recovery separate from login attempts.
+func AuthRefreshRateLimit() func(c *gin.Context) {
+	if !common.CriticalRateLimitEnable {
+		return defNext
+	}
+	return rateLimitFactory(
+		common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT", 120),
+		int64(common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT_DURATION", 60)),
+		"AR",
+	)
 }
 
 func UserCriticalRateLimit(scope string) func(c *gin.Context) {
