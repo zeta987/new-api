@@ -33,6 +33,8 @@ declare module 'axios' {
   export interface AxiosRequestConfig {
     skipBusinessError?: boolean
     skipErrorHandler?: boolean
+    skipRateLimitError?: boolean
+    skipServerErrorPage?: boolean
     disableDuplicate?: boolean
     skipAuthRefresh?: boolean
     authRetry?: boolean
@@ -131,7 +133,10 @@ api.interceptors.response.use(
       } else if (!skipErrorHandler) {
         toast.error(t('Session expired!'))
       }
-    } else if (!skipErrorHandler) {
+    } else if (
+      !skipErrorHandler &&
+      !(status === 429 && config?.skipRateLimitError)
+    ) {
       const messageKey = getServerErrorMessageKey(error)
       const message = messageKey
         ? t(messageKey)

@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
 import { GitBranch, Sparkles, KeyRound } from 'lucide-react'
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { GroupBadge } from '@/components/group-badge'
@@ -68,7 +67,6 @@ import {
   isPerCallBilling,
 } from '../../lib/utils'
 import type { LogOtherData } from '../../types'
-import { DetailsDialog } from '../dialogs/details-dialog'
 import { LogCostDisplay } from '../log-cost-display'
 import { ModelBadge } from '../model-badge'
 import { TimingMetricsCell, StreamTpsCell } from '../timing-metrics-cell'
@@ -776,8 +774,8 @@ export function useCommonLogsColumns(
       accessorKey: 'content',
       header: t('Details'),
       cell: function DetailsCell({ row }) {
+        const { showLogDetails } = useUsageLogsContext()
         const { t } = useTranslation()
-        const [dialogOpen, setDialogOpen] = useState(false)
         const log = row.original
         const other = parseLogOther(log.other)
 
@@ -830,23 +828,14 @@ export function useCommonLogsColumns(
         }
 
         return (
-          <>
-            <button
-              type='button'
-              className='group flex max-w-[200px] items-center gap-1 text-left text-xs'
-              onClick={() => setDialogOpen(true)}
-              title={t('Click to view full details')}
-            >
-              {detailPreview}
-            </button>
-            <DetailsDialog
-              log={log}
-              isAdmin={isAdmin}
-              isRoot={isRoot}
-              open={dialogOpen}
-              onOpenChange={setDialogOpen}
-            />
-          </>
+          <button
+            type='button'
+            className='group flex max-w-[200px] items-center gap-1 text-left text-xs'
+            onClick={() => showLogDetails({ log, isAdmin, isRoot })}
+            title={t('Click to view full details')}
+          >
+            {detailPreview}
+          </button>
         )
       },
       size: 180,
