@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
@@ -20,6 +21,71 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+func TestResponsesMappedReasoningPrecedenceAfterPreprocessing(t *testing.T) {
+	for _, bridge := range []bool{false, true} {
+		for _, tc := range []struct {
+			name   string
+			mapped string
+			effort string
+		}{
+			{name: "mapped suffix wins", mapped: "gpt-5.6-low", effort: "low"},
+			{name: "bare mapping inherits origin suffix", mapped: "gpt-5.6", effort: "high"},
+		} {
+			route := "native/"
+			if bridge {
+				route = "bridge/"
+			}
+			t.Run(route+tc.name, func(t *testing.T) {
+				gin.SetMode(gin.TestMode)
+				c, _ := gin.CreateTestContext(nil)
+				mapping, err := common.Marshal(map[string]string{"gpt-5.6-high": tc.mapped})
+				require.NoError(t, err)
+				c.Set("model_mapping", string(mapping))
+				original := &dto.OpenAIResponsesRequest{Model: "gpt-5.6-high", Input: []byte(`"hello"`), Reasoning: &dto.Reasoning{Effort: "medium"}}
+				info := &relaycommon.RelayInfo{
+					OriginModelName: original.Model,
+					Request:         original,
+					RelayMode:       relayconstant.RelayModeResponses,
+					RelayFormat:     types.RelayFormatOpenAIResponses,
+					ChannelMeta: &relaycommon.ChannelMeta{
+						ChannelType:       constant.ChannelTypeOpenAI,
+						UpstreamModelName: original.Model,
+					},
+				}
+				outbound, err := common.DeepCopy(original)
+				require.NoError(t, err)
+				if bridge {
+					chat := &dto.GeneralOpenAIRequest{Model: original.Model, ReasoningEffort: "medium", Messages: []dto.Message{{Role: "user", Content: "hello"}}}
+					info.Request = chat
+					info.RelayMode = relayconstant.RelayModeChatCompletions
+					info.RelayFormat = types.RelayFormatOpenAI
+					info.RequestConversionChain = []types.RelayFormat{types.RelayFormatOpenAI}
+					chatOutbound, err := common.DeepCopy(chat)
+					require.NoError(t, err)
+					require.NoError(t, helper.ModelMappedHelper(c, info, chatOutbound))
+					require.NoError(t, helper.ApplyReasoningModelSuffix(c, info, chatOutbound))
+					result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAIResponses, chatOutbound)
+					require.NoError(t, err)
+					var ok bool
+					outbound, ok = result.Value.(*dto.OpenAIResponsesRequest)
+					require.True(t, ok)
+				} else {
+					require.NoError(t, helper.ModelMappedHelper(c, info, outbound))
+					require.NoError(t, helper.ApplyReasoningModelSuffix(c, info, outbound))
+				}
+				converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, info, *outbound)
+				require.NoError(t, err)
+				got, ok := converted.(dto.OpenAIResponsesRequest)
+				require.True(t, ok)
+				assert.Equal(t, "gpt-5.6", got.Model)
+				require.NotNil(t, got.Reasoning)
+				assert.Equal(t, tc.effort, got.Reasoning.Effort)
+				assert.Equal(t, tc.effort, info.ReasoningEffort)
+			})
+		}
+	}
+}
 
 func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) {
 	tests := []struct {

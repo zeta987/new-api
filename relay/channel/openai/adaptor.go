@@ -732,10 +732,16 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		}
 	}
 	// Convert model suffixes into Responses reasoning fields.
+	originEffortResolved := info != nil && info.ReasoningState() != nil
 	originModel, mode, effort, hasReasoningSuffix := reasoning.ParseOpenAIReasoningModelSuffix(request.Model)
 	suffixCameFromRequestModel := hasReasoningSuffix
 	if !hasReasoningSuffix && info != nil {
 		_, mode, effort, hasReasoningSuffix = reasoning.ParseOpenAIReasoningModelSuffix(info.OriginModelName)
+		// The host has already applied mapped-model precedence. Keep mode
+		// fallback, but do not restore the superseded origin effort.
+		if originEffortResolved {
+			effort = ""
+		}
 	}
 	if hasReasoningSuffix {
 		if request.Reasoning == nil {
@@ -763,7 +769,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		effort = ""
 	}
 	originEffort := ""
-	if info != nil && !preserveSuffix {
+	if info != nil && !preserveSuffix && !originEffortResolved {
 		originEffort, _ = reasoning.ParseOpenAIReasoningEffortFromModelSuffix(info.OriginModelName)
 	}
 	crossProtocol := info != nil && len(info.RequestConversionChain) > 1
@@ -802,7 +808,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if err := mergeSuffix(request.Model, effort); err != nil {
 		return nil, kitreasoning.AsClientError(err)
 	}
-	if !preserveSuffix && info != nil && info.OriginModelName != request.Model {
+	if !preserveSuffix && info != nil && !originEffortResolved && info.OriginModelName != request.Model {
 		originEffort, _ := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(info.OriginModelName)
 		if err := mergeSuffix(info.OriginModelName, originEffort); err != nil {
 			return nil, kitreasoning.AsClientError(err)
