@@ -24,6 +24,20 @@
 
 ## v1.0.0-rc.36
 
+2026-09-11 Gemini tool-combination patch: OpenAI Chat requests can retain
+client functions together with Gemini 3 built-in tools. Final request
+normalization enables server-side tool invocations and changes AUTO to
+VALIDATED while preserving explicit NONE/ANY choices. Native tool parts,
+signatures and IDs survive supported multi-turn Chat conversion through a
+bounded, account/channel/model-isolated replay cache. Streaming retains write
+deadlines and rejects context left by a failed attempt on another channel.
+The cache is process-local: 512 entries, 32 MiB total, 1 MiB per response, and
+a sliding 30-minute idle lifetime; restart, eviction and cross-replica misses
+fall back to the client's supplied history. The separate channel override
+candidate keeps the latest user text across function-result-only turns.
+Focused regressions, root Go tests/build/vet, and independent relaykit
+tests/build/vet passed. No database, dependency or frontend changes.
+
 Integrated upstream `ea7cb0ba4e0f82e2bfa5e55752eb68bdf902f71b` from the
 released rc.34 head `0accceb3d1bf5c0aae3783a6db87872bafd41d24` on
 2026-09-09. Signed integration `60532325f9ac4df3b410ddd59c879d340adef2a6`
