@@ -136,6 +136,8 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 					if call := geminiResponseToolCall(&part); call != nil {
 						toolCalls = append(toolCalls, *call)
 					}
+				} else if len(part.ToolCall) > 0 || len(part.ToolResponse) > 0 {
+					continue
 				} else if part.Thought {
 					choice.Message.ReasoningContent = &part.Text
 				} else {
@@ -244,6 +246,8 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 					call.SetIndex(len(choice.Delta.ToolCalls))
 					choice.Delta.ToolCalls = append(choice.Delta.ToolCalls, *call)
 				}
+			} else if len(part.ToolCall) > 0 || len(part.ToolResponse) > 0 {
+				continue
 			} else if part.Thought {
 				isThought = true
 				writeSep()
@@ -307,9 +311,10 @@ type GeminiToChatStreamState struct {
 }
 
 type geminiPartialToolCall struct {
-	id        string
-	name      string
-	arguments map[string]interface{}
+	id               string
+	name             string
+	arguments        map[string]interface{}
+	thoughtSignature []byte
 }
 
 type geminiPartialArgPathSegment struct {
@@ -482,13 +487,12 @@ func (s *GeminiToChatStreamState) preparePartialFunctionCalls(response *dto.Gemi
 				parts = append(parts, part)
 				continue
 			}
-			completed, ready, err := s.appendPartialFunctionCall(candidate.Index, call)
+			completed, ready, err := s.appendPartialFunctionCall(candidate.Index, &part)
 			if err != nil {
 				return nil, fmt.Errorf("reconstruct Gemini streamed function arguments: %w", err)
 			}
 			if ready {
-				part.FunctionCall = completed
-				parts = append(parts, part)
+				parts = append(parts, *completed)
 			}
 		}
 		candidate.Content.Parts = parts
@@ -496,23 +500,27 @@ func (s *GeminiToChatStreamState) preparePartialFunctionCalls(response *dto.Gemi
 	return &prepared, nil
 }
 
-func (s *GeminiToChatStreamState) appendPartialFunctionCall(candidateIndex int64, call *dto.FunctionCall) (*dto.FunctionCall, bool, error) {
+func (s *GeminiToChatStreamState) appendPartialFunctionCall(candidateIndex int64, part *dto.GeminiPart) (*dto.GeminiPart, bool, error) {
+	call := part.FunctionCall
 	current := s.partialToolByCandidate[candidateIndex]
 	if current == nil {
 		current = &geminiPartialToolCall{arguments: make(map[string]interface{})}
 		s.partialToolByCandidate[candidateIndex] = current
 	}
-	if id := strings.TrimSpace(call.ID); id != "" {
-		if current.id != "" && current.id != id {
-			return nil, false, fmt.Errorf("candidate %d function call changed id from %q to %q", candidateIndex, current.id, id)
+	if strings.TrimSpace(call.ID) != "" {
+		if current.id != "" && current.id != call.ID {
+			return nil, false, fmt.Errorf("candidate %d function call changed id from %q to %q", candidateIndex, current.id, call.ID)
 		}
-		current.id = id
+		current.id = call.ID
 	}
 	if name := strings.TrimSpace(call.FunctionName); name != "" {
 		if current.name != "" && current.name != name {
 			return nil, false, fmt.Errorf("candidate %d function call changed name from %q to %q", candidateIndex, current.name, name)
 		}
 		current.name = name
+	}
+	if len(part.ThoughtSignature) > 0 {
+		current.thoughtSignature = append(current.thoughtSignature[:0], part.ThoughtSignature...)
 	}
 	for _, partial := range call.PartialArgs {
 		path, err := parseGeminiPartialArgPath(partial.JSONPath)
@@ -539,9 +547,13 @@ func (s *GeminiToChatStreamState) appendPartialFunctionCall(candidateIndex int64
 	if current.name == "" {
 		return nil, false, fmt.Errorf("candidate %d completed a partial function call without a name", candidateIndex)
 	}
-	completed := &dto.FunctionCall{ID: current.id, FunctionName: current.name, Arguments: current.arguments}
+	completed := *part
+	completed.FunctionCall = &dto.FunctionCall{ID: current.id, FunctionName: current.name, Arguments: current.arguments}
+	if len(current.thoughtSignature) > 0 {
+		completed.ThoughtSignature = append([]byte(nil), current.thoughtSignature...)
+	}
 	delete(s.partialToolByCandidate, candidateIndex)
-	return completed, true, nil
+	return &completed, true, nil
 }
 
 func parseGeminiPartialArgPath(jsonPath string) ([]geminiPartialArgPathSegment, error) {
@@ -724,11 +736,11 @@ func geminiResponseToolCall(item *dto.GeminiPart) *dto.ToolCallResponse {
 	if err != nil {
 		return nil
 	}
-	callID := strings.TrimSpace(item.FunctionCall.ID)
-	if callID == "" {
+	callID := item.FunctionCall.ID
+	if strings.TrimSpace(callID) == "" {
 		callID = fmt.Sprintf("call_%s", kitutil.GetUUID())
 	}
-	return &dto.ToolCallResponse{
+	response := &dto.ToolCallResponse{
 		ID:   callID,
 		Type: "function",
 		Function: dto.FunctionResponse{
@@ -736,4 +748,13 @@ func geminiResponseToolCall(item *dto.GeminiPart) *dto.ToolCallResponse {
 			Name:      item.FunctionCall.FunctionName,
 		},
 	}
+	if len(item.ThoughtSignature) > 0 {
+		var thoughtSignature string
+		if err := kitutil.Unmarshal(item.ThoughtSignature, &thoughtSignature); err == nil && thoughtSignature != "" {
+			response.ExtraContent = &dto.ToolCallExtraContent{
+				Google: &dto.ToolCallGoogleExtraContent{ThoughtSignature: thoughtSignature},
+			}
+		}
+	}
+	return response
 }
