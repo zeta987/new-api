@@ -309,6 +309,9 @@ func ChatCompletionsRequestToResponsesRequest(ctx context.Context, req *dto.Gene
 				if len(m) == 0 {
 					m = map[string]any{"type": tool.Type}
 				}
+				// Go does not omit zero-value structs, so remove the chat-only
+				// function shape from built-in Responses tools.
+				delete(m, "function")
 				tools = append(tools, m)
 			}
 		}
@@ -390,25 +393,35 @@ func ChatCompletionsRequestToResponsesRequest(ctx context.Context, req *dto.Gene
 		}
 	}
 
+	var serviceTier string
+	if len(req.ServiceTier) > 0 {
+		if err := kitutil.Unmarshal(req.ServiceTier, &serviceTier); err != nil {
+			return nil, fmt.Errorf("unmarshal service_tier: %w", err)
+		}
+	}
+
 	out := &dto.OpenAIResponsesRequest{
-		Model:             req.Model,
-		Input:             inputRaw,
-		Instructions:      instructionsRaw,
-		Stream:            req.Stream,
-		Temperature:       req.Temperature,
-		Text:              textRaw,
-		ToolChoice:        toolChoiceRaw,
-		Tools:             toolsRaw,
-		TopP:              topP,
-		FrequencyPenalty:  frequencyPenaltyRaw,
-		PresencePenalty:   presencePenaltyRaw,
-		User:              req.User,
-		ParallelToolCalls: parallelToolCallsRaw,
-		Store:             req.Store,
-		Metadata:          req.Metadata,
-		PromptCacheKey:    promptCacheKeyRaw,
-		EnableThinking:    req.EnableThinking,
-		ThinkingBudget:    req.ThinkingBudget,
+		Model:                req.Model,
+		Input:                inputRaw,
+		Instructions:         instructionsRaw,
+		Stream:               req.Stream,
+		Temperature:          req.Temperature,
+		Text:                 textRaw,
+		ToolChoice:           toolChoiceRaw,
+		Tools:                toolsRaw,
+		TopP:                 topP,
+		FrequencyPenalty:     frequencyPenaltyRaw,
+		PresencePenalty:      presencePenaltyRaw,
+		User:                 req.User,
+		ParallelToolCalls:    parallelToolCallsRaw,
+		Store:                req.Store,
+		Metadata:             req.Metadata,
+		PromptCacheKey:       promptCacheKeyRaw,
+		PromptCacheRetention: req.PromptCacheRetention,
+		SafetyIdentifier:     req.SafetyIdentifier,
+		ServiceTier:          serviceTier,
+		EnableThinking:       req.EnableThinking,
+		ThinkingBudget:       req.ThinkingBudget,
 	}
 	if req.MaxTokens != nil || req.MaxCompletionTokens != nil {
 		out.MaxOutputTokens = lo.ToPtr(maxOutputTokens)
@@ -421,6 +434,28 @@ func ChatCompletionsRequestToResponsesRequest(ctx context.Context, req *dto.Gene
 	convdiag.Add(ctx, diagnostics...)
 	if err := reasoning.ApplyToOpenAIResponses(out, reasoningIntent); err != nil {
 		return nil, reasoning.AsClientError(err)
+	}
+	if len(req.Reasoning) > 0 {
+		var config dto.Reasoning
+		if err := kitutil.Unmarshal(req.Reasoning, &config); err != nil {
+			return nil, reasoning.AsClientError(err)
+		}
+		if strings.TrimSpace(string(config.Mode)) == "null" {
+			config.Mode = nil
+		}
+		if strings.TrimSpace(string(config.Context)) == "null" {
+			config.Context = nil
+		}
+		if len(config.Mode) > 0 || len(config.Context) > 0 || config.Summary != "" {
+			if out.Reasoning == nil {
+				out.Reasoning = &dto.Reasoning{}
+			}
+			out.Reasoning.Mode = config.Mode
+			out.Reasoning.Context = config.Context
+			if config.Summary != "" {
+				out.Reasoning.Summary = config.Summary
+			}
+		}
 	}
 
 	return out, nil
