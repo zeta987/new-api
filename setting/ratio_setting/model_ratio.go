@@ -394,6 +394,14 @@ func ModelPricingCandidates(name string) []string {
 	}
 
 	names := []string{name}
+	// A plain effort suffix collapses to its base model so one row per base
+	// model prices every effort variant. It follows the origin name (and the
+	// origin's own "-*" keys) so an exact or explicitly configured wildcard row
+	// still wins, matching how FormatMatchingModelName-derived bases already
+	// rank for the GLM, Qwen and GPT-5.6 families.
+	if suffixBase := hostreasoning.EffortSuffixBaseModelName(name); suffixBase != "" && suffixBase != name {
+		names = append(names, suffixBase)
+	}
 	normalizedName := FormatMatchingModelName(name)
 	if normalizedName != "" && normalizedName != name {
 		names = append(names, normalizedName)

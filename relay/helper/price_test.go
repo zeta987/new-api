@@ -3,6 +3,7 @@ package helper
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -555,6 +556,72 @@ func TestModelPriceHelperCanonicalBillingLadder(t *testing.T) {
 		assert.Equal(t, "qwen3-max@thinking:on", info.BillingModelName)
 		assert.Equal(t, 3.0, priceData.ModelRatio)
 	})
+}
+
+// A single base-model row must price every plain effort variant of that model,
+// while neighbouring base models stay independent.
+func TestModelPriceHelperEffortSuffixUsesBaseRow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	savedRatios := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+	})
+
+	ratios := ratio_setting.GetModelRatioCopy()
+	for key := range ratios {
+		for _, family := range []string{"claude-fable-5", "gemini-3.8-flash", "deepseek-v4-pro", "deepseek-flash"} {
+			if strings.HasPrefix(key, family) {
+				delete(ratios, key)
+			}
+		}
+	}
+	ratios["claude-fable-5"] = 2.5
+	ratios["claude-fable-5-1"] = 4.0
+	ratios["gemini-3.8-flash"] = 0.3
+	ratios["deepseek-v4-pro"] = 0.5
+	ratios["deepseek-flash"] = 0.2
+	ratioJSON, err := common.Marshal(ratios)
+	require.NoError(t, err)
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(ratioJSON)))
+
+	oldSelfUse := operation_setting.SelfUseModeEnabled
+	operation_setting.SelfUseModeEnabled = false
+	t.Cleanup(func() { operation_setting.SelfUseModeEnabled = oldSelfUse })
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "default")
+
+	tests := []struct {
+		model string
+		want  float64
+	}{
+		{model: "claude-fable-5", want: 2.5},
+		{model: "claude-fable-5-high", want: 2.5},
+		{model: "claude-fable-5-max", want: 2.5},
+		{model: "claude-fable-5-1", want: 4.0},
+		{model: "claude-fable-5-1-high", want: 4.0},
+		{model: "claude-fable-5-1-max", want: 4.0},
+		{model: "gemini-3.8-flash-high", want: 0.3},
+		{model: "gemini-3.8-flash-minimal", want: 0.3},
+		{model: "deepseek-v4-pro-high", want: 0.5},
+		{model: "deepseek-v4-pro-max", want: 0.5},
+		{model: "deepseek-flash-max", want: 0.2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tt.model,
+				UserGroup:       "default",
+				UsingGroup:      "default",
+			}
+			priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			assert.Empty(t, info.BillingModelName)
+			assert.Equal(t, tt.want, priceData.ModelRatio)
+		})
+	}
 }
 
 func TestModelPriceHelperMigratesLegacyGeminiWildcardToCanonical(t *testing.T) {
