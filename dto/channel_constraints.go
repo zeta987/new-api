@@ -39,6 +39,7 @@ const (
 	FilterRequestPath         ChannelFilterKind = "request_path"
 	FilterAllowedChannelTypes ChannelFilterKind = "allowed_channel_types"
 	FilterTaskPluginIdentity  ChannelFilterKind = "task_plugin_identity"
+	FilterResponsesWebSocket  ChannelFilterKind = "responses_websocket"
 )
 
 type ChannelFilter struct {

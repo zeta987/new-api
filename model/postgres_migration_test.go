@@ -368,8 +368,16 @@ func TestChooseDBPostgreSQLRepeatedAutoMigrateNamedUniqueIndex(t *testing.T) {
 		clause.Column{Name: postgresNamedUniqueMigrationConstraint},
 		clause.Column{Name: "key"},
 	).Error)
+	// The regression this guards is that a second AutoMigrate must not abort with
+	// SQLSTATE 42704 by dropping a constraint name GORM merely inferred. It must
+	// still succeed here. Since rc.38 the migrator resolves single-column
+	// uniqueness from pg_catalog, so a stale constraint on a column the model now
+	// covers with a composite uniqueIndex is reconciled away instead of being left
+	// behind. This mirrors the production schema, where models.model_name and
+	// vendors.name carry the same legacy constraint alongside their delete-aware
+	// unique indexes.
 	require.NoError(t, tableDB.AutoMigrate(&postgresNamedUniqueMigration{}))
-	assert.True(t, tableDB.Migrator().HasConstraint(
+	assert.False(t, tableDB.Migrator().HasConstraint(
 		&postgresNamedUniqueMigration{},
 		postgresNamedUniqueMigrationConstraint,
 	))

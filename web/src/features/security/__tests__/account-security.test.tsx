@@ -17,11 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { STATUS_QUERY_KEY } from '@/lib/status-query'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { ChangePasswordDialog } from '../components/dialogs/change-password-dialog'
@@ -36,7 +44,17 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => navigate,
 }))
 
+let client: QueryClient
+beforeEach(() => {
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(STATUS_QUERY_KEY, { passkey_rp_ids: ['localhost'] })
+})
+
 afterEach(() => {
+  cleanup()
+  client.clear()
   navigate.mockReset()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -141,14 +159,8 @@ it.each(['2fa', 'passkey'])(
       .mockResolvedValue({ data: { success: true, data: {} } })
     const close = vi.fn()
     const user = userEvent.setup()
-    // The Passkey tab renders the domain selector, which reads `/api/status`
-    // through React Query.
     render(
-      <QueryClientProvider
-        client={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      >
+      <QueryClientProvider client={client}>
         <DeleteAccountDialog open username='user' onOpenChange={close} />
       </QueryClientProvider>
     )
@@ -317,14 +329,8 @@ it('disables 2FA through a Passkey proof without asking for an authenticator cod
   const close = vi.fn()
   const success = vi.fn()
   const user = userEvent.setup()
-  // The Passkey tab renders the domain selector, which reads `/api/status`
-  // through React Query.
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={client}>
       <TwoFADisableDialog open onOpenChange={close} onSuccess={success} />
     </QueryClientProvider>
   )

@@ -8,6 +8,11 @@ import (
 )
 
 const prefillGroupNameIndex = "uk_prefill_name"
+
+// legacyPrefillGroupNameUnique is the global unique object name older GORM
+// versions generated for prefill_groups.name. The migration matches conflicting
+// objects by definition rather than by this name; upgrade regression tests still
+// build that legacy schema.
 const legacyPrefillGroupNameUnique = "idx_prefill_groups_name"
 
 type conflictingPrefillGroupUniqueness struct {
@@ -25,6 +30,11 @@ func (conflicts conflictingPrefillGroupUniqueness) empty() bool {
 	return len(conflicts.constraints) == 0 && len(conflicts.indexes) == 0
 }
 
+// validateAutomaticMigrationScope refuses to migrate while the recognized legacy
+// index is invalid or not ready, the state PostgreSQL leaves behind after a
+// failed CREATE INDEX CONCURRENTLY. Replacing that index automatically would
+// hide a broken uniqueness build instead of reporting it. Any other invalid
+// index is still dropped and rebuilt as the partial unique index below.
 func (conflicts conflictingPrefillGroupUniqueness) validateAutomaticMigrationScope() error {
 	for _, name := range conflicts.invalidIndexes {
 		if name == legacyPrefillGroupNameUnique {
@@ -34,28 +44,7 @@ func (conflicts conflictingPrefillGroupUniqueness) validateAutomaticMigrationSco
 			)
 		}
 	}
-
-	unexpectedConstraints := make([]string, 0)
-	for _, name := range conflicts.constraints {
-		if name != legacyPrefillGroupNameUnique {
-			unexpectedConstraints = append(unexpectedConstraints, name)
-		}
-	}
-	unexpectedIndexes := make([]string, 0)
-	for _, name := range conflicts.indexes {
-		if name != legacyPrefillGroupNameUnique {
-			unexpectedIndexes = append(unexpectedIndexes, name)
-		}
-	}
-	if len(unexpectedConstraints) == 0 && len(unexpectedIndexes) == 0 {
-		return nil
-	}
-	return fmt.Errorf(
-		"prefill_groups.name has unsupported global unique constraints %q and indexes %q; only legacy object %q can be migrated automatically to partial uniqueness",
-		unexpectedConstraints,
-		unexpectedIndexes,
-		legacyPrefillGroupNameUnique,
-	)
+	return nil
 }
 
 func inspectConflictingPrefillGroupUniqueness(db *gorm.DB, tableName string) (conflictingPrefillGroupUniqueness, error) {
@@ -147,9 +136,10 @@ WHERE index_meta.indrelid = to_regclass(?)
 	return prefillGroupNameIndexState{exists: state.Exists, valid: state.Valid}, nil
 }
 
-// migratePrefillGroupUniqueness replaces the known global PostgreSQL unique
-// object left by older GORM versions with the partial unique index. Unknown
-// conflicting objects are reported without being modified.
+// migratePrefillGroupUniqueness replaces global PostgreSQL uniqueness on name
+// before AutoMigrate inspects the column. Match the definition rather than the
+// object name, which can change across older schemas and database imports.
+// Composite, expression and partial indexes retain their separate semantics.
 func migratePrefillGroupUniqueness(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("migrate prefill group uniqueness: database is nil")
@@ -170,17 +160,20 @@ func migratePrefillGroupUniqueness(db *gorm.DB) error {
 	if err := conflicts.validateAutomaticMigrationScope(); err != nil {
 		return err
 	}
-	targetIndex, err := inspectPrefillGroupNameIndex(db, tableName)
-	if err != nil {
-		return err
-	}
-	if targetIndex.exists && !targetIndex.valid {
-		return fmt.Errorf(
-			"prefill group index %q has an unexpected definition",
-			prefillGroupNameIndex,
-		)
-	}
 	if conflicts.empty() {
+		// Nothing will be replaced, so a target index left with an unexpected
+		// definition is not repaired below and must be reported instead of
+		// silently passing startup without the intended uniqueness.
+		targetIndex, err := inspectPrefillGroupNameIndex(db, tableName)
+		if err != nil {
+			return err
+		}
+		if targetIndex.exists && !targetIndex.valid {
+			return fmt.Errorf(
+				"prefill group index %q has an unexpected definition",
+				prefillGroupNameIndex,
+			)
+		}
 		return nil
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -210,20 +203,30 @@ func migratePrefillGroupUniqueness(db *gorm.DB) error {
 			return err
 		}
 
-		targetIndex, err := inspectPrefillGroupNameIndex(tx, tableName)
-		if err != nil {
-			return err
-		}
-		if targetIndex.exists && !targetIndex.valid {
-			return fmt.Errorf("prefill group index %q has an unexpected definition", prefillGroupNameIndex)
-		}
-
 		if !migrator.HasColumn(&PrefillGroup{}, "DeletedAt") {
 			if err := migrator.AddColumn(&PrefillGroup{}, "DeletedAt"); err != nil {
 				return fmt.Errorf("add prefill groups deleted_at column: %w", err)
 			}
 		}
 
+		// A global index or constraint may already use the target index name.
+		// Drop it before creating the replacement under the exclusive table lock;
+		// the transaction restores all old objects if any migration step fails.
+		for _, constraintName := range conflicts.constraints {
+			if err := migrator.DropConstraint(&PrefillGroup{}, constraintName); err != nil {
+				return fmt.Errorf("drop conflicting prefill group constraint %q: %w", constraintName, err)
+			}
+		}
+		for _, indexName := range conflicts.indexes {
+			if err := migrator.DropIndex(&PrefillGroup{}, indexName); err != nil {
+				return fmt.Errorf("drop conflicting prefill group index %q: %w", indexName, err)
+			}
+		}
+
+		targetIndex, err := inspectPrefillGroupNameIndex(tx, tableName)
+		if err != nil {
+			return err
+		}
 		if !targetIndex.exists {
 			if err := migrator.CreateIndex(&PrefillGroup{}, prefillGroupNameIndex); err != nil {
 				return fmt.Errorf("create prefill group partial unique index: %w", err)
@@ -235,25 +238,6 @@ func migratePrefillGroupUniqueness(db *gorm.DB) error {
 		}
 		if !targetIndex.valid {
 			return fmt.Errorf("prefill group index %q has an unexpected definition", prefillGroupNameIndex)
-		}
-
-		for _, constraintName := range conflicts.constraints {
-			if err := migrator.DropConstraint(&PrefillGroup{}, constraintName); err != nil {
-				return fmt.Errorf(
-					"drop conflicting prefill group constraint %q: %w",
-					constraintName,
-					err,
-				)
-			}
-		}
-		for _, indexName := range conflicts.indexes {
-			if err := migrator.DropIndex(&PrefillGroup{}, indexName); err != nil {
-				return fmt.Errorf(
-					"drop conflicting prefill group index %q: %w",
-					indexName,
-					err,
-				)
-			}
 		}
 
 		return nil

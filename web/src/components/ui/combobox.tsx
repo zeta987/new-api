@@ -104,11 +104,11 @@ function OptionCombobox(props: LegacyComboboxProps) {
   const portalContainer = React.useRef<HTMLElement | null>(null)
   const selected = props.options.find((option) => option.value === props.value)
   const displayedValue = selected?.label ?? props.value ?? ''
-  const handleOpenChange = (nextOpen: boolean) => {
+  // Inside a modal the listbox must portal into the dialog, or it renders
+  // outside the modal layer. Resolve the target whenever the popup opens.
+  const syncPortalContainer = () => {
     portalContainer.current =
       anchor.current?.closest<HTMLElement>('[role="dialog"]') ?? null
-    setOpen(nextOpen)
-    setSearch('')
   }
   return (
     <ComboboxPrimitive.Root
@@ -121,7 +121,11 @@ function OptionCombobox(props: LegacyComboboxProps) {
       onInputValueChange={(value, details) => {
         if (details.reason === 'input-change') setSearch(value)
       }}
-      onOpenChange={handleOpenChange}
+      onOpenChange={(nextOpen, details) => {
+        syncPortalContainer()
+        setOpen(nextOpen)
+        if (details.reason !== 'input-change') setSearch('')
+      }}
       onValueChange={(option) => {
         if (option) props.onValueChange?.(option.value)
       }}
@@ -142,7 +146,11 @@ function OptionCombobox(props: LegacyComboboxProps) {
           onBlur={props.onBlur}
           onKeyDown={props.onKeyDown}
           onFocus={() => {
-            if (props.openOnFocus !== false) handleOpenChange(true)
+            // Dialog autofocus should not expand a select-style combobox.
+            if (props.openOnFocus) {
+              syncPortalContainer()
+              setOpen(true)
+            }
           }}
           aria-label={props['aria-label']}
           aria-labelledby={props['aria-labelledby']}
