@@ -22,6 +22,65 @@
 
 ---
 
+## v1.0.0-rc.38
+
+2026-09-19 upstream integration covering rc.37 and rc.38 in one release
+candidate; rc.37 was integrated and gated but never deployed, so its release
+branch exists only as the source of this one.
+
+**Schema change requiring recorded approval (rule 19).** rc.37 adds
+`model/option_primary_key_migration.go`, and rc.38 adds its own
+`postgresSchemaMigrator.MigrateColumnUnique` resolving single-column
+uniqueness from `pg_catalog` instead of an inferred `uni_<table>_<column>`
+name. On the production database (PostgreSQL 18.6, `newapi`) this drops
+exactly two constraints at first startup: `idx_models_model_name` on
+`models.model_name` and `idx_vendors_name` on `vendors.name`. Both are stale
+legacy objects whose models now declare `uniqueIndex:uk_model_name_delete_at`
+and `uk_vendor_name_delete_at`; live-row uniqueness remains enforced by
+`uk_model_name` and `uk_vendor_name`, both partial on `deleted_at IS NULL`.
+Dropping them repairs soft-deleted name reuse rather than weakening
+uniqueness. The options-table rebuild never runs here: production already has
+`options_pkey`, verified by a read-only query against production and by two
+local startups against a restored copy, neither of which produced an
+`options_legacy_*` table. Backup taken before the release: custom-format dump
+of `newapi` only, md5 verified against the value computed inside the
+production container.
+
+**Four customizations retired because upstream now implements them.**
+`web/vitest.config.ts` (upstream added the identical `testTimeout: 20000` for
+the same two suites), the security suites' `QueryClientProvider` (upstream's
+version additionally seeds the status query so the passkey domain selector
+renders), the relaykit Gemini fixed-thinking guard (upstream replaced the
+rejection path with conversion diagnostics, a strict superset), and
+`model/postgres_migrator.go` (superseded as described above; only its bounded
+lock wait survives, and nothing in CI guards that line).
+
+**One customization was silently orphaned and restored.** rc.38 moved the
+Responses request preparation into the new file `relay/responses_request.go`,
+shared with the new WebSocket route. Because that path did not exist in
+rc.37, git reported no conflict and the fork's
+`shouldUseRawResponsesPassThrough` exemption was dropped while
+`relay/responses_handler_glm_test.go` kept passing against the helper
+directly. Rewired at `relay/responses_request.go:52`.
+
+**Behaviour change to be aware of.** `gemini-3-pro-image-preview` and
+`nano-banana-pro` previously rejected thinking controls with an error; they
+now succeed with the controls dropped, a `gemini_thinking_unsupported`
+diagnostic, and accounting at `EffortHigh`. rc.38's new WebSocket Responses
+endpoint bypasses `Distribute()`, so the fork's token model-limit matcher and
+reasoning channel-type filter do not apply to it.
+
+Verification: `go build`, `go vet`, `go test ./...`, independent relaykit
+build and tests, `bun run build:check`, and the full 1486-test frontend suite
+all passed. Rule-19 matrix covered SQLite, MySQL 5.7.16 and 8.4, and
+PostgreSQL 9.6 and 18.6 across fresh, rc.36-upgrade and stripped-primary-key
+cases, each started twice; MySQL 5.7.8 could not be tested because no such
+image is pullable. Smoke test ran against a restored production copy: both
+startups clean, second issued no DDL, all row counts unchanged. Pre-existing
+and reproduced on the unmodified base: intermittent HTTP/2 tests in
+`relay/channel`, 15 `format:check` files and the `lint` findings, all of which
+decreased relative to rc.36.
+
 ## v1.0.0-rc.36
 
 2026-09-11 Gemini tool-combination patch: OpenAI Chat requests can retain
