@@ -65,7 +65,7 @@ func TestChatCompletionsRequestToResponsesRequestPreservesBuiltInToolShape(t *te
 	var req dto.GeneralOpenAIRequest
 	require.NoError(t, kitutil.Unmarshal(raw, &req))
 
-	out, err := ChatCompletionsRequestToResponsesRequest(&req)
+	out, err := ChatCompletionsRequestToResponsesRequest(context.Background(), &req)
 	require.NoError(t, err)
 
 	tools := gjson.ParseBytes(out.Tools)
@@ -88,7 +88,7 @@ func TestChatCompletionsRequestToResponsesRequestPreservesRequestOptions(t *test
 		t.Run(tc.name, func(t *testing.T) {
 			var req dto.GeneralOpenAIRequest
 			require.NoError(t, kitutil.Unmarshal([]byte(`{"model":"gpt-5.6","messages":[{"role":"user","content":"hello"}]`+tc.options+`}`), &req))
-			got, err := ChatCompletionsRequestToResponsesRequest(&req)
+			got, err := ChatCompletionsRequestToResponsesRequest(context.Background(), &req)
 			require.NoError(t, err)
 			encoded, err := kitutil.Marshal(got)
 			require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestChatCompletionsRequestToResponsesRequestPreservesRequestOptions(t *test
 	}
 
 	t.Run("invalid service tier", func(t *testing.T) {
-		_, err := ChatCompletionsRequestToResponsesRequest(&dto.GeneralOpenAIRequest{
+		_, err := ChatCompletionsRequestToResponsesRequest(context.Background(), &dto.GeneralOpenAIRequest{
 			Model:       "gpt-5.6",
 			Messages:    []dto.Message{{Role: "user", Content: "hello"}},
 			ServiceTier: json.RawMessage(`42`),
