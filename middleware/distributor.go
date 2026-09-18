@@ -18,9 +18,12 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	kitreasoning "github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -50,6 +53,12 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		if allowedTypes, ok := reasoningAllowedChannelTypes(c.Request.URL.Path, modelRequest.Model); ok {
+			constraints.AddFilter(taskdto.ChannelFilter{
+				Kind:                taskdto.FilterAllowedChannelTypes,
+				AllowedChannelTypes: allowedTypes,
+			})
+		}
 		_, pinned, _ := constraints.ResolvedPin()
 		if !pinned {
 			// Select a channel for the user
@@ -67,7 +76,7 @@ func Distribute() func(c *gin.Context) {
 				if !ok {
 					tokenModelLimit = map[string]bool{}
 				}
-				if !TokenModelLimitAllows(tokenModelLimit, modelRequest.Model) {
+				if !tokenAllowsModel(tokenModelLimit, modelRequest.Model) {
 					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
 					return
 				}
@@ -128,6 +137,39 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func tokenAllowsModel(tokenModelLimit map[string]bool, modelName string) bool {
+	for _, matchName := range model.ModelMatchCandidates(modelName) {
+		if _, exists := tokenModelLimit[matchName]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func reasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
+	isChat := requestPath == "/v1/chat/completions" || strings.HasPrefix(requestPath, "/pg/chat/completions")
+	if isChat && !model_setting.ShouldPreserveThinkingSuffix(modelName) {
+		base := kitreasoning.ParseModelModifiers(modelName).Base
+		if _, _, ok := reasoning.ParseQwenReasoningEffortSuffix(base); ok {
+			return []int{constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter}, true
+		}
+	}
+	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(modelName); !ok {
+		return nil, false
+	}
+	if requestPath == "/v1/chat/completions" || strings.HasPrefix(requestPath, "/pg/chat/completions") {
+		return []int{
+			constant.ChannelTypeZhipu_v4,
+			constant.ChannelTypeOpenAI,
+			constant.ChannelTypeOpenRouter,
+		}, true
+	}
+	if requestPath == "/v1/responses" {
+		return []int{constant.ChannelTypeZhipu_v4, constant.ChannelTypeOpenRouter}, true
+	}
+	return []int{}, true
 }
 
 // noAvailableChannelMessage explains a 503 for a task-plugin-claimed model.

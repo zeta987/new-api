@@ -271,8 +271,15 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 	finishReason := constant.FinishReasonStop
 	toolCallIndexByChoice := make(map[int]map[string]int)
 	nextToolCallIndexByChoice := make(map[int]int)
+	toolContext := geminiContextFor(c, info)
+	if toolContext != nil && toolContext.enabled {
+		writer := c.Writer
+		c.Writer = &geminiContextWriter{ResponseWriter: writer, state: toolContext}
+		defer func() { c.Writer = writer }()
+	}
 
 	usage, err := geminiStreamHandler(c, info, resp, func(data string, geminiResponse *dto.GeminiChatResponse) bool {
+		toolContext.capture([]byte(data))
 		response, isStop := streamResponseGeminiChat2OpenAI(geminiResponse)
 
 		response.Id = id
@@ -359,6 +366,9 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 	if err != nil {
 		return usage, err
 	}
+	if !isGeminiDownstreamStop(c, info) {
+		toolContext.save()
+	}
 
 	response := helper.GenerateFinalUsageResponse(id, createAt, info.UpstreamModelName, *usage)
 	if info.RelayFormat == types.RelayFormatClaude && info.ClaudeConvertInfo != nil && !info.ClaudeConvertInfo.Done {
@@ -424,6 +434,25 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		return &usage, nil
 	}
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
+	toolContext := geminiContextFor(c, info)
+	toolContext.capture(responseBody)
+	if toolContext != nil && toolContext.enabled && !toolContext.failed {
+		for _, choice := range fullTextResponse.Choices {
+			candidate := toolContext.candidates[choice.Index]
+			if candidate == nil {
+				continue
+			}
+			candidate.text.WriteString(choice.Message.StringContent())
+			var calls []dto.ToolCallResponse
+			if len(choice.Message.ToolCalls) > 0 && common.Unmarshal(choice.Message.ToolCalls, &calls) != nil {
+				toolContext.failed = true
+				break
+			}
+			for index, call := range calls {
+				candidate.calls[index] = call
+			}
+		}
+	}
 	fullTextResponse.Model = info.UpstreamModelName
 	usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
 
@@ -449,6 +478,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		break
 	}
 
+	toolContext.save()
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &usage, nil

@@ -14,7 +14,6 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
@@ -26,8 +25,8 @@ var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
 	if !common.MemoryCacheEnabled {
-		InvalidatePricingCache()
 		rebuildTaskAliasView()
+		InvalidatePricingCache()
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
@@ -97,12 +96,14 @@ func InitChannelCache() {
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channelSyncLock.Unlock()
-	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
+	// Lock ordering: rebuildTaskAliasView and InvalidatePricingCache run only
+	// after channelSyncLock is released. InvalidatePricingCache acquires
+	// updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
 	// loadPricingAdvancedCustomConfigs. channelSyncLock MUST be released before
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
-	InvalidatePricingCache()
 	rebuildTaskAliasView()
+	InvalidatePricingCache()
 	common.SysLog("channels synced from database")
 }
 
@@ -128,13 +129,12 @@ func GetRandomSatisfiedChannel(
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
-	// First, try to find channels with the exact model name.
-	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
-
-	// If no channels found, try to find channels with the normalized model name.
-	if len(channels) == 0 {
-		normalizedModel := ratio_setting.RoutingMatchModelName(model)
-		channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
+	var channels []int
+	for _, candidate := range ModelMatchCandidates(model) {
+		channels, _ = filterCandidateIDs(group2model2channels[group][candidate], model, filters)
+		if len(channels) > 0 {
+			break
+		}
 	}
 
 	if len(channels) == 0 {
