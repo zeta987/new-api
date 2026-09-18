@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
 )
@@ -126,18 +127,24 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		request.THINKING = json.RawMessage(`{"type":"disabled"}`)
 	}
 	reasoningEffort := ""
+	reasoningModel := upstreamModelName
 	switch upstreamModelName {
-	case "kimi-k3-none":
-		reasoningEffort = "none"
-	case "kimi-k3-low":
-		reasoningEffort = "low"
-	case "kimi-k3-high":
-		reasoningEffort = "high"
-	case "kimi-k3-max":
-		reasoningEffort = "max"
+	case "kimi-k3-none", "kimi-k3-low", "kimi-k3-high", "kimi-k3-max":
+		reasoningModel, reasoningEffort, _ = reasoning.ParseKimiReasoningEffortSuffix(upstreamModelName)
+	default:
+		// A model mapping can replace the effort alias with the model's base
+		// name or a pinned snapshot of it, and the suffix then survives only on
+		// the origin name. Recover the effort from there, but keep the mapped
+		// name so the mapping target is never rewritten back to the base.
+		if info != nil && reasoning.IsKimiReasoningEffortModel(upstreamModelName) {
+			if originBase, effort, ok := reasoning.ParseKimiReasoningEffortSuffix(info.OriginModelName); ok &&
+				strings.HasPrefix(upstreamModelName, originBase) {
+				reasoningEffort = effort
+			}
+		}
 	}
 	if reasoningEffort != "" {
-		request.Model = "kimi-k3"
+		request.Model = reasoningModel
 		request.ReasoningEffort = reasoningEffort
 		upstreamModelName = request.Model
 		if info != nil {

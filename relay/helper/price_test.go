@@ -646,6 +646,8 @@ func TestModelPriceHelperEffortSuffixPrefersCanonicalOverBaseRow(t *testing.T) {
 	}
 	ratios["claude-fable-5"] = 2.5
 	ratios["claude-fable-5@effort:high@thinking:on"] = 4.0
+	ratios["claude-fable-5-xhigh"] = 5.0
+	ratios["claude-fable-5@effort:xhigh@thinking:on"] = 7.0
 	ratios["gemini-3.8-flash"] = 0.3
 	ratios["gemini-3.8-flash@thinking:on"] = 0.9
 	ratioJSON, err := common.Marshal(ratios)
@@ -672,6 +674,9 @@ func TestModelPriceHelperEffortSuffixPrefersCanonicalOverBaseRow(t *testing.T) {
 		// to the origin, which the base row now prices. The origin stays the
 		// billing identity so the usage log still shows the requested effort.
 		{model: "claude-fable-5-max", wantBillingModel: "", wantRatio: 2.5},
+		// Both an exact alias row and a canonical row configured: the canonical
+		// billing identity wins. Pins the precedence, does not endorse it.
+		{model: "claude-fable-5-xhigh", wantBillingModel: "claude-fable-5@effort:xhigh@thinking:on", wantRatio: 7.0},
 		// A legacy thinking alias reaches its canonical row the same way.
 		{model: "gemini-3.8-flash-thinking-8192", wantBillingModel: "gemini-3.8-flash@thinking:on", wantRatio: 0.9},
 		{model: "gemini-3.8-flash-low", wantBillingModel: "gemini-3.8-flash@thinking:on", wantRatio: 0.9},
