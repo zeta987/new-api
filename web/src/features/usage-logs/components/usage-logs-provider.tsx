@@ -17,15 +17,33 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
 
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import type { UsageLog } from '../data/schema'
+import { createUsageLogsRefreshController } from '../lib/background-refresh'
+import { subscribeUsageLogStream } from '../lib/log-stream'
+import { subscribeUsageLogsChanged } from '../lib/refresh-events'
 import type { ChannelAffinityInfo } from '../types'
+import { DetailsDialog } from './dialogs/details-dialog'
 
 export type LogsViewScope = 'all' | 'self'
 export type LogsViewAccess = 'self' | 'admin' | 'root'
+
+interface LogDetailsSelection {
+  log: UsageLog
+  isAdmin: boolean
+  isRoot: boolean
+}
 
 export function resolveLogsViewAccess(
   role: number,
@@ -36,6 +54,7 @@ export function resolveLogsViewAccess(
 }
 
 interface UsageLogsContextValue {
+  showLogDetails: (selection: LogDetailsSelection) => void
   selectedUserId: number | null
   setSelectedUserId: (userId: number | null) => void
   userInfoDialogOpen: boolean
@@ -55,6 +74,10 @@ const UsageLogsContext = createContext<UsageLogsContextValue | undefined>(
 )
 
 export function UsageLogsProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
+  const accessToken = useAuthStore((state) => state.auth.accessToken)
+  const [detailsSelection, showLogDetails] =
+    useState<LogDetailsSelection | null>(null)
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [userInfoDialogOpen, setUserInfoDialogOpen] = useState(false)
   const [affinityTarget, setAffinityTarget] =
@@ -63,9 +86,61 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
   const [viewScope, setViewScope] = useState<LogsViewScope>('all')
 
+  useEffect(() => {
+    const refresh = createUsageLogsRefreshController(queryClient)
+    const unsubscribeBrowserEvents = subscribeUsageLogsChanged(refresh.request)
+    let unsubscribeServerEvents: (() => void) | undefined
+    let connectionTimer: ReturnType<typeof setTimeout> | undefined
+
+    const connectServerEvents = () => {
+      connectionTimer = undefined
+      if (
+        document.visibilityState === 'hidden' ||
+        !accessToken ||
+        unsubscribeServerEvents
+      ) {
+        return
+      }
+      const delay = refresh.retryAfter()
+      if (delay > 0) {
+        connectionTimer = setTimeout(connectServerEvents, delay)
+        return
+      }
+      unsubscribeServerEvents = subscribeUsageLogStream(
+        refresh.request,
+        undefined,
+        refresh.defer
+      )
+    }
+
+    const updateVisibility = () => {
+      if (connectionTimer !== undefined) clearTimeout(connectionTimer)
+      connectionTimer = undefined
+      const hidden = document.visibilityState === 'hidden'
+      refresh.setPaused(hidden)
+      if (hidden) {
+        unsubscribeServerEvents?.()
+        unsubscribeServerEvents = undefined
+      } else {
+        connectServerEvents()
+      }
+    }
+    updateVisibility()
+    document.addEventListener('visibilitychange', updateVisibility)
+
+    return () => {
+      document.removeEventListener('visibilitychange', updateVisibility)
+      if (connectionTimer !== undefined) clearTimeout(connectionTimer)
+      unsubscribeBrowserEvents()
+      unsubscribeServerEvents?.()
+      refresh.dispose()
+    }
+  }, [accessToken, queryClient])
+
   return (
     <UsageLogsContext.Provider
       value={{
+        showLogDetails,
         selectedUserId,
         setSelectedUserId,
         userInfoDialogOpen,
@@ -81,6 +156,17 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      {detailsSelection && (
+        <DetailsDialog
+          log={detailsSelection.log}
+          isAdmin={detailsSelection.isAdmin}
+          isRoot={detailsSelection.isRoot}
+          open
+          onOpenChange={(open) => {
+            if (!open) showLogDetails(null)
+          }}
+        />
+      )}
     </UsageLogsContext.Provider>
   )
 }

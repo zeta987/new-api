@@ -16,15 +16,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import axios from 'axios'
 import { toast } from 'sonner'
 
 import {
   getServerErrorMessage,
   getServerErrorSources,
+  getServerErrorStatus,
   isServerErrorCancelled,
 } from './server-error-message'
 
 const reportedErrors = new WeakSet<object>()
+
+/** Background refreshes keep the open page instead of taking over the route. */
+export function skipsServerErrorPage(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.config?.skipServerErrorPage === true
+}
+
+/** Send a failed query to the 500 page unless its request opted out. */
+export function handleQueryError(
+  error: unknown,
+  onInternalServerError: () => void
+): void {
+  if (getServerErrorStatus(error) !== 500 || skipsServerErrorPage(error)) return
+  handleServerError(error)
+  onInternalServerError()
+}
 
 /** Also used when a failure has already been presented inline. */
 export function markServerErrorHandled(error: unknown): void {
@@ -37,6 +54,14 @@ export function handleServerError(
   presentation?: { title: string; description?: string }
 ): void {
   if (isServerErrorCancelled(error)) return
+  // A throttled background refresh stays silent; the page keeps its last data.
+  if (
+    axios.isAxiosError(error) &&
+    error.config?.skipRateLimitError === true &&
+    error.response?.status === 429
+  ) {
+    return
+  }
   const sources = getServerErrorSources(error)
   const reported = sources.some((source) => reportedErrors.has(source))
   markServerErrorHandled(error)
