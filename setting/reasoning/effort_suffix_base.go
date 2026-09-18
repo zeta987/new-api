@@ -34,11 +34,14 @@ func EffortSuffixBaseModelName(modelName string) string {
 	if err != nil || !found {
 		deepSeekBase, _, _, isDeepSeek := kitreasoning.ParseDeepSeekV4ThinkingSuffix(modelName)
 		kimiBase, _, isKimi := kitreasoning.ParseKimiReasoningEffortSuffix(modelName)
+		grokBase, _, isGrok := kitreasoning.ParseGrokReasoningEffortSuffix(modelName)
 		switch {
 		case isDeepSeek:
 			base = deepSeekBase
 		case isKimi:
 			base = kimiBase
+		case isGrok:
+			base = grokBase
 		default:
 			return ""
 		}
