@@ -52,7 +52,15 @@ func TestModelPricingCandidatesIncludeEffortSuffixBase(t *testing.T) {
 			name: "deepseek-flash-max",
 			want: []string{"deepseek-flash-max", "deepseek-flash-*", "deepseek-*", "deepseek-flash"},
 		},
+		{
+			name: "kimi-k3-high",
+			want: []string{"kimi-k3-high", "kimi-k3-*", "kimi-*", "kimi-k3"},
+		},
 		// No effort suffix to strip: the candidate list is unchanged.
+		{
+			name: "kimi-k3-medium",
+			want: []string{"kimi-k3-medium", "kimi-k3-*", "kimi-*"},
+		},
 		{
 			name: "qwen3-max",
 			want: []string{"qwen3-max", "qwen3-*"},

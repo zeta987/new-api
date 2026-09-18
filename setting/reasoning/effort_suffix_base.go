@@ -32,11 +32,16 @@ func EffortSuffixBaseModelName(modelName string) string {
 		model_setting.GetGeminiSettings().ThinkingAdapterEnabled,
 	)
 	if err != nil || !found {
-		deepSeekBase, _, _, ok := kitreasoning.ParseDeepSeekV4ThinkingSuffix(modelName)
-		if !ok {
+		deepSeekBase, _, _, isDeepSeek := kitreasoning.ParseDeepSeekV4ThinkingSuffix(modelName)
+		kimiBase, _, isKimi := kitreasoning.ParseKimiReasoningEffortSuffix(modelName)
+		switch {
+		case isDeepSeek:
+			base = deepSeekBase
+		case isKimi:
+			base = kimiBase
+		default:
 			return ""
 		}
-		base = deepSeekBase
 	}
 
 	if base == "" || base == modelName || model_setting.ShouldPreserveThinkingSuffix(base) {

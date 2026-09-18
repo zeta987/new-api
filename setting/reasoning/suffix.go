@@ -33,6 +33,8 @@ var (
 	ParseGLMReasoningEffortSuffix       = kitreasoning.ParseGLMReasoningEffortSuffix
 	IsGLMReasoningEffortModel           = kitreasoning.IsGLMReasoningEffortModel
 	ParseDeepSeekV4ThinkingSuffix       = kitreasoning.ParseDeepSeekV4ThinkingSuffix
+	ParseKimiReasoningEffortSuffix      = kitreasoning.ParseKimiReasoningEffortSuffix
+	IsKimiReasoningEffortModel          = kitreasoning.IsKimiReasoningEffortModel
 	TrimGeminiThinkingSuffix            = kitreasoning.TrimGeminiThinkingSuffix
 )
 
@@ -134,6 +136,15 @@ func BaseModelName(modelName string) string {
 	}
 	if found {
 		return legacyBase
+	}
+	// DeepSeek V4 and Kimi carry their own effort vocabularies, which the
+	// legacy GPT/Claude/Gemini families do not cover. Routing and pricing must
+	// see the same base model for them.
+	if deepSeekBase, _, _, ok := ParseDeepSeekV4ThinkingSuffix(base); ok && !model_setting.ShouldPreserveThinkingSuffix(deepSeekBase) {
+		return deepSeekBase
+	}
+	if kimiBase, _, ok := ParseKimiReasoningEffortSuffix(base); ok && !model_setting.ShouldPreserveThinkingSuffix(kimiBase) {
+		return kimiBase
 	}
 	return base
 }

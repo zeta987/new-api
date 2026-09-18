@@ -298,6 +298,37 @@ func TestBaseModelNameStripsModifiers(t *testing.T) {
 	require.Equal(t, "qwen3-max", BaseModelName("qwen3-max@thinking:on@temperature:0.2"))
 }
 
+func TestBaseModelNameStripsEffortSuffixFamilies(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "claude-fable-5-high", want: "claude-fable-5"},
+		{name: "claude-fable-5-1-high", want: "claude-fable-5-1"},
+		{name: "claude-opus-5-max", want: "claude-opus-5"},
+		{name: "gemini-3.8-flash-high", want: "gemini-3.8-flash"},
+		{name: "gemini-3.5-flash-lite-minimal", want: "gemini-3.5-flash-lite"},
+		{name: "deepseek-v4-pro-high", want: "deepseek-v4-pro"},
+		{name: "deepseek-flash-none", want: "deepseek-flash"},
+		{name: "kimi-k3-high", want: "kimi-k3"},
+		{name: "kimi-k3-max", want: "kimi-k3"},
+		// Outside every family vocabulary, or blacklisted.
+		{name: "kimi-k3-medium", want: "kimi-k3-medium"},
+		{name: "kimi-k2-thinking", want: "kimi-k2-thinking"},
+		{name: "qwen3-max", want: "qwen3-max"},
+		{name: "glm-5.2-max-extra", want: "glm-5.2-max-extra"},
+		// Stripping @ modifiers is BaseModelName's documented job; it is
+		// exactly what EffortSuffixBaseModelName must not do.
+		{name: "gemini-2.5-flash@thinking:on", want: "gemini-2.5-flash"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, BaseModelName(tt.name))
+		})
+	}
+}
+
 func TestEffortSuffixBaseModelName(t *testing.T) {
 	tests := []struct {
 		name string
@@ -314,7 +345,10 @@ func TestEffortSuffixBaseModelName(t *testing.T) {
 		{name: "deepseek-v4-pro-high", want: "deepseek-v4-pro"},
 		{name: "deepseek-v4-pro-none", want: "deepseek-v4-pro"},
 		{name: "deepseek-flash-max", want: "deepseek-flash"},
+		{name: "kimi-k3-high", want: "kimi-k3"},
+		{name: "kimi-k3-none", want: "kimi-k3"},
 		// Nothing to strip.
+		{name: "kimi-k3-medium", want: ""},
 		{name: "", want: ""},
 		{name: "claude-fable-5", want: ""},
 		{name: "qwen3-max", want: ""},
