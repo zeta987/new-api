@@ -31,6 +31,11 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Several suites legitimately run 5-7s here (rc.37's channel-configuration
+    // and visual-billing-editor are the slowest), which a clean upstream
+    // v1.0.0-rc.37 checkout also exceeds against Vitest's 5000ms default. Raise
+    // the budget so the gate reports real regressions instead of machine speed.
+    testTimeout: 20000,
     server: {
       deps: { inline: [/@lobehub\//, /antd-style/] },
     },
