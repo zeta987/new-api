@@ -179,7 +179,9 @@ it.each([
     }
     if (outcome) expect(cell).toHaveTextContent(outcome)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  }
+  },
+  // The 5s element lookup above needs more than the default 5s case budget.
+  15000
 )
 
 it.each([false, true])(
@@ -387,7 +389,9 @@ it.each([
         </QueryClientProvider>
       </I18nextProvider>
     )
-    expect(await screen.findByRole('cell', { name: single })).toBeVisible()
+    expect(
+      await screen.findByRole('cell', { name: single }, { timeout: 5000 })
+    ).toBeVisible()
     expect(screen.getByRole('cell', { name: batch })).toBeVisible()
     expect(
       screen.queryByRole('cell', { name: 'channel.status_update' })
@@ -395,7 +399,10 @@ it.each([
     expect(
       screen.queryByRole('cell', { name: 'channel.status_update_batch' })
     ).not.toBeInTheDocument()
-  }
+  },
+  // Seven locale bundles are initialised one after another; the default 5s
+  // budget is not enough for this case when the whole suite runs in parallel.
+  15000
 )
 
 beforeEach(() => {

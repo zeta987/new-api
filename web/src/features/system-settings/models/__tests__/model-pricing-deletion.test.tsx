@@ -36,6 +36,7 @@ const defaultValues = {
   ExposeRatioEnabled: false,
   BillingMode: '{}',
   BillingExpr: '{}',
+  PluginBillingExpr: '{}',
 }
 
 function PricingFormFixture(props: {

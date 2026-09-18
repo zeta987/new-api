@@ -16,51 +16,61 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { AxiosError } from 'axios'
-import i18next from 'i18next'
+import axios from 'axios'
 import { toast } from 'sonner'
 
-import { getServerErrorMessageKey } from '@/lib/server-error-message'
+import {
+  getServerErrorMessage,
+  getServerErrorSources,
+  getServerErrorStatus,
+  isServerErrorCancelled,
+} from './server-error-message'
 
+const reportedErrors = new WeakSet<object>()
+
+/** Background refreshes keep the open page instead of taking over the route. */
+export function skipsServerErrorPage(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.config?.skipServerErrorPage === true
+}
+
+/** Send a failed query to the 500 page unless its request opted out. */
 export function handleQueryError(
   error: unknown,
   onInternalServerError: () => void
 ): void {
-  if (
-    !(error instanceof AxiosError) ||
-    error.response?.status !== 500 ||
-    error.config?.skipServerErrorPage
-  ) {
-    return
-  }
-  toast.error(i18next.t('Internal Server Error!'))
+  if (getServerErrorStatus(error) !== 500 || skipsServerErrorPage(error)) return
+  handleServerError(error)
   onInternalServerError()
 }
 
-export function handleServerError(error: unknown) {
-  // eslint-disable-next-line no-console
-  console.log(error)
+/** Also used when a failure has already been presented inline. */
+export function markServerErrorHandled(error: unknown): void {
+  for (const source of getServerErrorSources(error)) reportedErrors.add(source)
+}
 
-  let errMsg = i18next.t('Something went wrong!')
-
-  const messageKey = getServerErrorMessageKey(error)
-  if (messageKey) {
-    toast.error(i18next.t(messageKey))
+export function handleServerError(
+  error: unknown,
+  fallbackMessage?: string,
+  presentation?: { title: string; description?: string }
+): void {
+  if (isServerErrorCancelled(error)) return
+  // A throttled background refresh stays silent; the page keeps its last data.
+  if (
+    axios.isAxiosError(error) &&
+    error.config?.skipRateLimitError === true &&
+    error.response?.status === 429
+  ) {
     return
   }
-
-  if (
-    error &&
-    typeof error === 'object' &&
-    'status' in error &&
-    Number(error.status) === 204
-  ) {
-    errMsg = i18next.t('Content not found.')
+  const sources = getServerErrorSources(error)
+  const reported = sources.some((source) => reportedErrors.has(source))
+  markServerErrorHandled(error)
+  if (reported) return
+  const message =
+    presentation?.title || getServerErrorMessage(error, fallbackMessage)
+  if (presentation?.description) {
+    toast.error(message, { description: presentation.description })
+  } else {
+    toast.error(message)
   }
-
-  if (error instanceof AxiosError) {
-    errMsg = error.response?.data.title
-  }
-
-  toast.error(errMsg)
 }

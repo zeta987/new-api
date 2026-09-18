@@ -4,6 +4,11 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
+const (
+	DefaultCacheRatio       = 1.0
+	DefaultCreateCacheRatio = 1.25
+)
+
 var defaultCacheRatio = map[string]float64{
 	"gpt-6-astra":                         0.1,
 	"gemini-3-flash-preview":              0.1,
@@ -197,7 +202,7 @@ func UpdateCreateCacheRatioByJSONString(jsonStr string) error {
 func GetCacheRatio(name string) (float64, bool) {
 	ratio, ok := getModelPricingValue(cacheRatioMap, name)
 	if !ok {
-		return 1, false // Default to 1 if not found
+		return DefaultCacheRatio, false
 	}
 	return ratio, true
 }
@@ -205,7 +210,7 @@ func GetCacheRatio(name string) (float64, bool) {
 func GetCreateCacheRatio(name string) (float64, bool) {
 	ratio, ok := getModelPricingValue(createCacheRatioMap, name)
 	if !ok {
-		return 1.25, false // Default to 1.25 if not found
+		return DefaultCreateCacheRatio, false
 	}
 	return ratio, true
 }
