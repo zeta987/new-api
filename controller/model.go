@@ -21,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -380,12 +381,17 @@ func EnabledListModels(c *gin.Context) {
 	models := make([]string, 0)
 	seen := make(map[string]bool)
 	for _, name := range model.GetEnabledModels() {
+		// Report the key a price would actually be configured under, so the
+		// unset-price view never lists a variant that is already covered. The
+		// chain mirrors ModelPricingCandidates: the OpenAI families, then the
+		// plain effort suffixes, then the wildcard/prefix normalization that
+		// still owns GLM and the thinking-budget aliases.
 		if base, known := reasoning.OpenAIReasoningBaseModel(name); known {
 			name = base
 		} else if suffixBase := reasoning.EffortSuffixBaseModelName(name); suffixBase != "" {
-			// Prices are configured per base model, so the unset-price view has
-			// to collapse effort variants for every family, not just OpenAI.
 			name = suffixBase
+		} else if formatted := ratio_setting.FormatMatchingModelName(name); formatted != "" {
+			name = formatted
 		}
 		if !seen[name] {
 			seen[name] = true

@@ -173,6 +173,10 @@ func TestEnabledModelsCollapsesEveryFamilyToItsBase(t *testing.T) {
 		"claude-fable-5", "claude-fable-5-high", "claude-fable-5-max",
 		"deepseek-v4-pro-none", "deepseek-v4-pro-high",
 		"kimi-k3-low", "grok-4.6-xhigh", "custom-model",
+		// GLM collapses through FormatMatchingModelName rather than the plain
+		// effort-suffix normalizer, so it needs the third link of the chain.
+		// glm-5.3-flashx must stay distinct from glm-5.3.
+		"glm-5.3-high", "glm-5.3-flash-max", "glm-5.3-flashx", "glm-5.3-flashx-low",
 	} {
 		require.NoError(t, db.Create(&model.Ability{Group: "default", Model: name, ChannelId: 812, Enabled: true}).Error)
 	}
@@ -181,7 +185,10 @@ func TestEnabledModelsCollapsesEveryFamilyToItsBase(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	EnabledListModels(ctx)
 	assert.ElementsMatch(t,
-		[]string{"claude-fable-5", "deepseek-v4-pro", "kimi-k3", "grok-4.6", "custom-model"},
+		[]string{
+			"claude-fable-5", "deepseek-v4-pro", "kimi-k3", "grok-4.6", "custom-model",
+			"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx",
+		},
 		decodeUserModelsResponse(t, recorder),
 	)
 }
