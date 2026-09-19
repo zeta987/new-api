@@ -1031,3 +1031,16 @@ rc.30 及更早的版本已由前述 157 OID 快照涵蓋，不在此重複。`p
 | `refs/heads/release/v1.0.0-rc.34` | `0accceb3d1bf5c0aae3783a6db87872bafd41d24` | 是 |
 | `refs/heads/release/v1.0.0-rc.36` | `f37e120f9df067745964eade61a6b0927af04258` | 是 |
 | `refs/heads/release/v1.0.0-rc.37` | `28898a471c67c8d18456e353f80d758b2b622282` | 否 |
+
+### rc.30 兩條 ref 的補記
+
+`dev/v1.0.0-rc.30` 與 `release/v1.0.0-rc.30` 剪除當下的 tip 都是
+`3cfb61cf2fd6643fa7c0af7dfbbd1f11b8f2d853`，origin 上兩條同值。該 OID 就是快照
+邊界一節指名排除的最終 `docs: refresh zeta changelog` 提交，其父提交
+`50f0f0d13f09b08601bc15ce2e40bf989e351e3e` 已記錄為 rc.30 的釋出上界，因此這不是
+遺漏而是預期差異。為了讓剪除後仍能直接由本文件定位這兩條 ref，在此明確補記。
+
+| Ref | Full OID | 存在於 origin |
+| --- | --- | --- |
+| `refs/heads/dev/v1.0.0-rc.30` | `3cfb61cf2fd6643fa7c0af7dfbbd1f11b8f2d853` | 是 |
+| `refs/heads/release/v1.0.0-rc.30` | `3cfb61cf2fd6643fa7c0af7dfbbd1f11b8f2d853` | 是 |
