@@ -463,6 +463,45 @@ func isGLMReasoningEffort(effort string) bool {
 	}
 }
 
+// KimiEffortSuffixes is the complete Kimi effort vocabulary. It deliberately
+// excludes "-thinking", which names a distinct model rather than an effort
+// level, so kimi-k2-thinking stays an opaque model id.
+var KimiEffortSuffixes = []string{"-none", "-low", "-high", "-max"}
+
+// IsKimiReasoningEffortModel reports whether modelName is a bare Kimi base
+// model, i.e. a kimi- model that does not already end in an effort level. A
+// name such as kimi-low is treated as its own model, not as a suffixed one.
+func IsKimiReasoningEffortModel(modelName string) bool {
+	if !strings.HasPrefix(modelName, "kimi-") {
+		return false
+	}
+	remainder := strings.TrimPrefix(modelName, "kimi-")
+	if remainder == "" || strings.HasPrefix(remainder, "-") {
+		return false
+	}
+	if lastHyphen := strings.LastIndex(remainder, "-"); lastHyphen >= 0 {
+		remainder = remainder[lastHyphen+1:]
+	}
+	return !isKimiReasoningEffort(remainder)
+}
+
+func ParseKimiReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
+	baseModel, effort, ok = TrimEffortSuffixWithSuffixes(modelName, KimiEffortSuffixes)
+	if !ok || !IsKimiReasoningEffortModel(baseModel) {
+		return modelName, "", false
+	}
+	return baseModel, effort, true
+}
+
+func isKimiReasoningEffort(effort string) bool {
+	switch effort {
+	case "none", "low", "high", "max":
+		return true
+	default:
+		return false
+	}
+}
+
 func splitGPT56Model(modelName string) (baseModel string, suffix string, ok bool) {
 	for _, candidate := range gpt56Models {
 		if modelName == candidate {

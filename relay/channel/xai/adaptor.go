@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 
@@ -78,14 +79,14 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if info != nil && info.UpstreamModelName != "" {
 		upstreamModelName = info.UpstreamModelName
 	}
-	if baseModel, effort, ok := parseGrokReasoningEffortSuffix(upstreamModelName); ok {
+	if baseModel, effort, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName); ok {
 		request.Model = baseModel
 		request.ReasoningEffort = effort
 		if info != nil {
 			info.UpstreamModelName = baseModel
 			info.ReasoningEffort = effort
 		}
-	} else if _, _, ok := parseStandardGrokVersion(upstreamModelName); ok {
+	} else if reasoning.IsStandardGrokModel(upstreamModelName) {
 		request.Model = upstreamModelName
 		if info != nil {
 			info.ReasoningEffort = request.ReasoningEffort
@@ -128,7 +129,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		request.Model = upstreamModelName
 	}
 
-	if baseModel, effort, ok := parseGrokReasoningEffortSuffix(upstreamModelName); ok {
+	if baseModel, effort, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName); ok {
 		request.Model = baseModel
 		if request.Reasoning == nil {
 			request.Reasoning = &dto.Reasoning{}
@@ -138,7 +139,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 			info.UpstreamModelName = baseModel
 			info.ReasoningEffort = effort
 		}
-	} else if _, _, ok := parseStandardGrokVersion(upstreamModelName); ok {
+	} else if reasoning.IsStandardGrokModel(upstreamModelName) {
 		request.Model = upstreamModelName
 		if info != nil && request.Reasoning != nil {
 			info.ReasoningEffort = request.Reasoning.Effort

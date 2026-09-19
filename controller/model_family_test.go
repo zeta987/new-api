@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,4 +119,76 @@ func TestReasoningFamilySelectorsAndMetadata(t *testing.T) {
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &metadata))
 	assert.Equal(t, "gpt-6-astra-pro-max", metadata.ID)
 	assert.Contains(t, buildOpenAIModel("gpt-6-astra-pro-max", nil).SupportedEndpointTypes, constant.EndpointTypeOpenAIResponse)
+}
+
+// The routing guarantee behind base-only channel registration: every published
+// variant resolves back to the base that a channel actually registered. This
+// covers GLM too, whose collapse lives in FormatMatchingModelName rather than
+// in the suffix normalizer.
+func TestExpandedVariantsRouteBackToRegisteredBase(t *testing.T) {
+	for _, base := range []string{
+		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5",
+		"gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash",
+		"gemini-3.8-flash", "gemini-3.1-pro-preview",
+		"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx",
+		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.6",
+	} {
+		t.Run(base, func(t *testing.T) {
+			variants := reasoning.ExpandOpenAIReasoningModels([]string{base})
+			require.Greater(t, len(variants), 1)
+			for _, variant := range variants {
+				assert.Contains(t, model.ModelMatchCandidates(variant), base, variant)
+			}
+		})
+	}
+}
+
+func TestBuildOpenAIModelGivesVariantsTheBaseOwner(t *testing.T) {
+	for _, tc := range []struct {
+		base    string
+		variant string
+	}{
+		{base: "claude-opus-5", variant: "claude-opus-5-high"},
+		{base: "gemini-3.5-flash", variant: "gemini-3.5-flash-minimal"},
+		{base: "deepseek-v4-pro", variant: "deepseek-v4-pro-none"},
+		{base: "kimi-k3", variant: "kimi-k3-max"},
+	} {
+		t.Run(tc.variant, func(t *testing.T) {
+			owners := map[string]string{tc.base: "fixture-owner"}
+			assert.Equal(t, "fixture-owner", buildOpenAIModel(tc.variant, owners).OwnedBy)
+			// Without an owner entry the variant must not be left as "custom"
+			// when the base model is a known one.
+			assert.Equal(t,
+				buildOpenAIModel(tc.base, nil).OwnedBy,
+				buildOpenAIModel(tc.variant, nil).OwnedBy,
+			)
+		})
+	}
+}
+
+func TestEnabledModelsCollapsesEveryFamilyToItsBase(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.Channel{Id: 812, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Key: "fixture"}).Error)
+	for _, name := range []string{
+		"claude-fable-5", "claude-fable-5-high", "claude-fable-5-max",
+		"deepseek-v4-pro-none", "deepseek-v4-pro-high",
+		"kimi-k3-low", "grok-4.6-xhigh", "custom-model",
+		// GLM collapses through FormatMatchingModelName rather than the plain
+		// effort-suffix normalizer, so it needs the third link of the chain.
+		// glm-5.3-flashx must stay distinct from glm-5.3.
+		"glm-5.3-high", "glm-5.3-flash-max", "glm-5.3-flashx", "glm-5.3-flashx-low",
+	} {
+		require.NoError(t, db.Create(&model.Ability{Group: "default", Model: name, ChannelId: 812, Enabled: true}).Error)
+	}
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	EnabledListModels(ctx)
+	assert.ElementsMatch(t,
+		[]string{
+			"claude-fable-5", "deepseek-v4-pro", "kimi-k3", "grok-4.6", "custom-model",
+			"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx",
+		},
+		decodeUserModelsResponse(t, recorder),
+	)
 }

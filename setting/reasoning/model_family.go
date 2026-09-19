@@ -24,6 +24,14 @@ func ExpandOpenAIReasoningModels(names []string) []string {
 			variants = kitreasoning.OpenAIReasoningModelNames(name)
 		} else if kitreasoning.IsOpenAIReasoningWildcard(name) {
 			continue
+		} else if !model_setting.ShouldPreserveThinkingSuffix(name) &&
+			!kitreasoning.ParseModelModifiers(name).HasModifiers() {
+			// Claude, Gemini, GLM, DeepSeek, Kimi and grok publish their effort
+			// variants from a bare base registration, so a channel only has to
+			// register the base name. Unknown names expand to themselves.
+			if expanded := kitreasoning.EffortSuffixModelNames(name); expanded != nil {
+				variants = expanded
+			}
 		}
 		for _, variant := range variants {
 			if seen[variant] || (model_setting.ShouldPreserveThinkingSuffix(variant) && variant != name) {

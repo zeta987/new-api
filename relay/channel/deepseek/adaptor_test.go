@@ -61,13 +61,78 @@ func TestApplyDeepSeekV4LowSuffixAcrossRelayFormats(t *testing.T) {
 	})
 }
 
-func deepSeekLowTestRelayInfo(model string) *relaycommon.RelayInfo {
+// deepSeekLowTestRelayInfo builds a relay info whose upstream name defaults to
+// the origin name. Pass upstream to model what a model mapping leaves behind.
+func deepSeekLowTestRelayInfo(model string, upstream ...string) *relaycommon.RelayInfo {
+	upstreamModel := model
+	if len(upstream) > 0 {
+		upstreamModel = upstream[0]
+	}
 	return &relaycommon.RelayInfo{
 		OriginModelName: model,
 		ChannelMeta: &relaycommon.ChannelMeta{
-			UpstreamModelName: model,
+			UpstreamModelName: upstreamModel,
 		},
 	}
+}
+
+// A model mapping that replaces the suffixed alias with the base model (or a
+// pinned snapshot of it) leaves the effort only on the origin name.
+func TestApplyDeepSeekV4SuffixRecoversEffortAfterMapping(t *testing.T) {
+	t.Run("OpenAI chat completions", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "deepseek-v4-pro"}
+		info := deepSeekLowTestRelayInfo("deepseek-v4-pro-low", "deepseek-v4-pro")
+
+		require.NoError(t, applyDeepSeekV4OpenAIThinkingSuffix(info, request))
+		assert.Equal(t, "deepseek-v4-pro", request.Model)
+		assert.Equal(t, "enabled", gjson.GetBytes(request.THINKING, "type").String())
+		assert.Equal(t, "low", request.ReasoningEffort)
+		assert.Equal(t, "low", info.ReasoningEffort)
+	})
+
+	t.Run("Anthropic messages", func(t *testing.T) {
+		request := &dto.ClaudeRequest{Model: "deepseek-v4-pro"}
+		info := deepSeekLowTestRelayInfo("deepseek-v4-pro-low", "deepseek-v4-pro")
+
+		require.NoError(t, applyDeepSeekV4ClaudeThinkingSuffix(info, request))
+		assert.Equal(t, "deepseek-v4-pro", request.Model)
+		require.NotNil(t, request.Thinking)
+		assert.Equal(t, "enabled", request.Thinking.Type)
+		assert.Equal(t, "low", gjson.GetBytes(request.OutputConfig, "effort").String())
+		assert.Equal(t, "low", info.ReasoningEffort)
+	})
+
+	t.Run("Responses", func(t *testing.T) {
+		request := &dto.OpenAIResponsesRequest{Model: "deepseek-v4-pro"}
+		info := deepSeekLowTestRelayInfo("deepseek-v4-pro-low", "deepseek-v4-pro")
+
+		applyDeepSeekV4ResponsesThinkingSuffix(info, request)
+		assert.Equal(t, "deepseek-v4-pro", request.Model)
+		require.NotNil(t, request.Reasoning)
+		assert.Equal(t, "low", request.Reasoning.Effort)
+		assert.Equal(t, "low", info.ReasoningEffort)
+	})
+
+	t.Run("snapshot mapping target is preserved", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "deepseek-v4-pro-0501"}
+		info := deepSeekLowTestRelayInfo("deepseek-v4-pro-high", "deepseek-v4-pro-0501")
+
+		require.NoError(t, applyDeepSeekV4OpenAIThinkingSuffix(info, request))
+		assert.Equal(t, "deepseek-v4-pro-0501", request.Model)
+		assert.Equal(t, "high", request.ReasoningEffort)
+		assert.Equal(t, "deepseek-v4-pro-0501", info.UpstreamModelName)
+		assert.Equal(t, "high", info.ReasoningEffort)
+	})
+
+	t.Run("unrelated mapping target is left alone", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "deepseek-chat"}
+		info := deepSeekLowTestRelayInfo("deepseek-v4-pro-high", "deepseek-chat")
+
+		require.NoError(t, applyDeepSeekV4OpenAIThinkingSuffix(info, request))
+		assert.Equal(t, "deepseek-chat", request.Model)
+		assert.Empty(t, request.ReasoningEffort)
+		assert.Empty(t, info.ReasoningEffort)
+	})
 }
 
 func TestApplyDeepSeekV4HighSuffixAcrossRelayFormats(t *testing.T) {

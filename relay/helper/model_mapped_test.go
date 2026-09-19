@@ -65,6 +65,36 @@ func TestModelMappedHelperDetectsCycleAfterGLMBaseFallback(t *testing.T) {
 	require.EqualError(t, err, "model_mapping_contains_cycle")
 }
 
+// An identity mapping on the base model is the shape that strips the effort
+// suffix from the upstream name: the base fallback matches, then the second
+// pass exits on mappedModel == currentModel with IsModelMapped still true.
+func TestModelMappedHelperIdentityBaseMappingDropsEffortSuffix(t *testing.T) {
+	tests := []struct {
+		origin  string
+		mapping string
+		want    string
+	}{
+		{origin: "kimi-k3-high", mapping: `{"kimi-k3":"kimi-k3"}`, want: "kimi-k3"},
+		{origin: "deepseek-v4-pro-high", mapping: `{"deepseek-v4-pro":"deepseek-v4-pro"}`, want: "deepseek-v4-pro"},
+		{origin: "kimi-k3-high", mapping: `{"kimi-k3":"kimi-k3-0501"}`, want: "kimi-k3-0501"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.origin+" -> "+tt.want, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Set("model_mapping", tt.mapping)
+			request := &dto.GeneralOpenAIRequest{Model: tt.origin}
+			info := glmMappingRelayInfo(tt.origin)
+
+			require.NoError(t, ModelMappedHelper(c, info, request))
+			assert.True(t, info.IsModelMapped)
+			assert.Equal(t, tt.origin, info.OriginModelName)
+			assert.Equal(t, tt.want, info.UpstreamModelName)
+			assert.Equal(t, tt.want, request.Model)
+		})
+	}
+}
+
 func glmMappingRelayInfo(modelName string) *relaycommon.RelayInfo {
 	return &relaycommon.RelayInfo{
 		OriginModelName: modelName,
