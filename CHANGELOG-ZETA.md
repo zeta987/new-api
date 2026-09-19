@@ -962,3 +962,72 @@ v1.0.0-rc.25|Unreleased|552bc0dc411ef9880f5ddc97801fd2d2f48cbe11
 - `59ac0efbd7cc44925397009fd2910f765a865fc7`
 
 Archive 與正式帳本的交集為 0 個 OID，兩組 archive 之間的重複數亦為 0。
+
+## 規則 17 剪除前的 rc.32–rc.37 ref 快照
+
+2026-09-19 依規則 17 剪除 rc.38 以前的版本分支之前，先記錄這些 ref 的 tip OID，
+使分支消失後版本歸屬仍可重現。共 51 條，其中 34 條同時存在於 origin；逐條核對過
+本地與 origin 的 OID，不一致數為 0，故只列一欄。
+
+rc.30 及更早的版本已由前述 157 OID 快照涵蓋，不在此重複。`pr/olivertzeng/3517`
+依規則 17 屬於本地檢視用 ref，不在剪除範圍，也不記錄。rc.38 的工作分支
+`feat/rc38/effort-suffix-pricing` 與 `fix/rc38/glm-collapse-via-model` 尚未剪除，
+其內容已由 release merge `9b50b14e8935e9c8b4f464a36f9516cb872265c0` 與主題備份
+`f50dfa02fd2266444320a4fd47c910f5f655e57d` 涵蓋。
+
+本快照只記錄 tip，不展開各分支的完整 OID 集合；這些分支的行為已全部整合進 rc.38
+的 release 圖或對應主題備份，tip 足以在需要時由 reflog 或 GitHub 端重新定位。
+
+| Ref | Full OID | 存在於 origin |
+| --- | --- | --- |
+| `refs/heads/dev/v1.0.0-rc.32` | `2a673c04b2f2b22b85b700c188c5f5e5fc02e2be` | 是 |
+| `refs/heads/dev/v1.0.0-rc.33` | `9ad2cd30c78b9122548b00c6a24b42b1dd0ffa54` | 是 |
+| `refs/heads/dev/v1.0.0-rc.34` | `0accceb3d1bf5c0aae3783a6db87872bafd41d24` | 是 |
+| `refs/heads/dev/v1.0.0-rc.36` | `f37e120f9df067745964eade61a6b0927af04258` | 是 |
+| `refs/heads/feat/rc25/glm-effort-openai-openrouter` | `5fd1641ae442a24ee7d5c70e7a70186ae6417af1` | 是 |
+| `refs/heads/feat/rc32/gpt-6-astra` | `f68c8fad4c62929347cb8ac881fd20ebf1527076` | 否 |
+| `refs/heads/feat/rc32/model-family-discovery` | `a246c71d0f2ddcf0fbda18f3aeda4d06671ea313` | 否 |
+| `refs/heads/feat/rc33/kimi-tool-loop` | `0f01c5742305ab7f24cfadf0866f6b77e03d965c` | 否 |
+| `refs/heads/feat/rc33/qwen-effort-family` | `92a97d16958c812547b5ad5f6a86d6b7f35cc801` | 否 |
+| `refs/heads/feat/v1.0.0-rc.32/chatcompletions-responses-compat` | `542e52a92d2e5fe482f0f922ae0763cf21796e59` | 是 |
+| `refs/heads/feat/v1.0.0-rc.32/reasoning-model-support` | `b7ca52a27aef3fd56f6b470b7c530a486165302d` | 是 |
+| `refs/heads/feat/v1.0.0-rc.33/chatcompletions-responses-compat` | `9a2c64a76d19544e45e62238874990e899eaaf11` | 是 |
+| `refs/heads/feat/v1.0.0-rc.33/reasoning-model-support` | `73839392a08ce16daf2b6a0b1f69b94eeaa90954` | 是 |
+| `refs/heads/feat/v1.0.0-rc.34/chatcompletions-responses-compat` | `5549040809e967fbb51bdcd488ca8261cae64ee5` | 是 |
+| `refs/heads/feat/v1.0.0-rc.34/reasoning-model-support` | `41d48828daca5708a32177df76680d93d05e7d0c` | 是 |
+| `refs/heads/feat/v1.0.0-rc.36/chatcompletions-responses-compat` | `5911ef1dbd2146d36044a61ff5df352da05329ce` | 是 |
+| `refs/heads/feat/v1.0.0-rc.36/reasoning-model-support` | `3f98d2455097bd4d9d1a48abde91baa889669507` | 是 |
+| `refs/heads/fix/rc32/native-tool-conversion` | `204bb79eaaa2afb055da9e5914b74e58322f776e` | 否 |
+| `refs/heads/fix/rc33/astra-default-effort` | `9160a72440205962de65d34a7b0de3e418834586` | 否 |
+| `refs/heads/fix/rc33/gemini-image-context` | `274f0620dfbf1c4287e5f82c7b8972ac1258cade` | 否 |
+| `refs/heads/fix/rc33/openai-compat` | `dd991eaa7a9b70dee54cec17f2c16fdb0b64a719` | 否 |
+| `refs/heads/fix/rc33/qwen-responses-bridge` | `758effa08adafd8123c768f13cac4c4f72e34197` | 否 |
+| `refs/heads/fix/rc33/usage-logs-background-refresh` | `29ca685d9f99e1a52583ff977b57e9098833d64e` | 否 |
+| `refs/heads/fix/rc34/auth-rate-limit` | `449cba31ebffd948cebc5e37fe8946a5351047cf` | 否 |
+| `refs/heads/fix/rc34/deepseek-high-suffix` | `4f7788749686881e936044ef2572d279f4cba179` | 否 |
+| `refs/heads/fix/rc34/openrouter-channel-overrides` | `6c3e76b2bb5f05e2ebfd986cc37b73bbae9e2460` | 否 |
+| `refs/heads/fix/rc36/deepseek-flash-alias` | `de982ad3f1d881c9b7090de1cc5e6491365fa486` | 否 |
+| `refs/heads/fix/rc36/gemini-tool-combination` | `a99f8089fcc4d7b4a67d910e3843cb6f691101bd` | 否 |
+| `refs/heads/fix/rc36/override-contracts` | `40fb1ba1cc2b60ace99fff7f3a120482ee87407f` | 否 |
+| `refs/heads/fix/v1.0.0-rc.32/channel-affinity-test-isolation` | `3ac40bb1a2800ed37fbcf7f5871de0972bc0d6af` | 是 |
+| `refs/heads/fix/v1.0.0-rc.32/postgres-automigrate-compat` | `c84752eae3b03150007c1ed0bfcbad060d69bd9f` | 是 |
+| `refs/heads/fix/v1.0.0-rc.32/usage-logs-realtime-refresh` | `fcc232ed944cf216d5495c6b25efe91c06e3a491` | 是 |
+| `refs/heads/fix/v1.0.0-rc.33/channel-affinity-test-isolation` | `571d0d7fd51c756dbb60a09af7688c970e398c9d` | 是 |
+| `refs/heads/fix/v1.0.0-rc.33/model-pricing-deletion` | `e8e0d295e0a0c8a08979058fa7a404e1a88b695b` | 是 |
+| `refs/heads/fix/v1.0.0-rc.33/postgres-automigrate-compat` | `05dfa06e255625e85109902ba81d849dc94ff2d1` | 是 |
+| `refs/heads/fix/v1.0.0-rc.33/usage-logs-realtime-refresh` | `a622aeacba0581a7901aef0dc326aa2ff3b0d6ae` | 是 |
+| `refs/heads/fix/v1.0.0-rc.34/channel-affinity-test-isolation` | `da8c8a48c213f35a9cfcfa934e81f37fda7b5bf6` | 是 |
+| `refs/heads/fix/v1.0.0-rc.34/frontend-upgrade-compat` | `cf44be85f7c0ac5fa80737cfa9c75ac096d7c460` | 是 |
+| `refs/heads/fix/v1.0.0-rc.34/model-pricing-deletion` | `0dd028b9c9629815a955d2dcc231c1f06a95c51e` | 是 |
+| `refs/heads/fix/v1.0.0-rc.34/postgres-automigrate-compat` | `1e3bd9a0b841585d3dffd52b3451202259221670` | 是 |
+| `refs/heads/fix/v1.0.0-rc.34/usage-logs-realtime-refresh` | `9cd1fee50201323519ffd05c7f706cb00c5b5098` | 是 |
+| `refs/heads/fix/v1.0.0-rc.36/channel-affinity-test-isolation` | `e002ad663f5bf4277d0d9f60ba3606af5d293c9a` | 是 |
+| `refs/heads/fix/v1.0.0-rc.36/frontend-upgrade-compat` | `31b26b3d02000f017a264c8e682b712b28d5a71c` | 是 |
+| `refs/heads/fix/v1.0.0-rc.36/model-pricing-deletion` | `a3ca2d9dd0cc91ccfc8feeebcbf595f847011146` | 是 |
+| `refs/heads/fix/v1.0.0-rc.36/postgres-automigrate-compat` | `b7084d16c3d0b824e519107f7bef6809d2ac47d6` | 是 |
+| `refs/heads/fix/v1.0.0-rc.36/usage-logs-realtime-refresh` | `ffcb1cde05749a6f9eae4472b06df9cfb314ac9f` | 是 |
+| `refs/heads/release/v1.0.0-rc.32` | `2a673c04b2f2b22b85b700c188c5f5e5fc02e2be` | 是 |
+| `refs/heads/release/v1.0.0-rc.33` | `9ad2cd30c78b9122548b00c6a24b42b1dd0ffa54` | 是 |
+| `refs/heads/release/v1.0.0-rc.34` | `0accceb3d1bf5c0aae3783a6db87872bafd41d24` | 是 |
+| `refs/heads/release/v1.0.0-rc.36` | `f37e120f9df067745964eade61a6b0927af04258` | 是 |
+| `refs/heads/release/v1.0.0-rc.37` | `28898a471c67c8d18456e353f80d758b2b622282` | 否 |
