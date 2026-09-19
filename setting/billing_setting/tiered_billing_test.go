@@ -54,6 +54,65 @@ func TestGPT56TieredBillingDoesNotMixCandidateKeys(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// Effort variants resolve through the base model's candidates, so a base
+// tiered_expr row prices them unless the variant carries its own billing mode.
+// This pins the precedence resolveBillingConfig already has; it asserts current
+// behavior and must not be used to justify changing that order.
+func TestEffortSuffixBillingModePrecedence(t *testing.T) {
+	originalModes := lo.Assign(billingSetting.BillingMode)
+	originalExprs := lo.Assign(billingSetting.BillingExpr)
+	t.Cleanup(func() {
+		billingSetting.BillingMode = originalModes
+		billingSetting.BillingExpr = originalExprs
+	})
+
+	billingSetting.BillingMode = map[string]string{
+		"claude-fable-5":      BillingModeTieredExpr,
+		"claude-fable-5-low":  BillingModeRatio,
+		"kimi-k3":             BillingModeTieredExpr,
+		"deepseek-v4-pro":     BillingModeTieredExpr,
+		"deepseek-v4-pro-max": BillingModeRatio,
+	}
+	billingSetting.BillingExpr = map[string]string{
+		"claude-fable-5":  "tier(\"fable\", p * 2)",
+		"kimi-k3":         "tier(\"kimi\", p * 1)",
+		"deepseek-v4-pro": "tier(\"deepseek\", p * 3)",
+	}
+
+	tests := []struct {
+		model    string
+		wantMode string
+		wantExpr string
+	}{
+		// No billing_mode entry of its own: the base expression answers, even
+		// though defaultModelRatio seeds a ratio row for the variant.
+		{model: "claude-fable-5-high", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"fable\", p * 2)"},
+		{model: "claude-fable-5-max", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"fable\", p * 2)"},
+		{model: "claude-fable-5", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"fable\", p * 2)"},
+		// The variant carries its own mode, so candidate[0] wins. A row saved
+		// through the admin page always writes its own billing_mode entry.
+		{model: "claude-fable-5-low", wantMode: BillingModeRatio},
+		{model: "deepseek-v4-pro-max", wantMode: BillingModeRatio},
+		// Families wired up in this branch reach their base expression too.
+		{model: "kimi-k3-high", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"kimi\", p * 1)"},
+		{model: "kimi-k3-none", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"kimi\", p * 1)"},
+		{model: "deepseek-v4-pro-high", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"deepseek\", p * 3)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			assert.Equal(t, tt.wantMode, GetBillingMode(tt.model))
+			expr, ok := GetBillingExpr(tt.model)
+			if tt.wantExpr == "" {
+				assert.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			assert.Equal(t, tt.wantExpr, expr)
+		})
+	}
+}
+
 func TestSmokeTestTaskExprValidatesDeclaredUsageVectors(t *testing.T) {
 	videoSchema := map[string]jsplugin.UsageFieldSchema{
 		"seconds": {Type: "number", Unit: "second"},

@@ -74,6 +74,59 @@ func TestGLMBasePredicateAndSuffixParserAreMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestParseKimiReasoningEffortSuffix(t *testing.T) {
+	tests := []struct {
+		model  string
+		base   string
+		effort string
+		ok     bool
+	}{
+		{model: "kimi-k3-none", base: "kimi-k3", effort: "none", ok: true},
+		{model: "kimi-k3-low", base: "kimi-k3", effort: "low", ok: true},
+		{model: "kimi-k3-high", base: "kimi-k3", effort: "high", ok: true},
+		{model: "kimi-k3-max", base: "kimi-k3", effort: "max", ok: true},
+		{model: "kimi-k3-turbo-high", base: "kimi-k3-turbo", effort: "high", ok: true},
+		// Outside the none/low/high/max vocabulary.
+		{model: "kimi-k3-medium", base: "kimi-k3-medium"},
+		{model: "kimi-k3-xhigh", base: "kimi-k3-xhigh"},
+		{model: "kimi-k3-minimal", base: "kimi-k3-minimal"},
+		// -thinking names a model, never an effort level.
+		{model: "kimi-k2-thinking", base: "kimi-k2-thinking"},
+		{model: "kimi-k3", base: "kimi-k3"},
+		{model: "kimi-k3-high-extra", base: "kimi-k3-high-extra"},
+		// A bare effort word is its own model name, not a suffixed one.
+		{model: "kimi-low", base: "kimi-low"},
+		{model: "kimi--low", base: "kimi--low"},
+		{model: "KIMI-K3-high", base: "KIMI-K3-high"},
+		{model: "custom-kimi-k3-high", base: "custom-kimi-k3-high"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.model, func(t *testing.T) {
+			base, effort, ok := ParseKimiReasoningEffortSuffix(test.model)
+			assert.Equal(t, test.base, base)
+			assert.Equal(t, test.effort, effort)
+			assert.Equal(t, test.ok, ok)
+		})
+	}
+}
+
+func TestIsKimiReasoningEffortModel(t *testing.T) {
+	for _, model := range []string{"kimi-k2-thinking", "kimi-k3", "kimi-k3-turbo", "kimi-latest", "kimi-k3-medium"} {
+		assert.True(t, IsKimiReasoningEffortModel(model), model)
+	}
+	for _, model := range []string{"kimi-k3-high", "kimi-k3-max", "kimi-low", "kimi--low", "KIMI-K3", "custom-kimi-k3"} {
+		assert.False(t, IsKimiReasoningEffortModel(model), model)
+	}
+}
+
+func TestKimiBasePredicateAndSuffixParserAreMutuallyExclusive(t *testing.T) {
+	for _, model := range []string{"kimi-k3", "kimi-k3-high", "kimi-k3-turbo-max", "kimi-k2-thinking", "kimi-low", "kimi--low"} {
+		_, _, parsed := ParseKimiReasoningEffortSuffix(model)
+		assert.False(t, parsed && IsKimiReasoningEffortModel(model), model)
+	}
+}
+
 func TestParseGeminiModelSuffixNoThinkingDisablesReasoning(t *testing.T) {
 	t.Parallel()
 

@@ -1,11 +1,17 @@
-package xai
+package reasoning
 
 import (
 	"strconv"
 	"strings"
 )
 
-func parseGrokReasoningEffortSuffix(modelName string) (string, string, bool) {
+// ParseGrokReasoningEffortSuffix splits a grok effort alias into its base model
+// and effort. Only standard grok-<major>.<minor> names from 4.5 onwards carry
+// effort aliases, and 4.5 itself does not accept xhigh.
+//
+// It lives here rather than in the xAI adaptor so pricing, routing and model
+// list expansion share one vocabulary.
+func ParseGrokReasoningEffortSuffix(modelName string) (string, string, bool) {
 	separatorIndex := strings.LastIndex(modelName, "-")
 	if separatorIndex < 0 {
 		return modelName, "", false
@@ -27,6 +33,13 @@ func parseGrokReasoningEffortSuffix(modelName string) (string, string, bool) {
 		return modelName, "", false
 	}
 	return baseModel, effort, true
+}
+
+// IsStandardGrokModel reports whether modelName is a bare grok-<major>.<minor>
+// model name, i.e. one that carries no effort alias of its own.
+func IsStandardGrokModel(modelName string) bool {
+	_, _, ok := parseStandardGrokVersion(modelName)
+	return ok
 }
 
 func parseStandardGrokVersion(modelName string) (int, int, bool) {

@@ -138,6 +138,68 @@ func TestKimiK3ReasoningEffortConversion(t *testing.T) {
 		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"none"}`, payload)
 	})
 
+	t.Run("moonshot recovers effort from origin after identity mapping", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3"}
+		info := &relaycommon.RelayInfo{
+			OriginModelName: "kimi-k3-high",
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType:       constant.ChannelTypeMoonshot,
+				IsModelMapped:     true,
+				UpstreamModelName: "kimi-k3",
+			},
+		}
+
+		converted, err := (&moonshot.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+		got, payload := requireConvertedOpenAIRequest(t, converted, err)
+
+		assert.Equal(t, "kimi-k3", got.Model)
+		assert.Equal(t, "high", got.ReasoningEffort)
+		assert.Equal(t, "kimi-k3", info.UpstreamModelName)
+		assert.Equal(t, "high", info.ReasoningEffort)
+		assert.JSONEq(t, `{"model":"kimi-k3","reasoning_effort":"high"}`, payload)
+	})
+
+	t.Run("moonshot keeps a snapshot mapping target", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3-0501"}
+		info := &relaycommon.RelayInfo{
+			OriginModelName: "kimi-k3-high",
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType:       constant.ChannelTypeMoonshot,
+				IsModelMapped:     true,
+				UpstreamModelName: "kimi-k3-0501",
+			},
+		}
+
+		converted, err := (&moonshot.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+		got, payload := requireConvertedOpenAIRequest(t, converted, err)
+
+		// The mapping target must not be reverted to the base model.
+		assert.Equal(t, "kimi-k3-0501", got.Model)
+		assert.Equal(t, "high", got.ReasoningEffort)
+		assert.Equal(t, "kimi-k3-0501", info.UpstreamModelName)
+		assert.Equal(t, "high", info.ReasoningEffort)
+		assert.JSONEq(t, `{"model":"kimi-k3-0501","reasoning_effort":"high"}`, payload)
+	})
+
+	t.Run("moonshot ignores an unrelated mapping target", func(t *testing.T) {
+		request := &dto.GeneralOpenAIRequest{Model: "kimi-k2.6"}
+		info := &relaycommon.RelayInfo{
+			OriginModelName: "kimi-k3-high",
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType:       constant.ChannelTypeMoonshot,
+				IsModelMapped:     true,
+				UpstreamModelName: "kimi-k2.6",
+			},
+		}
+
+		converted, err := (&moonshot.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+		got, _ := requireConvertedOpenAIRequest(t, converted, err)
+
+		assert.Equal(t, "kimi-k2.6", got.Model)
+		assert.Empty(t, got.ReasoningEffort)
+		assert.Empty(t, info.ReasoningEffort)
+	})
+
 	t.Run("openai leaves kimi suffix unchanged", func(t *testing.T) {
 		request := &dto.GeneralOpenAIRequest{Model: "kimi-k3-max"}
 		info := &relaycommon.RelayInfo{

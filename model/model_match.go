@@ -37,3 +37,25 @@ func ModelMatchCandidates(modelName string) []string {
 	}
 	return candidates
 }
+
+// PricingKeyForModel returns the key a price for modelName would actually be
+// configured under, mirroring the order ModelPricingCandidates resolves in:
+// the OpenAI reasoning families, then a plain effort suffix, then the wildcard
+// and prefix normalization that still owns GLM and the thinking-budget
+// aliases. Views that list models against configured prices must collapse
+// through this, or a variant already covered by its base row looks unpriced.
+//
+// It lives here rather than in controller so callers reach ratio_setting
+// through this package's existing dependency instead of importing it directly.
+func PricingKeyForModel(modelName string) string {
+	if base, known := reasoning.OpenAIReasoningBaseModel(modelName); known {
+		return base
+	}
+	if suffixBase := reasoning.EffortSuffixBaseModelName(modelName); suffixBase != "" {
+		return suffixBase
+	}
+	if formatted := ratio_setting.FormatMatchingModelName(modelName); formatted != "" {
+		return formatted
+	}
+	return modelName
+}

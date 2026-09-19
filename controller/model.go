@@ -176,9 +176,17 @@ func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.Open
 		oaiModel.OwnedBy = owner
 	}
 	base, knownFamily := reasoning.OpenAIReasoningBaseModel(modelName)
-	if knownFamily && base != modelName {
+	// Effort variants expanded from a base model inherit that base's owner;
+	// without this they would all be reported as "custom".
+	ownerBase, hasOwnerBase := base, knownFamily
+	if !hasOwnerBase {
+		if suffixBase := reasoning.EffortSuffixBaseModelName(modelName); suffixBase != "" {
+			ownerBase, hasOwnerBase = suffixBase, true
+		}
+	}
+	if hasOwnerBase && ownerBase != modelName {
 		if oaiModel.OwnedBy == "custom" {
-			if baseModel, ok := openAIModelsMap[base]; ok {
+			if baseModel, ok := openAIModelsMap[ownerBase]; ok {
 				oaiModel.OwnedBy = baseModel.OwnedBy
 			}
 		}
@@ -372,9 +380,9 @@ func EnabledListModels(c *gin.Context) {
 	models := make([]string, 0)
 	seen := make(map[string]bool)
 	for _, name := range model.GetEnabledModels() {
-		if base, known := reasoning.OpenAIReasoningBaseModel(name); known {
-			name = base
-		}
+		// Report the key a price would actually be configured under, so the
+		// unset-price view never lists a variant that is already covered.
+		name = model.PricingKeyForModel(name)
 		if !seen[name] {
 			seen[name] = true
 			models = append(models, name)

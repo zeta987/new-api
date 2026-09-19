@@ -3,6 +3,7 @@ package helper
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -555,6 +556,206 @@ func TestModelPriceHelperCanonicalBillingLadder(t *testing.T) {
 		assert.Equal(t, "qwen3-max@thinking:on", info.BillingModelName)
 		assert.Equal(t, 3.0, priceData.ModelRatio)
 	})
+}
+
+// A single base-model row must price every plain effort variant of that model,
+// while neighbouring base models stay independent.
+func TestModelPriceHelperEffortSuffixUsesBaseRow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	savedRatios := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+	})
+
+	ratios := ratio_setting.GetModelRatioCopy()
+	for key := range ratios {
+		for _, family := range []string{"claude-fable-5", "gemini-3.8-flash", "deepseek-v4-pro", "deepseek-flash", "kimi-k3"} {
+			if strings.HasPrefix(key, family) {
+				delete(ratios, key)
+			}
+		}
+	}
+	ratios["claude-fable-5"] = 2.5
+	ratios["claude-fable-5-1"] = 4.0
+	ratios["gemini-3.8-flash"] = 0.3
+	ratios["deepseek-v4-pro"] = 0.5
+	ratios["deepseek-flash"] = 0.2
+	ratios["kimi-k3"] = 0.6
+	ratioJSON, err := common.Marshal(ratios)
+	require.NoError(t, err)
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(ratioJSON)))
+
+	oldSelfUse := operation_setting.SelfUseModeEnabled
+	operation_setting.SelfUseModeEnabled = false
+	t.Cleanup(func() { operation_setting.SelfUseModeEnabled = oldSelfUse })
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "default")
+
+	tests := []struct {
+		model string
+		want  float64
+	}{
+		{model: "claude-fable-5", want: 2.5},
+		{model: "claude-fable-5-high", want: 2.5},
+		{model: "claude-fable-5-max", want: 2.5},
+		{model: "claude-fable-5-1", want: 4.0},
+		{model: "claude-fable-5-1-high", want: 4.0},
+		{model: "claude-fable-5-1-max", want: 4.0},
+		{model: "gemini-3.8-flash-high", want: 0.3},
+		{model: "gemini-3.8-flash-minimal", want: 0.3},
+		{model: "deepseek-v4-pro-high", want: 0.5},
+		{model: "deepseek-v4-pro-max", want: 0.5},
+		{model: "deepseek-flash-max", want: 0.2},
+		{model: "kimi-k3-high", want: 0.6},
+		{model: "kimi-k3-max", want: 0.6},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tt.model,
+				UserGroup:       "default",
+				UsingGroup:      "default",
+			}
+			priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			assert.Empty(t, info.BillingModelName)
+			assert.Equal(t, tt.want, priceData.ModelRatio)
+		})
+	}
+}
+
+// A base row must not shadow a canonical per-effort row: collapsing the effort
+// suffix inside the pricing getters makes the origin name look configured, so
+// the canonical ladder has to be consulted before the origin.
+func TestModelPriceHelperEffortSuffixPrefersCanonicalOverBaseRow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	savedRatios := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+	})
+
+	ratios := ratio_setting.GetModelRatioCopy()
+	for key := range ratios {
+		if strings.HasPrefix(key, "claude-fable-5") || strings.HasPrefix(key, "gemini-3.8-flash") {
+			delete(ratios, key)
+		}
+	}
+	ratios["claude-fable-5"] = 2.5
+	ratios["claude-fable-5@effort:high@thinking:on"] = 4.0
+	ratios["claude-fable-5-xhigh"] = 5.0
+	ratios["claude-fable-5@effort:xhigh@thinking:on"] = 7.0
+	ratios["gemini-3.8-flash"] = 0.3
+	ratios["gemini-3.8-flash@thinking:on"] = 0.9
+	ratioJSON, err := common.Marshal(ratios)
+	require.NoError(t, err)
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(ratioJSON)))
+
+	oldSelfUse := operation_setting.SelfUseModeEnabled
+	operation_setting.SelfUseModeEnabled = false
+	t.Cleanup(func() { operation_setting.SelfUseModeEnabled = oldSelfUse })
+
+	geminiSettings := model_setting.GetGeminiSettings()
+	oldGemini := geminiSettings.ThinkingAdapterEnabled
+	geminiSettings.ThinkingAdapterEnabled = true
+	t.Cleanup(func() { geminiSettings.ThinkingAdapterEnabled = oldGemini })
+
+	tests := []struct {
+		model            string
+		wantBillingModel string
+		wantRatio        float64
+	}{
+		// The canonical effort row exists and must win over the base row.
+		{model: "claude-fable-5-high", wantBillingModel: "claude-fable-5@effort:high@thinking:on", wantRatio: 4.0},
+		// No canonical row for max: the ladder descends past the canonical names
+		// to the origin, which the base row now prices. The origin stays the
+		// billing identity so the usage log still shows the requested effort.
+		{model: "claude-fable-5-max", wantBillingModel: "", wantRatio: 2.5},
+		// Both an exact alias row and a canonical row configured: the canonical
+		// billing identity wins. Pins the precedence, does not endorse it.
+		{model: "claude-fable-5-xhigh", wantBillingModel: "claude-fable-5@effort:xhigh@thinking:on", wantRatio: 7.0},
+		// A legacy thinking alias reaches its canonical row the same way.
+		{model: "gemini-3.8-flash-thinking-8192", wantBillingModel: "gemini-3.8-flash@thinking:on", wantRatio: 0.9},
+		{model: "gemini-3.8-flash-low", wantBillingModel: "gemini-3.8-flash@thinking:on", wantRatio: 0.9},
+	}
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "default")
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tt.model,
+				UserGroup:       "default",
+				UsingGroup:      "default",
+			}
+			priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantBillingModel, info.BillingModelName)
+			assert.Equal(t, tt.wantRatio, priceData.ModelRatio)
+		})
+	}
+}
+
+// The deployment prices models with billing expressions, so the base row that
+// serves every effort variant is a tiered_expr row, not a ratio row.
+func TestModelPriceHelperEffortSuffixUsesBaseTieredExpression(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"claude-fable-5":"tiered_expr","claude-fable-5@effort:high@thinking:on":"tiered_expr","kimi-k3":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"claude-fable-5":"tier(\"base\", p * 2)","claude-fable-5@effort:high@thinking:on":"tier(\"canonical\", p * 6)","kimi-k3":"tier(\"kimi\", p * 1)"}`,
+	}))
+
+	tests := []struct {
+		model            string
+		wantBillingModel string
+		wantTier         string
+	}{
+		{model: "claude-fable-5", wantBillingModel: "", wantTier: "base"},
+		// No canonical row for max: the base expression prices the variant.
+		{model: "claude-fable-5-max", wantBillingModel: "", wantTier: "base"},
+		// A canonical per-effort expression still outranks the base expression.
+		{model: "claude-fable-5-high", wantBillingModel: "claude-fable-5@effort:high@thinking:on", wantTier: "canonical"},
+		// kimi-k3 has no ratio row at all, so this only resolves if the Kimi
+		// suffix reaches the base model's expression.
+		{model: "kimi-k3-high", wantBillingModel: "", wantTier: "kimi"},
+		{model: "kimi-k3-none", wantBillingModel: "", wantTier: "kimi"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Set("group", "default")
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tt.model,
+				UserGroup:       "default",
+				UsingGroup:      "default",
+				BillingRequestInput: &billingexpr.RequestInput{
+					Body: []byte(`{}`),
+				},
+			}
+
+			_, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			require.NotNil(t, info.TieredBillingSnapshot)
+			assert.Equal(t, tt.wantBillingModel, info.BillingModelName)
+			assert.Equal(t, billing_setting.BillingModeTieredExpr, info.TieredBillingSnapshot.BillingMode)
+			assert.Equal(t, tt.wantTier, info.TieredBillingSnapshot.EstimatedTier)
+		})
+	}
 }
 
 func TestModelPriceHelperMigratesLegacyGeminiWildcardToCanonical(t *testing.T) {
