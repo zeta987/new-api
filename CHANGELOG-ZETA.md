@@ -24,6 +24,81 @@
 
 ## v1.0.0-rc.38
 
+2026-09-19 second release on the same upstream candidate: one pricing row per
+base model now serves every effort variant, and a channel model list carrying
+only base names still publishes every suffix through `/v1/models`. Promotion
+`9b50b14e8935e9c8b4f464a36f9516cb872265c0` merges nine commits from
+`feat/rc38/effort-suffix-pricing` and `fix/rc38/glm-collapse-via-model`;
+development tip `e4dd58314300f815b3c5bb9030de2584b4f3ea92`. The reusable slice
+is appended to `feat/v1.0.0-rc.38/reasoning-model-support` as
+`f50dfa02fd2266444320a4fd47c910f5f655e57d`. Covers Claude, Gemini 3.x, GLM
+5.3, DeepSeek V4, Kimi and Grok. Kimi and Grok gained shared suffix parsers:
+Kimi had none outside a hardcoded switch in the Moonshot adaptor, and Grok's
+parser was private to the xAI channel, so neither family's pricing could
+collapse before this.
+
+**An undercharge was introduced and caught before it shipped.** Feeding the
+suffix base into `ModelPricingCandidates` made `HasPriceOrRatioEntry` report
+the origin name as configured as soon as the base row existed, which made the
+canonical `@effort:`/`@thinking:` ladder unreachable. With
+`claude-fable-5` at 2.5 and `claude-fable-5@effort:high@thinking:on` at 4.0, a
+`claude-fable-5-high` request billed 2.5. `resolveBillingModelName` now asks
+the canonical names first, but only for origins whose plain effort suffix
+collapses; every other name keeps its previous candidate order.
+
+**Effort intent now survives a base-keyed model mapping.** Collapsing Kimi and
+DeepSeek in `BaseModelName` made `model_mapped.go`'s base fallback fire for
+them, and both adaptors read only the upstream name, so an identity mapping
+such as `{"kimi-k3":"kimi-k3"}` silently dropped `-high`: the user received a
+default-effort response while being billed the base row, and
+`other.reasoning_effort` was absent from the consume log. Both adaptors now
+recover the effort from `OriginModelName`, guarded by a base-prefix check so a
+cross-model mapping cannot inject an effort into a different model. The
+production channels carry no model mapping at all, so this was latent there.
+
+**A direct import destabilized an unrelated test.** Importing `ratio_setting`
+into `controller` to collapse GLM on the unset-price view changed that
+package's init order and made
+`TestSecurityEnrollmentPendingPasskeyRejectsChangedAuthorization/user_version`
+flaky: 0 failures in 21 runs on the release base against 2 in 13 on the
+branch, and adding only the import to the preceding commit, with no logic
+change, reproduced it at 1 in 15. The collapse chain moved to
+`model.PricingKeyForModel`; `model` already depends on `ratio_setting` and
+`controller` already depends on `model`, so the transitive init set is
+unchanged. Back to 0 failures in 15 runs. The passkey race itself is
+pre-existing and latent, and is not addressed here.
+
+**No schema change.** Verified against a restored copy of the production
+database (PostgreSQL 18.6, snapshot 2026-09-18): AutoMigrate was a complete
+no-op, with zero column, index and constraint differences and every row count
+unchanged, and a second startup issued no DDL.
+
+**Production configuration change applied the same day.** 49 per-effort
+pricing rows were deleted through the admin UI, 109 entries down to 60, under
+the rule that a variant row is removed only when the name left after stripping
+its suffix also has its own row. That rule preserved `qwen3.8-max`, which
+looks like `qwen3.8` plus `max` but is a base model with no `qwen3.8` row, and
+`claude-fable-5-1`, which a `claude-fable-5-` filter also matches. GLM needed
+no deletion because only its base rows remained. Channel model lists were left
+untouched, so discovery still comes from the ability table rather than
+expansion. The model square then showed every `kimi-k3` variant at the base's
+$3/$15 dynamic pricing with their own rows gone.
+
+Verification: `git diff --check`, `gofmt`, `go build ./...`, `go vet ./...`,
+`go test ./...` (46 packages ok), and an independent `GOWORK=off` relaykit
+build and test all passed. No frontend changes, so the web gate did not apply.
+A live instance was run against the restored production copy: with the effort
+pricing rows deleted, all 62 effort-suffixed models kept identical ratio,
+completion and cache values, and with self-use mode off, so the billing filter
+was active, every family's variants remained in `/v1/models`, which is the
+proof that the tiered expressions resolve through the base row and not only
+the legacy ratios. Pruning the ability table to base names left the exposed
+count unchanged at 191. Pre-existing and reproduced on the unmodified base:
+the intermittent HTTP/2 tests in `relay/channel`, failing 2 of 10 there
+against 0 of 10 on this branch. Zeabur deployment
+`6aade76ed6e6abeb19b6afaa` reached RUNNING with no errors in the runtime log
+and `/v1/models` answering in 121 ms.
+
 2026-09-19 upstream integration covering rc.37 and rc.38 in one release
 candidate; rc.37 was integrated and gated but never deployed, so its release
 branch exists only as the source of this one.
