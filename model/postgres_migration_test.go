@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
@@ -67,6 +68,62 @@ func createPostgresMigrationTestSchema(t *testing.T, db *gorm.DB, prefix string)
 		).Error)
 	})
 	return schemaName
+}
+
+func bindPostgresMigrationTestTable(db *gorm.DB, schemaName, tableName string) (*gorm.DB, error) {
+	if err := db.Exec(
+		"SET LOCAL search_path TO ?",
+		clause.Table{Name: schemaName},
+	).Error; err != nil {
+		return nil, err
+	}
+	return db.Table(tableName), nil
+}
+
+func beginPostgresMigrationTestSchema(t *testing.T, db *gorm.DB, prefix, tableName string) (*gorm.DB, string) {
+	t.Helper()
+	schemaName := createPostgresMigrationTestSchema(t, db, prefix)
+	tx := db.Begin()
+	require.NoError(t, tx.Error)
+	t.Cleanup(func() { require.NoError(t, tx.Rollback().Error) })
+	tableDB, err := bindPostgresMigrationTestTable(tx, schemaName, tableName)
+	require.NoError(t, err)
+	return tableDB, schemaName
+}
+
+func TestPostgresMigrationTestTableUsesLocalSearchPath(t *testing.T) {
+	recorder := &migrationSQLRecorder{}
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  "host=127.0.0.1 user=unused dbname=unused sslmode=disable",
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{
+		DryRun:               true,
+		DisableAutomaticPing: true,
+		Logger:               recorder,
+	})
+	require.NoError(t, err)
+
+	tableDB, err := bindPostgresMigrationTestTable(
+		db,
+		"isolated_schema",
+		postgresNamedUniqueMigrationTable,
+	)
+	require.NoError(t, err)
+	require.NoError(t, tableDB.Migrator().DropConstraint(
+		&postgresNamedUniqueMigration{},
+		postgresNamedUniqueMigrationConstraint,
+	))
+
+	recorder.mu.Lock()
+	statements := append([]string(nil), recorder.statements...)
+	recorder.mu.Unlock()
+	require.Len(t, statements, 2)
+	assert.Equal(t, `SET LOCAL search_path TO "isolated_schema"`, statements[0])
+	assert.Equal(t,
+		`ALTER TABLE "postgres_named_unique_override_records" DROP CONSTRAINT "idx_postgres_named_unique_migrations_key"`,
+		statements[1],
+	)
+	assert.NotContains(t, statements[1], "isolated_schema")
 }
 
 func TestConfigurePostgresMigrationTimeouts(t *testing.T) {
@@ -371,13 +428,29 @@ func TestMigratePrefillGroupUniquenessContractWaitsForLockAndReplacesLegacy(t *t
 
 func TestChooseDBPostgreSQLRepeatedAutoMigrateNamedUniqueIndex(t *testing.T) {
 	db := openPostgresMigrationTestDB(t)
-	tableName := createPostgresMigrationTestSchema(t, db, "postgres_named_unique") + "." + postgresNamedUniqueMigrationTable
-
-	tableDB := db.Table(tableName)
-	require.NoError(t, tableDB.AutoMigrate(&postgresNamedUniqueMigration{}))
+	externalSchema := createPostgresMigrationTestSchema(t, db, "postgres_named_unique_external")
+	externalTableName := externalSchema + "." + postgresNamedUniqueMigrationTable
+	externalTableDB := db.Table(externalTableName)
+	require.NoError(t, externalTableDB.AutoMigrate(&postgresNamedUniqueMigration{}))
 	require.NoError(t, db.Exec(
 		"ALTER TABLE ? ADD CONSTRAINT ? UNIQUE (?)",
-		clause.Table{Name: tableName},
+		clause.Table{Name: externalTableName},
+		clause.Column{Name: postgresNamedUniqueMigrationConstraint},
+		clause.Column{Name: "key"},
+	).Error)
+	require.NoError(t, externalTableDB.Create(&postgresNamedUniqueMigration{Key: "external-preserved"}).Error)
+
+	tableDB, isolatedSchema := beginPostgresMigrationTestSchema(
+		t,
+		db,
+		"postgres_named_unique_isolated",
+		postgresNamedUniqueMigrationTable,
+	)
+
+	require.NoError(t, tableDB.AutoMigrate(&postgresNamedUniqueMigration{}))
+	require.NoError(t, tableDB.Exec(
+		"ALTER TABLE ? ADD CONSTRAINT ? UNIQUE (?)",
+		clause.Table{Name: postgresNamedUniqueMigrationTable},
 		clause.Column{Name: postgresNamedUniqueMigrationConstraint},
 		clause.Column{Name: "key"},
 	).Error)
@@ -390,32 +463,65 @@ func TestChooseDBPostgreSQLRepeatedAutoMigrateNamedUniqueIndex(t *testing.T) {
 	// vendors.name carry the same legacy constraint alongside their delete-aware
 	// unique indexes.
 	require.NoError(t, tableDB.AutoMigrate(&postgresNamedUniqueMigration{}))
-	assert.False(t, tableDB.Migrator().HasConstraint(
-		&postgresNamedUniqueMigration{},
+
+	var isolatedConstraintCount int64
+	require.NoError(t, tableDB.Raw(`
+SELECT count(*)
+FROM information_schema.table_constraints
+WHERE table_schema = ? AND table_name = ? AND constraint_name = ?`,
+		isolatedSchema,
+		postgresNamedUniqueMigrationTable,
 		postgresNamedUniqueMigrationConstraint,
-	))
-	assert.True(t, tableDB.Migrator().HasIndex(
-		&postgresNamedUniqueMigration{},
+	).Scan(&isolatedConstraintCount).Error)
+	assert.Zero(t, isolatedConstraintCount)
+
+	var isolatedIndexCount int64
+	require.NoError(t, tableDB.Raw(`
+SELECT count(*)
+FROM pg_catalog.pg_indexes
+WHERE schemaname = ? AND tablename = ? AND indexname = ?`,
+		isolatedSchema,
+		postgresNamedUniqueMigrationTable,
 		postgresNamedUniqueMigrationIndex,
-	))
+	).Scan(&isolatedIndexCount).Error)
+	assert.EqualValues(t, 1, isolatedIndexCount)
+
+	var externalConstraintCount int64
+	require.NoError(t, db.Raw(`
+SELECT count(*)
+FROM information_schema.table_constraints
+WHERE table_schema = ? AND table_name = ? AND constraint_name = ?`,
+		externalSchema,
+		postgresNamedUniqueMigrationTable,
+		postgresNamedUniqueMigrationConstraint,
+	).Scan(&externalConstraintCount).Error)
+	assert.EqualValues(t, 1, externalConstraintCount)
+
+	var externalRows int64
+	require.NoError(t, externalTableDB.Model(&postgresNamedUniqueMigration{}).Count(&externalRows).Error)
+	assert.EqualValues(t, 1, externalRows)
 }
 
 func TestChooseDBPostgreSQLRetainsSavepointSupport(t *testing.T) {
 	db := openPostgresMigrationTestDB(t)
-	tableName := createPostgresMigrationTestSchema(t, db, "postgres_savepoint") + "." + postgresNamedUniqueMigrationTable
-	tableDB := db.Table(tableName)
+	tableDB, _ := beginPostgresMigrationTestSchema(
+		t,
+		db,
+		"postgres_savepoint",
+		postgresNamedUniqueMigrationTable,
+	)
 	require.NoError(t, tableDB.AutoMigrate(&postgresNamedUniqueMigration{}))
 
-	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.SavePoint("postgres_migration_test").Error; err != nil {
+	require.NoError(t, tableDB.Transaction(func(savepointTx *gorm.DB) error {
+		if err := savepointTx.SavePoint("postgres_migration_test").Error; err != nil {
 			return err
 		}
-		if err := tx.Table(tableName).Create(
+		if err := savepointTx.Table(postgresNamedUniqueMigrationTable).Create(
 			&postgresNamedUniqueMigration{Key: "rolled-back"},
 		).Error; err != nil {
 			return err
 		}
-		return tx.RollbackTo("postgres_migration_test").Error
+		return savepointTx.RollbackTo("postgres_migration_test").Error
 	}))
 	var count int64
 	require.NoError(t, tableDB.Model(&postgresNamedUniqueMigration{}).Count(&count).Error)
@@ -424,13 +530,16 @@ func TestChooseDBPostgreSQLRetainsSavepointSupport(t *testing.T) {
 
 func TestChooseDBPostgreSQLRetainsErrorTranslation(t *testing.T) {
 	db := openPostgresMigrationTestDB(t)
-	tableName := createPostgresMigrationTestSchema(t, db, "postgres_error_translation") + "." + postgresNamedUniqueMigrationTable
-
-	tableDB := db.Table(tableName)
+	tableDB, _ := beginPostgresMigrationTestSchema(
+		t,
+		db,
+		"postgres_error_translation",
+		postgresNamedUniqueMigrationTable,
+	)
 	require.NoError(t, tableDB.AutoMigrate(&postgresNamedUniqueMigration{}))
-	require.NoError(t, db.Exec(
+	require.NoError(t, tableDB.Exec(
 		"ALTER TABLE ? ADD CONSTRAINT ? UNIQUE (?)",
-		clause.Table{Name: tableName},
+		clause.Table{Name: postgresNamedUniqueMigrationTable},
 		clause.Column{Name: postgresNamedUniqueMigrationConstraint},
 		clause.Column{Name: "key"},
 	).Error)
@@ -446,9 +555,12 @@ func TestChooseDBPostgreSQLRetainsIdentifierLengthConfiguration(t *testing.T) {
 	namingStrategy, ok := db.Config.NamingStrategy.(schema.NamingStrategy)
 	require.True(t, ok)
 	assert.Equal(t, 63, namingStrategy.IdentifierMaxLength)
-	tableName := createPostgresMigrationTestSchema(t, db, "postgres_identifier_length") + "." + postgresIdentifierLengthMigrationTable
-
-	tableDB := db.Table(tableName)
+	tableDB, _ := beginPostgresMigrationTestSchema(
+		t,
+		db,
+		"postgres_identifier_length",
+		postgresIdentifierLengthMigrationTable,
+	)
 	require.NoError(t, tableDB.AutoMigrate(&postgresIdentifierLengthMigration{}))
 	require.NoError(t, tableDB.AutoMigrate(&postgresIdentifierLengthMigration{}))
 	assert.True(t, tableDB.Migrator().HasIndex(
