@@ -84,7 +84,7 @@ func TestExpandedVariantsFoldBackToTheirBase(t *testing.T) {
 	for _, base := range []string{
 		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5",
 		"gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.1-pro-preview",
-		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.0", "grok-4.5", "grok-4.6", "grok-4.7",
+		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.0", "grok-4.5", "grok-4.6", "grok-4.7", "x-ai/grok-4.7",
 	} {
 		t.Run(base, func(t *testing.T) {
 			variants := ExpandOpenAIReasoningModels([]string{base})

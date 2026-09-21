@@ -131,7 +131,7 @@ func TestExpandedVariantsRouteBackToRegisteredBase(t *testing.T) {
 		"gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash",
 		"gemini-3.8-flash", "gemini-3.1-pro-preview",
 		"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx",
-		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.6", "grok-4.7",
+		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.6", "grok-4.7", "x-ai/grok-4.7",
 	} {
 		t.Run(base, func(t *testing.T) {
 			variants := reasoning.ExpandOpenAIReasoningModels([]string{base})

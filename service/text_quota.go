@@ -597,20 +597,42 @@ func EstimateKimiToolLoopQuotaChecked(relayInfo *relaycommon.RelayInfo, estimate
 	if relayInfo == nil || estimatedPromptTokens < 0 || maxCompletionTokens < 0 {
 		return 0, nil
 	}
-	if maxCompletionTokens == 0 {
-		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
-			maxCompletionTokens = snap.EstimatedCompletionTokens
-		}
-	}
+	// Match the initial rc.40 reservation: output capacity is validated but not
+	// priced, and the frozen input multiplier scales token-based estimates only.
 	usage := &dto.Usage{
-		PromptTokens:     estimatedPromptTokens,
-		CompletionTokens: maxCompletionTokens,
+		PromptTokens: estimatedPromptTokens,
+	}
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil && snap.BillingMode == "tiered_expr" {
+		requestInput := billingexpr.RequestInput{}
+		if relayInfo.BillingRequestInput != nil {
+			requestInput = *relayInfo.BillingRequestInput
+		}
+		params := BuildTieredTokenParams(
+			normalizeKimiToolLoopUsage(usage),
+			usageSemanticFromUsage(relayInfo, usage) == "anthropic",
+			billingexpr.UsedVars(snap.ExprString),
+		)
+		result, computeErr := billingexpr.ComputeTieredQuotaWithRequest(snap, params, requestInput)
+		if computeErr != nil {
+			return 0, types.NewError(computeErr, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())
+		}
+		quotaBeforeGroup := result.ActualQuotaBeforeGroup
+		if result.BillingUnit != billingexpr.BillingUnitRequest {
+			multiplier := snap.PreConsumeMultiplier
+			if multiplier == 0 {
+				multiplier = 1
+			}
+			quotaBeforeGroup *= multiplier
+		}
+		quota, clamp := common.QuotaRoundChecked(quotaBeforeGroup * snap.GroupRatio)
+		noteQuotaClamp(relayInfo, clamp)
+		return quota, nil
 	}
 	quota, _, err := evaluateKimiToolLoopRoundQuota(&gin.Context{}, relayInfo, usage)
 	if err != nil {
 		return 0, types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())
 	}
-	if relayInfo.TieredBillingSnapshot == nil && relayInfo.PriceData.QuotaToPreConsume > quota {
+	if relayInfo.PriceData.QuotaToPreConsume > quota {
 		return relayInfo.PriceData.QuotaToPreConsume, nil
 	}
 	return quota, nil

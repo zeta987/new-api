@@ -102,6 +102,10 @@ func TestEffortSuffixModelNames(t *testing.T) {
 			base: "vendor/kimi-k3",
 			want: []string{"vendor/kimi-k3", "vendor/kimi-k3-none", "vendor/kimi-k3-low", "vendor/kimi-k3-high", "vendor/kimi-k3-max"},
 		},
+		{
+			base: "x-ai/grok-4.7",
+			want: []string{"x-ai/grok-4.7", "x-ai/grok-4.7-low", "x-ai/grok-4.7-medium", "x-ai/grok-4.7-high", "x-ai/grok-4.7-xhigh"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -189,6 +193,7 @@ func TestParseGrokReasoningEffortSuffix(t *testing.T) {
 		{model: "grok-4.4-high", base: "grok-4.4", effort: "high", ok: true},
 		{model: "grok-4.5-high", base: "grok-4.5", effort: "high", ok: true},
 		{model: "grok-4.7-xhigh", base: "grok-4.7", effort: "xhigh", ok: true},
+		{model: "x-ai/grok-4.7-xhigh", base: "x-ai/grok-4.7", effort: "xhigh", ok: true},
 		{model: "grok-5.0-xhigh", base: "grok-5.0", effort: "xhigh", ok: true},
 		// 4.5 and earlier do not accept xhigh.
 		{model: "grok-4.5-xhigh", base: "grok-4.5-xhigh"},
@@ -213,6 +218,7 @@ func TestParseGrokReasoningEffortSuffix(t *testing.T) {
 
 	assert.True(t, IsStandardGrokModel("grok-4.6"))
 	assert.True(t, IsStandardGrokModel("grok-4.7"))
+	assert.True(t, IsStandardGrokModel("x-ai/grok-4.7"))
 	assert.False(t, IsStandardGrokModel("grok-4.6-xhigh"))
 	assert.False(t, IsStandardGrokModel("grok-4.7-preview"))
 	assert.False(t, IsStandardGrokModel("grok-3-mini"))

@@ -565,7 +565,7 @@ func TestModelPriceHelperEffortSuffixUsesBaseRow(t *testing.T) {
 
 	ratios := ratio_setting.GetModelRatioCopy()
 	for key := range ratios {
-		for _, family := range []string{"claude-fable-5", "gemini-3.8-flash", "deepseek-v4-pro", "deepseek-flash", "kimi-k3", "grok-4.7"} {
+		for _, family := range []string{"claude-fable-5", "gemini-3.8-flash", "deepseek-v4-pro", "deepseek-flash", "kimi-k3", "grok-4.7", "x-ai/grok-4.7"} {
 			if strings.HasPrefix(key, family) {
 				delete(ratios, key)
 			}
@@ -578,6 +578,7 @@ func TestModelPriceHelperEffortSuffixUsesBaseRow(t *testing.T) {
 	ratios["deepseek-flash"] = 0.2
 	ratios["kimi-k3"] = 0.6
 	ratios["grok-4.7"] = 0.7
+	ratios["x-ai/grok-4.7"] = 0.8
 	ratioJSON, err := common.Marshal(ratios)
 	require.NoError(t, err)
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(ratioJSON)))
@@ -607,6 +608,7 @@ func TestModelPriceHelperEffortSuffixUsesBaseRow(t *testing.T) {
 		{model: "kimi-k3-high", want: 0.6},
 		{model: "kimi-k3-max", want: 0.6},
 		{model: "grok-4.7-xhigh", want: 0.7},
+		{model: "x-ai/grok-4.7-xhigh", want: 0.8},
 	}
 
 	for _, tt := range tests {

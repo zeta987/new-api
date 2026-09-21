@@ -96,6 +96,10 @@ func TestModelPricingCandidatesIncludeEffortSuffixBase(t *testing.T) {
 	}
 }
 
+func TestNamespacedGrokPricingCandidatesIncludeExactBase(t *testing.T) {
+	assert.Contains(t, ModelPricingCandidates("x-ai/grok-4.7-xhigh"), "x-ai/grok-4.7")
+}
+
 func TestRoutingMatchModelNamePreservesExemptAtName(t *testing.T) {
 	settings := model_setting.GetGlobalSettings()
 	original := append([]string(nil), settings.ThinkingModelBlacklist...)

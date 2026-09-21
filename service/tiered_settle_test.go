@@ -350,12 +350,17 @@ func (s *recordingBillingSettler) Reserve(targetQuota int) error {
 	return nil
 }
 
-func TestEstimateKimiToolLoopQuotaUsesExpandedTierInput(t *testing.T) {
+func TestEstimateKimiToolLoopQuotaUsesInputOnlyAndFrozenMultiplier(t *testing.T) {
 	const expr = `len <= 100 ? tier("short", p * 1 + c * 2 + cr * 0.1) : tier("long", p * 3 + c * 4 + cr * 0.2)`
 	info := makeRelayInfo(expr, 1, 80, 50)
+	info.TieredBillingSnapshot.PreConsumeMultiplier = 2.5
 
-	assert.Equal(t, 360, EstimateKimiToolLoopQuota(info, 200, 30))
-	assert.Equal(t, 400, EstimateKimiToolLoopQuota(info, 200, 0))
+	assert.Equal(t, 750, EstimateKimiToolLoopQuota(info, 200, 30))
+	assert.Equal(t, 750, EstimateKimiToolLoopQuota(info, 200, 5_000))
+	assert.Equal(t, 750, EstimateKimiToolLoopQuota(info, 200, 0))
+
+	info.TieredBillingSnapshot.PreConsumeMultiplier = 0 // older snapshots mean 1
+	assert.Equal(t, 300, EstimateKimiToolLoopQuota(info, 200, 5_000))
 	assert.Equal(t, 0, EstimateKimiToolLoopQuota(info, -1, -1))
 }
 
