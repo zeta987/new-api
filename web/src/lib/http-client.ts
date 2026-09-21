@@ -36,6 +36,8 @@ declare module 'axios' {
   export interface AxiosRequestConfig {
     skipBusinessError?: boolean
     skipErrorHandler?: boolean
+    skipRateLimitError?: boolean
+    skipServerErrorPage?: boolean
     disableDuplicate?: boolean
     skipAuthRefresh?: boolean
     authRetry?: boolean

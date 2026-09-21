@@ -36,6 +36,7 @@ import {
 import type { UsageLog } from '../../data/schema'
 import type { LogOtherData } from '../../types'
 import { useCommonLogsColumns } from '../columns/common-logs-columns'
+import { UsageLogsProvider } from '../usage-logs-provider'
 
 vi.mock('@lobehub/icons', () => ({}))
 vi.hoisted(() => {
@@ -120,7 +121,9 @@ function renderPreview(other: LogOtherData, isAdmin = true) {
   render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
-        <DetailPreview other={other} isAdmin={isAdmin} />
+        <UsageLogsProvider>
+          <DetailPreview other={other} isAdmin={isAdmin} />
+        </UsageLogsProvider>
       </QueryClientProvider>
     </I18nextProvider>
   )
@@ -131,7 +134,9 @@ test('keeps log details open when the parent refreshes with unchanged data', asy
   const other = { model_price: 0.25 }
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      <QueryClientProvider client={client}>
+        <UsageLogsProvider>{children}</UsageLogsProvider>
+      </QueryClientProvider>
     </I18nextProvider>
   )
   const { rerender } = render(<DetailPreview other={other} isAdmin />, {
