@@ -155,6 +155,9 @@ func migrateTokenKeyUniqueness(db *gorm.DB) error {
 		if !migrator.HasTable(&Token{}) {
 			return nil
 		}
+		if err := configurePostgresMigrationTimeouts(tx); err != nil {
+			return err
+		}
 
 		if err := tx.Exec(
 			"LOCK TABLE ? IN ACCESS EXCLUSIVE MODE",

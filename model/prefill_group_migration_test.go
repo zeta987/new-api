@@ -82,10 +82,10 @@ func TestMigratePrefillGroupUniquenessPostgreSQL(t *testing.T) {
 		t.Skip("TEST_POSTGRES_DSN is not configured")
 	}
 
-	db, err := gorm.Open(postgres.New(postgres.Config{
+	db, err := gorm.Open(postgresMigrationDialector{Dialector: postgres.Dialector{Config: &postgres.Config{
 		DSN:                  dsn,
 		PreferSimpleProtocol: true,
-	}), &gorm.Config{})
+	}}}, &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -94,6 +94,149 @@ func TestMigratePrefillGroupUniquenessPostgreSQL(t *testing.T) {
 	var version string
 	require.NoError(t, db.Raw("SELECT version()").Scan(&version).Error)
 	t.Log(version)
+
+	t.Run("invalid_legacy_index_from_failed_concurrent_build_is_atomic", func(t *testing.T) {
+		schemaName := fmt.Sprintf("prefill_group_invalid_legacy_%d", time.Now().UnixNano())
+		require.NoError(t, db.Exec(
+			"CREATE SCHEMA ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		t.Cleanup(func() {
+			require.NoError(t, db.Exec(
+				"DROP SCHEMA ? CASCADE",
+				clause.Table{Name: schemaName},
+			).Error)
+		})
+
+		setupTx := db.Begin()
+		require.NoError(t, setupTx.Error)
+		t.Cleanup(func() { _ = setupTx.Rollback().Error })
+		require.NoError(t, setupTx.Exec(
+			"SET LOCAL search_path TO ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		require.NoError(t, setupTx.Exec(`
+CREATE TABLE prefill_groups (
+    id bigserial PRIMARY KEY,
+    name varchar(64) NOT NULL
+)`).Error)
+		require.NoError(t, setupTx.Exec(
+			"INSERT INTO prefill_groups (name) VALUES (?), (?)",
+			"duplicate-name",
+			"duplicate-name",
+		).Error)
+		require.NoError(t, setupTx.Commit().Error)
+
+		concurrentIndexErr := db.Exec(
+			"CREATE UNIQUE INDEX CONCURRENTLY ? ON ? (?)",
+			clause.Column{Name: legacyPrefillGroupNameUnique},
+			clause.Table{Name: schemaName + ".prefill_groups"},
+			clause.Column{Name: "name"},
+		).Error
+		require.Error(t, concurrentIndexErr)
+
+		fixtureTx := db.Begin()
+		require.NoError(t, fixtureTx.Error)
+		t.Cleanup(func() { _ = fixtureTx.Rollback().Error })
+		require.NoError(t, fixtureTx.Exec(
+			"SET LOCAL search_path TO ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		require.NoError(t, fixtureTx.Exec(`
+DELETE FROM prefill_groups
+WHERE id = (SELECT max(id) FROM prefill_groups)`).Error)
+		require.NoError(t, fixtureTx.Commit().Error)
+
+		migrationTx := db.Begin()
+		require.NoError(t, migrationTx.Error)
+		t.Cleanup(func() { _ = migrationTx.Rollback().Error })
+		require.NoError(t, migrationTx.Exec(
+			"SET LOCAL search_path TO ?",
+			clause.Table{Name: schemaName},
+		).Error)
+
+		type legacyIndexSnapshot struct {
+			Valid      bool   `gorm:"column:index_valid"`
+			Ready      bool   `gorm:"column:index_ready"`
+			Definition string `gorm:"column:index_definition"`
+		}
+		inspectLegacyIndex := func() legacyIndexSnapshot {
+			t.Helper()
+			var snapshot legacyIndexSnapshot
+			require.NoError(t, migrationTx.Raw(`
+SELECT index_meta.indisvalid AS index_valid,
+       index_meta.indisready AS index_ready,
+       pg_get_indexdef(index_meta.indexrelid) AS index_definition
+FROM pg_catalog.pg_index AS index_meta
+JOIN pg_catalog.pg_class AS index_class
+  ON index_class.oid = index_meta.indexrelid
+WHERE index_meta.indrelid = to_regclass('prefill_groups')
+  AND index_class.relname = ?`, legacyPrefillGroupNameUnique).Scan(&snapshot).Error)
+			return snapshot
+		}
+		type prefillRow struct {
+			ID   int64
+			Name string
+		}
+		inspectRows := func() []prefillRow {
+			t.Helper()
+			var rows []prefillRow
+			require.NoError(t, migrationTx.Raw(
+				"SELECT id, name FROM prefill_groups ORDER BY id",
+			).Scan(&rows).Error)
+			return rows
+		}
+
+		legacyBefore := inspectLegacyIndex()
+		rowsBefore := inspectRows()
+		require.False(t, legacyBefore.Valid)
+		require.False(t, legacyBefore.Ready)
+		require.NotEmpty(t, legacyBefore.Definition)
+		require.False(t, migrationTx.Migrator().HasColumn(&PrefillGroup{}, "DeletedAt"))
+		require.False(t, migrationTx.Migrator().HasIndex(&PrefillGroup{}, prefillGroupNameIndex))
+
+		migrationErr := migratePrefillGroupUniqueness(migrationTx)
+		require.Error(t, migrationErr)
+		assert.Contains(t, migrationErr.Error(), legacyPrefillGroupNameUnique)
+		assert.Contains(t, migrationErr.Error(), "unexpected definition")
+		assert.Equal(t, legacyBefore, inspectLegacyIndex())
+		assert.Equal(t, rowsBefore, inspectRows())
+		assert.False(t, migrationTx.Migrator().HasColumn(&PrefillGroup{}, "DeletedAt"))
+		assert.False(t, migrationTx.Migrator().HasIndex(&PrefillGroup{}, prefillGroupNameIndex))
+	})
+
+	t.Run("malformed_target_without_conflicts_is_atomic", func(t *testing.T) {
+		tx := db.Begin()
+		require.NoError(t, tx.Error)
+		t.Cleanup(func() { _ = tx.Rollback().Error })
+
+		schemaName := fmt.Sprintf("prefill_group_invalid_target_%d", time.Now().UnixNano())
+		require.NoError(t, tx.Exec(
+			"CREATE SCHEMA ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		require.NoError(t, tx.Exec(
+			"SET LOCAL search_path TO ?",
+			clause.Table{Name: schemaName},
+		).Error)
+		require.NoError(t, tx.Exec(`
+CREATE TABLE prefill_groups (
+    id bigserial PRIMARY KEY,
+    name varchar(64) NOT NULL
+)`).Error)
+		require.NoError(t, tx.Exec(
+			"CREATE INDEX ? ON ? (?)",
+			clause.Column{Name: prefillGroupNameIndex},
+			clause.Table{Name: "prefill_groups"},
+			clause.Column{Name: "name"},
+		).Error)
+
+		err := migratePrefillGroupUniqueness(tx)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected definition")
+		assert.False(t, tx.Migrator().HasColumn(&PrefillGroup{}, "DeletedAt"))
+		assert.True(t, tx.Migrator().HasIndex(&PrefillGroup{}, prefillGroupNameIndex))
+	})
 
 	type indexDefinition struct {
 		Name       string `gorm:"column:indexname"`
@@ -112,16 +255,16 @@ func TestMigratePrefillGroupUniquenessPostgreSQL(t *testing.T) {
 		{name: "fresh"},
 		{
 			name:        "legacy_constraint",
-			constraints: []string{"idx_prefill_groups_name"},
+			constraints: []string{legacyPrefillGroupNameUnique},
 		},
 		{
 			name:                "legacy_standalone_index",
-			indexes:             []string{"idx_prefill_groups_name"},
+			indexes:             []string{legacyPrefillGroupNameUnique},
 			replacePartialIndex: true,
 		},
 		{
 			name:        "renamed_constraints_and_indexes",
-			constraints: []string{"idx_prefill_groups_name", "prefill_groups_name_key"},
+			constraints: []string{legacyPrefillGroupNameUnique, "prefill_groups_name_key"},
 			indexes:     []string{"idx_37606_uk_prefill_name", `custom "name" index`},
 		},
 		{
