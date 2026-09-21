@@ -827,3 +827,59 @@ func inputContentText(t *testing.T, item map[string]any) string {
 	require.True(t, ok)
 	return text
 }
+
+func TestConvertChatToResponsesPreservesNativeTools(t *testing.T) {
+	for _, searchType := range []string{"web_search", "web_search_preview", "x_search"} {
+		t.Run(searchType, func(t *testing.T) {
+			tools := `[{"type":"` + searchType + `","filters":{"allowed_domains":["example.com"]}},{"type":"code_interpreter","container":{"type":"auto","memory_limit":"1g"}}]`
+			var request dto.GeneralOpenAIRequest
+			require.NoError(t, kitutil.Unmarshal([]byte(`{"model":"gpt-5.6-luna-low","messages":[{"role":"user","content":"Reply OK."}],"tools":`+tools+`}`), &request))
+			// The relay marshals and reparses parameter overrides before conversion.
+			raw, err := kitutil.Marshal(request)
+			require.NoError(t, err)
+			require.NoError(t, kitutil.Unmarshal(raw, &request))
+
+			result, err := ConvertRequest(nil, nil, types.RelayFormatOpenAIResponses, &request)
+			require.NoError(t, err)
+			response, ok := result.Value.(*dto.OpenAIResponsesRequest)
+			require.True(t, ok)
+			assert.JSONEq(t, tools, string(response.Tools))
+			assert.Empty(t, result.Diagnostics)
+		})
+	}
+}
+
+func TestConvertChatToResponsesPreservesCustomNativePayload(t *testing.T) {
+	request := &dto.GeneralOpenAIRequest{
+		Model:    "gpt-5.6-sol",
+		Messages: []dto.Message{{Role: "user", Content: "Reply OK."}},
+		Tools:    []dto.ToolCallRequest{{Type: "code_interpreter", Custom: []byte(`{"type":"code_interpreter","container":"cntr_existing"}`)}},
+	}
+	result, err := ConvertRequest(nil, nil, types.RelayFormatOpenAIResponses, request)
+	require.NoError(t, err)
+	response, ok := result.Value.(*dto.OpenAIResponsesRequest)
+	require.True(t, ok)
+	assert.JSONEq(t, `[{"type":"code_interpreter","container":"cntr_existing"}]`, string(response.Tools))
+	assert.Empty(t, result.Diagnostics)
+}
+
+func TestConvertResponsesToChatOmitsUnrepresentableHostedToolFields(t *testing.T) {
+	request := &dto.OpenAIResponsesRequest{
+		Model: "gpt-test",
+		Input: mustRawMessage(t, "Reply OK."),
+		Tools: mustRawMessage(t, []map[string]any{
+			{"type": "code_interpreter", "container": map[string]any{"type": "auto"}},
+			{"type": "function", "name": "lookup", "parameters": map[string]any{"type": "object"}},
+		}),
+	}
+
+	result, err := ConvertRequest(nil, nil, types.RelayFormatOpenAI, request)
+	require.NoError(t, err)
+	chat, ok := result.Value.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.Len(t, chat.Tools, 1)
+	assert.Equal(t, "function", chat.Tools[0].Type)
+	assert.Equal(t, "lookup", chat.Tools[0].Function.Name)
+	require.Len(t, result.Diagnostics, 1)
+	assert.Equal(t, "unsupported_hosted_tool", result.Diagnostics[0].Code)
+}
