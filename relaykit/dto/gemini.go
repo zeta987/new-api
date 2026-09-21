@@ -267,11 +267,13 @@ type GeminiFunctionResponse struct {
 }
 
 type GeminiPartExecutableCode struct {
+	ID       string `json:"id,omitempty"`
 	Language string `json:"language,omitempty"`
 	Code     string `json:"code,omitempty"`
 }
 
 type GeminiPartCodeExecutionResult struct {
+	ID      string `json:"id,omitempty"`
 	Outcome string `json:"outcome,omitempty"`
 	Output  string `json:"output,omitempty"`
 }
@@ -288,6 +290,8 @@ type GeminiPart struct {
 	FunctionCall     *FunctionCall           `json:"functionCall,omitempty"`
 	ThoughtSignature json.RawMessage         `json:"thoughtSignature,omitempty"`
 	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
+	ToolCall         json.RawMessage         `json:"toolCall,omitempty"`
+	ToolResponse     json.RawMessage         `json:"toolResponse,omitempty"`
 	// Optional. Media resolution for the input media.
 	MediaResolution     json.RawMessage                `json:"mediaResolution,omitempty"`
 	VideoMetadata       json.RawMessage                `json:"videoMetadata,omitempty"`

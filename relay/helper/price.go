@@ -311,10 +311,18 @@ func HasPriceOrRatioEntry(name string) bool {
 
 func resolveBillingModelName(origin string) string {
 	var candidates []string
-	if !reasoning.ParseModelModifiers(origin).HasModifiers() {
+	// An origin whose plain effort suffix collapses to a base model is reported
+	// as configured by every pricing getter as soon as the base row exists. Ask
+	// the canonical per-effort names first for those, or a base row would
+	// shadow them and silently undercharge the effort variant.
+	collapsesToBase := hostreasoning.EffortSuffixBaseModelName(origin) != ""
+	if !collapsesToBase && !reasoning.ParseModelModifiers(origin).HasModifiers() {
 		candidates = append(candidates, origin)
 	}
 	candidates = append(candidates, hostreasoning.CanonicalBillingModelNames(origin)...)
+	if collapsesToBase {
+		candidates = append(candidates, origin)
+	}
 	base := hostreasoning.BaseModelName(origin)
 	candidates = append(candidates, base)
 

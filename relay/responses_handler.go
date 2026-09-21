@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
 )
@@ -98,6 +100,24 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 	ConsumeResponsesQuota(c, info, usageDto)
 	return nil
+}
+
+// shouldUseRawResponsesPassThrough keeps GLM reasoning-effort aliases on the
+// converted request path: passing the raw body through would send the alias
+// model name upstream and drop the suffix-derived reasoning parameters.
+func shouldUseRawResponsesPassThrough(info *relaycommon.RelayInfo, passThroughGlobal bool) bool {
+	if info == nil {
+		return passThroughGlobal
+	}
+	configured := passThroughGlobal || info.ChannelSetting.PassThroughBodyEnabled
+	if !configured {
+		return false
+	}
+	if info.ChannelType != constant.ChannelTypeZhipu_v4 || info.RelayMode != relayconstant.RelayModeResponses {
+		return true
+	}
+	_, _, isGLMAlias := reasoning.ParseGLMReasoningEffortSuffix(info.OriginModelName)
+	return !isGLMAlias
 }
 
 // ConsumeResponsesQuota applies the same settlement dispatch to HTTP and
