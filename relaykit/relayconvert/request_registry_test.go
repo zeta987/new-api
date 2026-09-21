@@ -863,6 +863,45 @@ func TestConvertChatToResponsesPreservesCustomNativePayload(t *testing.T) {
 	assert.Empty(t, result.Diagnostics)
 }
 
+func TestConvertChatToResponsesNormalizesCustomToolEnvelope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy types.ConversionLossPolicy
+	}{
+		{name: "allow"},
+		{name: "strict", policy: types.ConversionLossPolicyStrict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var request dto.GeneralOpenAIRequest
+			require.NoError(t, kitutil.Unmarshal([]byte(`{
+				"model":"gpt-5.6-sol",
+				"messages":[{"role":"user","content":"Reply OK."}],
+				"tools":[{"type":"custom","custom":{"name":"apply_patch","format":{"type":"text"}}}]
+			}`), &request))
+			info := &convmeta.Values{Options: &convmeta.Options{ToolLossPolicy: tc.policy}}
+
+			result, err := ConvertRequest(nil, info, types.RelayFormatOpenAIResponses, request)
+			require.NoError(t, err)
+			response, ok := result.Value.(*dto.OpenAIResponsesRequest)
+			require.True(t, ok)
+			assert.JSONEq(t, `[{"type":"custom","name":"apply_patch","format":{"type":"text"}}]`, string(response.Tools))
+			assert.Empty(t, result.Diagnostics)
+		})
+	}
+}
+
+func TestConvertChatToResponsesRejectsNullCustomToolEnvelope(t *testing.T) {
+	var request dto.GeneralOpenAIRequest
+	require.NoError(t, kitutil.Unmarshal([]byte(`{
+		"model":"gpt-5.6-sol",
+		"messages":[{"role":"user","content":"Reply OK."}],
+		"tools":[{"type":"custom","custom":null}]
+	}`), &request))
+
+	_, err := ConvertRequest(nil, nil, types.RelayFormatOpenAIResponses, request)
+	require.ErrorContains(t, err, "tools[0].custom")
+}
+
 func TestConvertResponsesToChatOmitsUnrepresentableHostedToolFields(t *testing.T) {
 	request := &dto.OpenAIResponsesRequest{
 		Model: "gpt-test",
