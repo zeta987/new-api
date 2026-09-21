@@ -1,6 +1,7 @@
 package moonshot
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,11 +17,42 @@ import (
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Adaptor struct {
+	kimiFormulaNames []string
+}
+
+// PreparePostOverrideRequest consumes the gateway-only kimi_tools marker while
+// TextHelper still owns the post-override JSON bytes. The adaptor instance is
+// request-scoped, so the parsed Formula selection can be handed to DoRequest
+// without reading ordinary Moonshot request bodies.
+func (a *Adaptor) PreparePostOverrideRequest(jsonData []byte) ([]byte, error) {
+	a.kimiFormulaNames = nil
+	var request map[string]json.RawMessage
+	if err := common.Unmarshal(jsonData, &request); err != nil {
+		return nil, err
+	}
+	marker, ok := request[kimiToolsField]
+	if !ok {
+		return jsonData, nil
+	}
+	delete(request, kimiToolsField)
+	formulaNames, err := parseKimiFormulaNames(marker)
+	if err != nil {
+		return nil, newKimiLoopError("kimi_tool_loop_invalid_tools", http.StatusBadRequest, err.Error())
+	}
+	cleaned, err := common.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	if len(formulaNames) > 0 {
+		a.kimiFormulaNames = append([]string(nil), formulaNames...)
+	}
+	return cleaned, nil
 }
 
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
@@ -81,8 +113,58 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 }
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
-	if request.Temperature != nil && isTemperatureOneOnlyModel(getUpstreamModelName(info, request.Model)) && *request.Temperature != 1.0 {
-		request.Temperature = common.GetPointer[float64](1.0)
+	upstreamModelName := getUpstreamModelName(info, request.Model)
+	isKimiK26ThinkingAlias := upstreamModelName == "kimi-k2.6-thinking" ||
+		(info != nil && info.OriginModelName == "kimi-k2.6-thinking")
+	if isKimiK26ThinkingAlias {
+		request.Model = "kimi-k2.6"
+		request.THINKING = json.RawMessage(`{"type":"enabled"}`)
+		upstreamModelName = request.Model
+		if info != nil && info.ChannelMeta != nil {
+			info.UpstreamModelName = request.Model
+		}
+	} else if upstreamModelName == "kimi-k2.6" && len(request.THINKING) == 0 {
+		request.THINKING = json.RawMessage(`{"type":"disabled"}`)
+	}
+	reasoningEffort := ""
+	reasoningModel := upstreamModelName
+	switch upstreamModelName {
+	case "kimi-k3-none", "kimi-k3-low", "kimi-k3-high", "kimi-k3-max":
+		reasoningModel, reasoningEffort, _ = reasoning.ParseKimiReasoningEffortSuffix(upstreamModelName)
+	default:
+		// A model mapping can replace the effort alias with the model's base
+		// name or a pinned snapshot of it, and the suffix then survives only on
+		// the origin name. Recover the effort from there, but keep the mapped
+		// name so the mapping target is never rewritten back to the base.
+		if info != nil && reasoning.IsKimiReasoningEffortModel(upstreamModelName) {
+			if originBase, effort, ok := reasoning.ParseKimiReasoningEffortSuffix(info.OriginModelName); ok &&
+				strings.HasPrefix(upstreamModelName, originBase) {
+				reasoningEffort = effort
+			}
+		}
+	}
+	if reasoningEffort != "" {
+		request.Model = reasoningModel
+		request.ReasoningEffort = reasoningEffort
+		upstreamModelName = request.Model
+		if info != nil {
+			info.ReasoningEffort = request.ReasoningEffort
+			if info.ChannelMeta != nil {
+				info.UpstreamModelName = request.Model
+			}
+		}
+	}
+	if usesFixedSamplingParameters(upstreamModelName) {
+		request.Temperature = nil
+		request.TopP = nil
+		request.TopK = nil
+		request.N = nil
+		if request.FrequencyPenalty != nil {
+			*request.FrequencyPenalty = 0
+		}
+		if request.PresencePenalty != nil {
+			*request.PresencePenalty = 0
+		}
 	}
 	return request, nil
 }
@@ -94,8 +176,8 @@ func getUpstreamModelName(info *relaycommon.RelayInfo, fallback string) string {
 	return fallback
 }
 
-func isTemperatureOneOnlyModel(model string) bool {
-	return strings.EqualFold(model, "kimi-k2.6")
+func usesFixedSamplingParameters(model string) bool {
+	return strings.EqualFold(model, "kimi-k2.6") || strings.EqualFold(model, "kimi-k3")
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
@@ -104,6 +186,11 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
+	if info != nil && info.RelayMode == constant.RelayModeChatCompletions && len(a.kimiFormulaNames) > 0 {
+		formulaNames := a.kimiFormulaNames
+		a.kimiFormulaNames = nil
+		return doKimiFormulaRequest(a, c, info, requestBody, formulaNames)
+	}
 	return channel.DoApiRequest(a, c, info, requestBody)
 }
 

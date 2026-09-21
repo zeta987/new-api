@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -49,8 +50,12 @@ func LoadFileSource(c *gin.Context, source types.FileSource, reason ...string) (
 		return nil, fmt.Errorf("file source is nil")
 	}
 
+	var logCtx context.Context
+	if c != nil {
+		logCtx = c
+	}
 	if common.DebugEnabled {
-		logger.LogDebug(c, "LoadFileSource starting for: %s", source.GetIdentifier())
+		logger.LogDebug(logCtx, "LoadFileSource starting for: %s", source.GetIdentifier())
 	}
 
 	// 1. 快速检查内部缓存
@@ -155,11 +160,15 @@ func CleanupFileSources(c *gin.Context) {
 
 // loadFromURL 从 URL 加载文件
 func loadFromURL(c *gin.Context, url string, reason ...string) (*types.CachedFileData, error) {
+	var logCtx context.Context
+	if c != nil {
+		logCtx = c
+	}
 	// 下载文件
 	var maxFileSize = constant.MaxFileDownloadMB * 1024 * 1024
 
 	if common.DebugEnabled {
-		logger.LogDebug(c, "loadFromURL: initiating download")
+		logger.LogDebug(logCtx, "loadFromURL: initiating download")
 	}
 	resp, err := DoDownloadRequest(url, reason...)
 	if err != nil {
@@ -173,7 +182,7 @@ func loadFromURL(c *gin.Context, url string, reason ...string) (*types.CachedFil
 
 	// 读取文件内容（限制大小）
 	if common.DebugEnabled {
-		logger.LogDebug(c, "loadFromURL: reading response body")
+		logger.LogDebug(logCtx, "loadFromURL: reading response body")
 	}
 	fileBytes, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxFileSize+1)))
 	if err != nil {
@@ -198,7 +207,7 @@ func loadFromURL(c *gin.Context, url string, reason ...string) (*types.CachedFil
 		diskPath, err := writeToDiskCache(base64Data)
 		if err != nil {
 			// 磁盘缓存失败，回退到内存
-			logger.LogWarn(c, fmt.Sprintf("Failed to write to disk cache, falling back to memory: %v", err))
+			logger.LogWarn(logCtx, fmt.Sprintf("Failed to write to disk cache, falling back to memory: %v", err))
 			cachedData = types.NewMemoryCachedData(base64Data, mimeType, int64(len(fileBytes)))
 		} else {
 			cachedData = types.NewDiskCachedData(diskPath, mimeType, int64(len(fileBytes)))
@@ -208,7 +217,7 @@ func loadFromURL(c *gin.Context, url string, reason ...string) (*types.CachedFil
 			}
 			common.IncrementDiskFiles(base64Size)
 			if common.DebugEnabled {
-				logger.LogDebug(c, "File cached to disk: %s, size: %d bytes", diskPath, base64Size)
+				logger.LogDebug(logCtx, "File cached to disk: %s, size: %d bytes", diskPath, base64Size)
 			}
 		}
 	} else {
@@ -219,7 +228,7 @@ func loadFromURL(c *gin.Context, url string, reason ...string) (*types.CachedFil
 	// 如果是图片，尝试获取图片配置
 	if strings.HasPrefix(mimeType, "image/") {
 		if common.DebugEnabled {
-			logger.LogDebug(c, "loadFromURL: decoding image config")
+			logger.LogDebug(logCtx, "loadFromURL: decoding image config")
 		}
 		config, format, err := decodeImageConfig(fileBytes)
 		if err == nil {

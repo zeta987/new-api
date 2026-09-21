@@ -217,15 +217,15 @@ func TestOpenAIChatTokenLimitCompatibility(t *testing.T) {
 }
 
 func TestDirectOpenAIResponsesKeepsExistingParameters(t *testing.T) {
-	const body = `{"model":"gpt-6-astra","input":"hi","max_output_tokens":100,"temperature":0.2,"top_p":0.8,"top_logprobs":5,"include":["message.output_text.logprobs"],"reasoning":{"effort":"high"}}`
+	const body = `{"model":"gpt-4.1","input":"hi","max_output_tokens":100,"temperature":0.2,"top_p":0.8,"top_logprobs":5,"include":["message.output_text.logprobs"]}`
 	var request dto.OpenAIResponsesRequest
 	require.NoError(t, common.UnmarshalJsonStr(body, &request))
 	info := &relaycommon.RelayInfo{
-		OriginModelName: "gpt-6-astra",
+		OriginModelName: "gpt-4.1",
 		RelayFormat:     types.RelayFormatOpenAIResponses,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelType:       constant.ChannelTypeOpenAI,
-			UpstreamModelName: "gpt-6-astra",
+			UpstreamModelName: "gpt-4.1",
 		},
 	}
 	converted, err := (&openai.Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, request)

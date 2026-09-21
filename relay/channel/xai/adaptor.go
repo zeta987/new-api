@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 
@@ -74,6 +75,23 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 		return toMap, nil
 	}
+	upstreamModelName := request.Model
+	if info != nil && info.UpstreamModelName != "" {
+		upstreamModelName = info.UpstreamModelName
+	}
+	if baseModel, effort, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName); ok {
+		request.Model = baseModel
+		request.ReasoningEffort = effort
+		if info != nil {
+			info.UpstreamModelName = baseModel
+			info.ReasoningEffort = effort
+		}
+	} else if reasoning.IsStandardGrokModel(upstreamModelName) {
+		request.Model = upstreamModelName
+		if info != nil {
+			info.ReasoningEffort = request.ReasoningEffort
+		}
+	}
 	if strings.HasPrefix(request.Model, "grok-3-mini") {
 		if lo.FromPtrOr(request.MaxCompletionTokens, uint(0)) == 0 && lo.FromPtrOr(request.MaxTokens, uint(0)) != 0 {
 			request.MaxCompletionTokens = request.MaxTokens
@@ -103,8 +121,29 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	if request.Model == "" && info != nil {
-		request.Model = info.UpstreamModelName
+	upstreamModelName := request.Model
+	if info != nil && info.UpstreamModelName != "" {
+		upstreamModelName = info.UpstreamModelName
+	}
+	if request.Model == "" {
+		request.Model = upstreamModelName
+	}
+
+	if baseModel, effort, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName); ok {
+		request.Model = baseModel
+		if request.Reasoning == nil {
+			request.Reasoning = &dto.Reasoning{}
+		}
+		request.Reasoning.Effort = effort
+		if info != nil {
+			info.UpstreamModelName = baseModel
+			info.ReasoningEffort = effort
+		}
+	} else if reasoning.IsStandardGrokModel(upstreamModelName) {
+		request.Model = upstreamModelName
+		if info != nil && request.Reasoning != nil {
+			info.ReasoningEffort = request.Reasoning.Effort
+		}
 	}
 	return request, nil
 }

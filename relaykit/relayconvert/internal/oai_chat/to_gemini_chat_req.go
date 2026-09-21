@@ -250,8 +250,16 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 		}
 		shouldAttachThoughtSignature := (message.Role == "assistant" || message.Role == "model") && sharedgemini.ShouldAttachThoughtSignature(opts)
 		signatureAttached := false
-		if message.ToolCalls != nil {
-			for _, call := range message.ParseToolCalls() {
+		toolCalls := message.ParseToolCalls()
+		hasClientThoughtSignature := false
+		for _, call := range toolCalls {
+			if call.ExtraContent != nil && call.ExtraContent.Google != nil && call.ExtraContent.Google.ThoughtSignature != "" {
+				hasClientThoughtSignature = true
+				break
+			}
+		}
+		if len(toolCalls) > 0 {
+			for _, call := range toolCalls {
 				args := map[string]any{}
 				if call.Function.Arguments != "" {
 					if kitutil.Unmarshal([]byte(call.Function.Arguments), &args) != nil {
@@ -265,7 +273,14 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 						Arguments:    args,
 					},
 				}
-				if shouldAttachThoughtSignature && !signatureAttached && sharedgemini.AttachFunctionCallThoughtSignature(opts, &toolCall) {
+				if call.ExtraContent != nil && call.ExtraContent.Google != nil && call.ExtraContent.Google.ThoughtSignature != "" {
+					thoughtSignature, err := kitutil.Marshal(call.ExtraContent.Google.ThoughtSignature)
+					if err != nil {
+						return nil, fmt.Errorf("failed to marshal function call thought signature: %w", err)
+					}
+					toolCall.ThoughtSignature = thoughtSignature
+					signatureAttached = true
+				} else if shouldAttachThoughtSignature && !hasClientThoughtSignature && !signatureAttached && sharedgemini.AttachFunctionCallThoughtSignature(opts, &toolCall) {
 					signatureAttached = true
 				}
 				parts = append(parts, toolCall)

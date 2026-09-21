@@ -80,6 +80,7 @@ func RenderGemini(model string, intent Intent, maxOutputTokens *uint, adapterBud
 
 	capabilities := geminiCapabilitiesFor(model)
 	if capabilities.kind == geminiThinkingNotConfigurable {
+		// Fixed-thinking image models can expose thoughts without a strength control.
 		render := GeminiRender{Diagnostics: diagnostics}
 		if capabilities.supportsIncludeThoughts {
 			render.EffectiveEffort = EffortHigh

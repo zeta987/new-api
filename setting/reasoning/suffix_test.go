@@ -8,6 +8,184 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsClaudeAdaptiveThinkingModel(t *testing.T) {
+	tests := []struct {
+		model string
+		want  bool
+	}{
+		{model: "claude-3-5-sonnet-20241022", want: false},
+		{model: "claude-3-7-sonnet-20250219", want: false},
+		{model: "claude-sonnet-4-20250514", want: false},
+		{model: "claude-sonnet-4-5-20250929", want: false},
+		{model: "claude-opus-4-6", want: true},
+		{model: "claude-sonnet-4-6-high", want: true},
+		{model: "claude-opus-4-7-thinking", want: true},
+		{model: "claude-opus-4-10-max", want: true},
+		{model: "claude-fable-5", want: true},
+		{model: "claude-fable-5-xhigh", want: true},
+		{model: "claude-sonnet-5", want: true},
+		{model: "claude-opus-5-max", want: true},
+		{model: "claude-haiku-5-low", want: true},
+		{model: "claude-mythos-5-medium", want: true},
+		{model: "not-claude-fable-5", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			require.Equal(t, tt.want, IsClaudeAdaptiveThinkingModel(tt.model))
+		})
+	}
+}
+
+func TestIsClaudePost46AdaptiveThinkingModel(t *testing.T) {
+	tests := []struct {
+		model string
+		want  bool
+	}{
+		{model: "claude-opus-4-6", want: false},
+		{model: "claude-sonnet-4-6-high", want: false},
+		{model: "claude-opus-4-7", want: true},
+		{model: "claude-opus-4-8-thinking", want: true},
+		{model: "claude-opus-4-10-max", want: true},
+		{model: "claude-fable-5", want: true},
+		{model: "claude-fable-5-medium", want: true},
+		{model: "claude-sonnet-5", want: true},
+		{model: "claude-opus-5-max", want: true},
+		{model: "claude-haiku-5-low", want: true},
+		{model: "claude-mythos-5-medium", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			require.Equal(t, tt.want, IsClaudePost46AdaptiveThinkingModel(tt.model))
+		})
+	}
+}
+
+func TestIsClaudeEffortLevel(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			require.True(t, IsClaudeEffortLevel(effort))
+		})
+	}
+
+	require.False(t, IsClaudeEffortLevel("minimal"))
+	require.False(t, IsClaudeEffortLevel(""))
+}
+
+func TestParseOpenAIReasoningModelSuffixGPT56(t *testing.T) {
+	tests := []struct {
+		name       string
+		model      string
+		wantBase   string
+		wantMode   string
+		wantEffort string
+	}{
+		{
+			name:       "max effort",
+			model:      "gpt-5.6-luna-max",
+			wantBase:   "gpt-5.6-luna",
+			wantEffort: "max",
+		},
+		{
+			name:       "pro max",
+			model:      "gpt-5.6-luna-pro-max",
+			wantBase:   "gpt-5.6-luna",
+			wantMode:   "pro",
+			wantEffort: "max",
+		},
+		{
+			name:       "explicit standard",
+			model:      "gpt-5.6-terra-standard-high",
+			wantBase:   "gpt-5.6-terra",
+			wantMode:   "standard",
+			wantEffort: "high",
+		},
+		{
+			name:       "standard compatibility alias",
+			model:      "gpt-5.6-sol-stanard-xhigh",
+			wantBase:   "gpt-5.6-sol",
+			wantMode:   "standard",
+			wantEffort: "xhigh",
+		},
+		{
+			name:     "pro with default effort",
+			model:    "gpt-5.6-luna-pro",
+			wantBase: "gpt-5.6-luna",
+			wantMode: "pro",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, mode, effort, ok := ParseOpenAIReasoningModelSuffix(tt.model)
+
+			require.True(t, ok)
+			assert.Equal(t, tt.wantBase, base)
+			assert.Equal(t, tt.wantMode, mode)
+			assert.Equal(t, tt.wantEffort, effort)
+		})
+	}
+}
+
+func TestParseOpenAIReasoningModelSuffixGPT56Efforts(t *testing.T) {
+	for _, model := range []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"} {
+		for _, effort := range []string{"none", "low", "medium", "high", "xhigh", "max"} {
+			t.Run(model+"-"+effort, func(t *testing.T) {
+				base, mode, gotEffort, ok := ParseOpenAIReasoningModelSuffix(model + "-" + effort)
+
+				require.True(t, ok)
+				assert.Equal(t, model, base)
+				assert.Empty(t, mode)
+				assert.Equal(t, effort, gotEffort)
+			})
+		}
+	}
+}
+
+func TestParseOpenAIReasoningModelSuffixRejectsInvalidGPT56Suffixes(t *testing.T) {
+	for _, model := range []string{
+		"gpt-5.6-luna-minimal",
+		"gpt-5.6-luna-ultra",
+		"gpt-5.6-luna-pro-ultra",
+		"gpt-5.6-luna-high-pro",
+		"gpt-5.6-luna-pro-max-extra",
+	} {
+		t.Run(model, func(t *testing.T) {
+			base, mode, effort, ok := ParseOpenAIReasoningModelSuffix(model)
+
+			assert.False(t, ok)
+			assert.Equal(t, model, base)
+			assert.Empty(t, mode)
+			assert.Empty(t, effort)
+		})
+	}
+}
+
+func TestParseOpenAIReasoningEffortFromModelSuffixSupportsGPT56Max(t *testing.T) {
+	effort, base := ParseOpenAIReasoningEffortFromModelSuffix("gpt-5.6-luna-max")
+	assert.Equal(t, "max", effort)
+	assert.Equal(t, "gpt-5.6-luna", base)
+
+	effort, base = ParseOpenAIReasoningEffortFromModelSuffix("gpt-5.5-max")
+	// rc.32 accepts max aliases and projects unsupported wire levels later.
+	assert.Equal(t, "max", effort)
+	assert.Equal(t, "gpt-5.5", base)
+}
+
+func TestGPT56ReasoningWildcardModel(t *testing.T) {
+	wildcard, ok := GPT56ReasoningWildcardModel("gpt-5.6-luna-pro-max")
+	require.True(t, ok)
+	assert.Equal(t, "gpt-5.6-luna-*", wildcard)
+
+	wildcard, ok = GPT56ReasoningWildcardModel("gpt-5.6-luna-pro-ultra")
+	assert.False(t, ok)
+	assert.Empty(t, wildcard)
+
+	assert.True(t, IsGPT56ReasoningWildcard("gpt-5.6-luna-*"))
+	assert.False(t, IsGPT56ReasoningWildcard("gpt-5.6-luna-max"))
+}
+
 func TestCanonicalBillingModelNames(t *testing.T) {
 	tests := []struct {
 		name string
@@ -118,6 +296,76 @@ func TestParseOpenAIReasoningEffortPreservesCodexMax(t *testing.T) {
 
 func TestBaseModelNameStripsModifiers(t *testing.T) {
 	require.Equal(t, "qwen3-max", BaseModelName("qwen3-max@thinking:on@temperature:0.2"))
+}
+
+func TestBaseModelNameStripsEffortSuffixFamilies(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "claude-fable-5-high", want: "claude-fable-5"},
+		{name: "claude-fable-5-1-high", want: "claude-fable-5-1"},
+		{name: "claude-opus-5-max", want: "claude-opus-5"},
+		{name: "gemini-3.8-flash-high", want: "gemini-3.8-flash"},
+		{name: "gemini-3.5-flash-lite-minimal", want: "gemini-3.5-flash-lite"},
+		{name: "deepseek-v4-pro-high", want: "deepseek-v4-pro"},
+		{name: "deepseek-flash-none", want: "deepseek-flash"},
+		{name: "kimi-k3-high", want: "kimi-k3"},
+		{name: "kimi-k3-max", want: "kimi-k3"},
+		// Outside every family vocabulary, or blacklisted.
+		{name: "kimi-k3-medium", want: "kimi-k3-medium"},
+		{name: "kimi-k2-thinking", want: "kimi-k2-thinking"},
+		{name: "qwen3-max", want: "qwen3-max"},
+		{name: "glm-5.2-max-extra", want: "glm-5.2-max-extra"},
+		// Stripping @ modifiers is BaseModelName's documented job; it is
+		// exactly what EffortSuffixBaseModelName must not do.
+		{name: "gemini-2.5-flash@thinking:on", want: "gemini-2.5-flash"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, BaseModelName(tt.name))
+		})
+	}
+}
+
+func TestEffortSuffixBaseModelName(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "claude-fable-5-high", want: "claude-fable-5"},
+		{name: "claude-fable-5-max", want: "claude-fable-5"},
+		{name: "claude-fable-5-medium", want: "claude-fable-5"},
+		{name: "claude-fable-5-1-high", want: "claude-fable-5-1"},
+		{name: "claude-opus-5-xhigh", want: "claude-opus-5"},
+		{name: "gemini-3.8-flash-high", want: "gemini-3.8-flash"},
+		{name: "gemini-3.5-flash-lite-low", want: "gemini-3.5-flash-lite"},
+		{name: "gemini-3.1-pro-preview-minimal", want: "gemini-3.1-pro-preview"},
+		{name: "deepseek-v4-pro-high", want: "deepseek-v4-pro"},
+		{name: "deepseek-v4-pro-none", want: "deepseek-v4-pro"},
+		{name: "deepseek-flash-max", want: "deepseek-flash"},
+		{name: "kimi-k3-high", want: "kimi-k3"},
+		{name: "kimi-k3-none", want: "kimi-k3"},
+		// Nothing to strip.
+		{name: "kimi-k3-medium", want: ""},
+		{name: "", want: ""},
+		{name: "claude-fable-5", want: ""},
+		{name: "qwen3-max", want: ""},
+		{name: "glm-5.2-max-extra", want: ""},
+		// Blacklisted identities stay opaque.
+		{name: "kimi-k2-thinking", want: ""},
+		// Explicit @ modifiers belong to the canonical billing ladder and must
+		// never collapse to the base here.
+		{name: "gemini-2.5-flash@thinking:on", want: ""},
+		{name: "claude-fable-5@effort:high@thinking:on", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, EffortSuffixBaseModelName(tt.name))
+		})
+	}
 }
 
 func TestExemptAtNameIsOpaqueForBillingIdentity(t *testing.T) {
