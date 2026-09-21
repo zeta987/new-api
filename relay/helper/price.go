@@ -94,9 +94,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var cacheCreationRatio1h float64
 	var audioRatio float64
 	var audioCompletionRatio float64
+	var preConsumeMultiplier float64
 	var freeModel bool
 	if !usePrice {
-		preConsumeMultiplier, err := operation_setting.InputPreConsumeMultiplier()
+		var err error
+		preConsumeMultiplier, err = operation_setting.InputPreConsumeMultiplier()
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}
@@ -174,6 +176,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation5mRatio: cacheCreationRatio5m,
 		CacheCreation1hRatio: cacheCreationRatio1h,
 		QuotaToPreConsume:    preConsumedQuota,
+		PreConsumeMultiplier: preConsumeMultiplier,
 	}
 	if usePrice {
 		for name, ratio := range meta.BillingRatios {
