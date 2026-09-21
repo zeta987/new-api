@@ -22,6 +22,10 @@ import { isAxiosError } from 'axios'
 const REFRESH_INTERVAL_MS = 10_000
 const LOG_QUERY_KEYS = [['logs'], ['usage-logs-stats']]
 const cooldowns = new WeakMap<QueryClient, number>()
+const BACKGROUND_FETCH_META = {
+  fetchMore: undefined,
+  errorToast: false,
+} as const
 
 interface UsageLogsRefreshController {
   request(): void
@@ -60,6 +64,7 @@ export function createUsageLogsRefreshController(
   let disposed = false
   let nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS
   let timer: ReturnType<typeof setTimeout> | undefined
+  const cache = queryClient.getQueryCache()
   const retryAfter = () =>
     Math.max(0, (cooldowns.get(queryClient) ?? 0) - Date.now())
 
@@ -106,12 +111,15 @@ export function createUsageLogsRefreshController(
 
     pending = false
     running = true
+    const queries = LOG_QUERY_KEYS.flatMap((queryKey) =>
+      cache.findAll({ queryKey, type: 'active' })
+    )
     const results = await Promise.allSettled(
-      LOG_QUERY_KEYS.map((queryKey) =>
-        queryClient.refetchQueries(
-          { queryKey, type: 'active' },
-          { cancelRefetch: false, throwOnError: true }
-        )
+      queries.map((query) =>
+        query.fetch(undefined, {
+          cancelRefetch: false,
+          meta: BACKGROUND_FETCH_META,
+        })
       )
     )
     running = false
@@ -127,7 +135,6 @@ export function createUsageLogsRefreshController(
     schedule()
   }
 
-  const cache = queryClient.getQueryCache()
   const handleError = (error: unknown, failedAt: number) => {
     if (!isAxiosError(error) || !isRetryableUsageLogsError(error)) return
     if (error.response?.status !== 429) {

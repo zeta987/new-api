@@ -312,24 +312,46 @@ describe('usage logs background refresh', () => {
     expect(screen.getByText('7:42')).toBeInTheDocument()
   })
 
-  test('keeps the usage page mounted after HTTP 500 and automatically recovers', async () => {
+  test('keeps repeated background HTTP 500 recoveries silent and eventually recovers', async () => {
+    const toastError = vi.spyOn(toast, 'error')
     renderLiveLogs()
     await act(() => vi.advanceTimersByTimeAsync(10_001))
     expect(screen.getByText('7:42')).toBeInTheDocument()
 
     rejectionStatus = 500
-    rejectUntil = Date.now() + 10_000
+    rejectUntil = Date.now() + 20_001
     serverTotal = 8
-    await act(() => queryClient.invalidateQueries({ queryKey: ['logs'] }))
+    streamTestState.createdStreams[0].source.dispatchEvent(new Event('log'))
+    await act(() => vi.advanceTimersByTimeAsync(10_000))
+    await act(() => vi.advanceTimersByTimeAsync(10_000))
+
+    expect(requests).toHaveLength(6)
+    expect(toastError).not.toHaveBeenCalled()
     expect(navigateToErrorPage).not.toHaveBeenCalled()
     expect(screen.getByText('7:42')).toBeInTheDocument()
 
     await act(() => vi.advanceTimersByTimeAsync(10_001))
+    expect(requests).toHaveLength(8)
     expect(screen.getByText('8:42')).toBeInTheDocument()
+    expect(toastError).not.toHaveBeenCalled()
+    expect(navigateToErrorPage).not.toHaveBeenCalled()
+  })
+
+  test('retains a normal error toast for an explicit usage-log refresh', async () => {
+    const toastError = vi.spyOn(toast, 'error')
+    renderLiveLogs()
+    await act(() => vi.advanceTimersByTimeAsync(10_001))
+    rejectionStatus = 500
+    rejectUntil = Date.now() + 10_000
+
+    await act(() => queryClient.invalidateQueries({ queryKey: ['logs'] }))
+
+    expect(toastError).toHaveBeenCalledOnce()
     expect(navigateToErrorPage).not.toHaveBeenCalled()
   })
 
   test('retains error-page navigation for an unrelated HTTP 500 query', async () => {
+    const toastError = vi.spyOn(toast, 'error')
     rejectionStatus = 500
     rejectUntil = Date.now() + 10_000
 
@@ -341,5 +363,6 @@ describe('usage logs background refresh', () => {
     ).rejects.toBeInstanceOf(AxiosError)
 
     expect(navigateToErrorPage).toHaveBeenCalledOnce()
+    expect(toastError).toHaveBeenCalledOnce()
   })
 })
