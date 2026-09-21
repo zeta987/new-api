@@ -628,6 +628,21 @@ func EstimateKimiToolLoopQuotaChecked(relayInfo *relaycommon.RelayInfo, estimate
 		noteQuotaClamp(relayInfo, clamp)
 		return quota, nil
 	}
+	if !relayInfo.PriceData.UsePrice {
+		multiplier := relayInfo.PriceData.PreConsumeMultiplier
+		if multiplier == 0 {
+			multiplier = 1
+		}
+		quota, clamp := common.QuotaFromFloatChecked(
+			float64(estimatedPromptTokens) * multiplier *
+				relayInfo.PriceData.ModelRatio * relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+		)
+		noteQuotaClamp(relayInfo, clamp)
+		if relayInfo.PriceData.QuotaToPreConsume > quota {
+			return relayInfo.PriceData.QuotaToPreConsume, nil
+		}
+		return quota, nil
+	}
 	quota, _, err := evaluateKimiToolLoopRoundQuota(&gin.Context{}, relayInfo, usage)
 	if err != nil {
 		return 0, types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())

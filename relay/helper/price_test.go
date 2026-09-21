@@ -153,6 +153,7 @@ func TestFixedPricePreConsumeAndRealtimeRejection(t *testing.T) {
 			assert.Equal(t, 0.01, *info.TieredBillingSnapshot.EstimatedFixedPrice)
 		})
 	}
+
 }
 
 func TestModelPriceHelperTieredInputPreConsumeMultiplier(t *testing.T) {
@@ -983,6 +984,39 @@ func TestInputPreConsumeMultiplierLegacyAndRequestPrices(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestKimiLegacyLoopReusesFrozenInputMultiplier(t *testing.T) {
+	previous := config.GlobalConfig.ExportAllConfigs()
+	previousRatios := ratio_setting.ModelRatio2JSONString()
+	previousPrices := ratio_setting.ModelPrice2JSONString()
+	previousMultiplier := operation_setting.GetQuotaSetting().PreConsumeMultiplier
+	t.Cleanup(func() {
+		operation_setting.GetQuotaSetting().PreConsumeMultiplier = previousMultiplier
+		require.NoError(t, config.GlobalConfig.LoadFromDB(previous))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(previousRatios))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(previousPrices))
+	})
+
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"kimi-legacy-loop":1}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode":    `{}`,
+		"billing_setting.billing_expr":    `{}`,
+		"group_ratio_setting.group_ratio": `{"default":1}`,
+	}))
+
+	operation_setting.GetQuotaSetting().PreConsumeMultiplier = 2.5
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{OriginModelName: "kimi-legacy-loop", UserGroup: "default", UsingGroup: "default"}
+	price, err := ModelPriceHelper(ctx, info, 100, &types.TokenCountMeta{MaxTokens: 5_000})
+	require.NoError(t, err)
+	require.Equal(t, 250, price.QuotaToPreConsume)
+
+	operation_setting.GetQuotaSetting().PreConsumeMultiplier = 10
+	assert.Equal(t, 2_500, service.EstimateKimiToolLoopQuota(info, 1_000, 5_000))
+	assert.Equal(t, 2_500, service.EstimateKimiToolLoopQuota(info, 1_000, 0))
 }
 
 // priceTestReservation observes the reservation requested before image submission.
