@@ -78,6 +78,11 @@ func (m postgresSchemaMigrator) MigrateColumnUnique(value any, field *schema.Fie
 	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
 		schemaName, tableName := m.CurrentSchema(stmt, stmt.Table)
 		return m.DB.Transaction(func(tx *gorm.DB) error {
+			// AutoMigrate runs at startup, so bound the exclusive lock wait
+			// instead of blocking behind a conflicting session indefinitely.
+			if err := configurePostgresMigrationTimeouts(tx); err != nil {
+				return err
+			}
 			if err := tx.Exec("LOCK TABLE ? IN ACCESS EXCLUSIVE MODE", m.CurrentTable(stmt)).Error; err != nil {
 				return err
 			}
