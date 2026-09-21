@@ -57,7 +57,15 @@ export function createAppQueryClient(
     }),
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (query.meta?.errorToast !== false) handleServerError(error)
+        const fetchMeta = query.state.fetchMeta as {
+          errorToast?: boolean
+        } | null
+        if (
+          query.meta?.errorToast !== false &&
+          fetchMeta?.errorToast !== false
+        ) {
+          handleServerError(error)
+        }
         if (
           getServerErrorStatus(error) === 500 &&
           !skipsServerErrorPage(error)

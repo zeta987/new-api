@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { subscribeUsageLogStream } from './log-stream'
 
@@ -34,6 +34,10 @@ class FakeUsageLogStream extends EventTarget {
     this.closed = true
   }
 }
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('usage log stream', () => {
   test('honors a rate-limited handshake before reconnecting and refreshing', () => {
@@ -75,5 +79,88 @@ describe('usage log stream', () => {
 
     unsubscribe()
     expect(stream.closed).toBe(true)
+  })
+
+  test('refreshes expired credentials after HTTP 401 and resumes with one replacement stream', async () => {
+    vi.useFakeTimers()
+    const expiredStream = new FakeUsageLogStream()
+    const refreshedStream = new FakeUsageLogStream()
+    const streams = [expiredStream, refreshedStream]
+    let nextStream = 0
+    let credentials = 'expired-token'
+    const usedCredentials: string[] = []
+    const refreshAuthentication = vi.fn().mockImplementation(async () => {
+      credentials = 'refreshed-token'
+      return {
+        kind: 'authenticated',
+        bundle: {
+          access_token: credentials,
+          token_type: 'Bearer',
+          access_expires_at: 1_900_000_000,
+          user: { id: 42, username: 'usage-log-user', role: 1 },
+          session: {
+            sid: 'usage-log-session',
+            current: true,
+            login_method: 'password',
+            ip: '127.0.0.1',
+            user_agent: 'vitest',
+            created_at: 1,
+            last_active_at: 1,
+            expires_at: 1_900_000_000,
+          },
+        },
+      } as const
+    })
+    const unsubscribe = subscribeUsageLogStream(
+      () => undefined,
+      () => {
+        usedCredentials.push(credentials)
+        const stream = streams[nextStream++]
+        if (!stream) throw new Error('Unexpected extra stream connection')
+        return stream
+      },
+      undefined,
+      refreshAuthentication
+    )
+
+    expiredStream.dispatchEvent(
+      Object.assign(new Event('error'), { responseCode: 401 })
+    )
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(expiredStream.closed).toBe(true)
+    expect(refreshAuthentication).toHaveBeenCalledOnce()
+    expect(nextStream).toBe(2)
+    expect(usedCredentials).toEqual(['expired-token', 'refreshed-token'])
+    expect(refreshedStream.started).toBe(true)
+
+    unsubscribe()
+    expect(refreshedStream.closed).toBe(true)
+  })
+
+  test('stops reconnecting when HTTP 401 confirms the session is revoked', async () => {
+    vi.useFakeTimers()
+    const revokedStream = new FakeUsageLogStream()
+    const createStream = vi.fn(() => revokedStream)
+    const refreshAuthentication = vi
+      .fn()
+      .mockResolvedValue({ kind: 'anonymous' } as const)
+    const unsubscribe = subscribeUsageLogStream(
+      () => undefined,
+      createStream,
+      undefined,
+      refreshAuthentication
+    )
+
+    revokedStream.dispatchEvent(
+      Object.assign(new Event('error'), { responseCode: 401 })
+    )
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(revokedStream.closed).toBe(true)
+    expect(refreshAuthentication).toHaveBeenCalledOnce()
+    expect(createStream).toHaveBeenCalledOnce()
+
+    unsubscribe()
   })
 })
