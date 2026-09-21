@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,6 +48,22 @@ func redisIPRateLimitKey(mark string, clientIP string) string {
 
 func redisUserRateLimitKey(mark string, userID int) string {
 	return fmt.Sprintf("%s:user:%s:%d", redisRateLimitNamespace, mark, userID)
+}
+
+func authRefreshRateLimitKey(c *gin.Context, mark string) string {
+	rawRefreshToken, err := c.Cookie(service.RefreshCookieName)
+	if err != nil {
+		return redisIPRateLimitKey(mark, c.ClientIP())
+	}
+	sid, ok := service.RefreshTokenSID(rawRefreshToken)
+	if !ok {
+		return redisIPRateLimitKey(mark, c.ClientIP())
+	}
+	digest := common.GenerateHMACWithKey(
+		[]byte("auth-refresh-rate-limit-v1:"+common.SessionSecret),
+		sid,
+	)
+	return fmt.Sprintf("%s:session:%s:%s", redisRateLimitNamespace, mark, digest)
 }
 
 func redisReplyInteger(value any) (int64, error) {
@@ -137,6 +154,7 @@ func memoryRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark s
 // The in-memory limiter cannot report the remaining window, so callers
 // without a TTL pass the full window duration as a conservative upper bound.
 func writeRateLimited(c *gin.Context, retryAfterSeconds int64) {
+	c.Header("Cache-Control", "no-store")
 	if retryAfterSeconds > 0 {
 		c.Header("Retry-After", strconv.FormatInt(retryAfterSeconds, 10))
 	}
@@ -176,6 +194,29 @@ func CriticalRateLimit() func(c *gin.Context) {
 		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
 	}
 	return defNext
+}
+
+// AuthRefreshRateLimit isolates routine session rotation from interactive
+// login attempts. A refresh cookie's SID is stable across secret rotation;
+// HMACing it keeps the session identifier out of Redis keys and error logs.
+func AuthRefreshRateLimit() func(c *gin.Context) {
+	if !common.CriticalRateLimitEnable {
+		return defNext
+	}
+	maximum := common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT", 120)
+	duration := int64(common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT_DURATION", 60))
+	const mark = "AR"
+	if common.RedisEnabled {
+		return func(c *gin.Context) {
+			userRedisRateLimiter(c, maximum, duration, authRefreshRateLimitKey(c, mark))
+		}
+	}
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	return func(c *gin.Context) {
+		if !inMemoryRateLimiter.Request(authRefreshRateLimitKey(c, mark), maximum, duration) {
+			writeRateLimited(c, duration)
+		}
+	}
 }
 
 func UserCriticalRateLimit(scope string) func(c *gin.Context) {

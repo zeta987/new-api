@@ -79,6 +79,11 @@ const authClient = axios.create({
 const refreshRaceDelays = [80, 200, 500] as const
 let refreshPromise: Promise<RefreshOutcome> | null = null
 let authEpoch = 0
+let refreshBackoff: {
+  until: number
+  epoch: number
+  outcome: RefreshOutcome
+} | null = null
 
 class AuthRefreshSupersededError extends Error {
   constructor() {
@@ -333,11 +338,40 @@ async function performRefreshWithBrowserLock(
 }
 
 export function refreshAuthentication(): Promise<RefreshOutcome> {
+  if (
+    refreshBackoff?.epoch === authEpoch &&
+    refreshBackoff.until > Date.now()
+  ) {
+    return Promise.resolve(refreshBackoff.outcome)
+  }
   if (!refreshPromise) {
     const refreshEpoch = authEpoch
-    refreshPromise = performRefreshWithBrowserLock(refreshEpoch).finally(() => {
-      refreshPromise = null
-    })
+    refreshPromise = performRefreshWithBrowserLock(refreshEpoch)
+      .then((outcome) => {
+        if (
+          authEpoch === refreshEpoch &&
+          outcome.kind === 'transient_error' &&
+          axios.isAxiosError(outcome.error) &&
+          outcome.error.response?.status === 429
+        ) {
+          const now = Date.now()
+          const retryAfter = outcome.error.response.headers['retry-after']
+          const seconds = Number(retryAfter)
+          const retryAt = Number.isFinite(seconds)
+            ? now + seconds * 1000
+            : Date.parse(String(retryAfter))
+          refreshBackoff = {
+            until:
+              Number.isFinite(retryAt) && retryAt > now ? retryAt : now + 1000,
+            epoch: refreshEpoch,
+            outcome,
+          }
+        }
+        return outcome
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
   }
   return refreshPromise
 }
@@ -384,7 +418,13 @@ export async function resolveAuthentication(): Promise<RefreshOutcome> {
   }
 
   auth.setBootstrapState('checking')
-  return refreshAuthentication()
+  const outcome = await refreshAuthentication()
+  if (outcome.kind === 'transient_error') {
+    auth.setBootstrapState('idle')
+    // A temporary failure must reach the route error boundary, not sign-in.
+    throw outcome.error
+  }
+  return outcome
 }
 
 /**
