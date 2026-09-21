@@ -8,7 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTokenAllowsGPT56ReasoningModelCandidates(t *testing.T) {
+func TestTokenModelLimitAllowsCandidates(t *testing.T) {
+	geminiSettings := model_setting.GetGeminiSettings()
+	oldThinkingAdapter := geminiSettings.ThinkingAdapterEnabled
+	geminiSettings.ThinkingAdapterEnabled = true
+	t.Cleanup(func() { geminiSettings.ThinkingAdapterEnabled = oldThinkingAdapter })
+
 	tests := []struct {
 		name         string
 		modelLimits  map[string]bool
@@ -34,6 +39,12 @@ func TestTokenAllowsGPT56ReasoningModelCandidates(t *testing.T) {
 			want:         true,
 		},
 		{
+			name:         "legacy thinking budget wildcard",
+			modelLimits:  map[string]bool{"gemini-2.5-flash-thinking-*": true},
+			requestModel: "gemini-2.5-flash-thinking-8192",
+			want:         true,
+		},
+		{
 			name:         "invalid suffix cannot use wildcard",
 			modelLimits:  map[string]bool{"gpt-5.6-luna-*": true},
 			requestModel: "gpt-5.6-luna-pro-ultra",
@@ -49,7 +60,7 @@ func TestTokenAllowsGPT56ReasoningModelCandidates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, tokenAllowsModel(tt.modelLimits, tt.requestModel))
+			assert.Equal(t, tt.want, TokenModelLimitAllows(tt.modelLimits, tt.requestModel))
 		})
 	}
 }

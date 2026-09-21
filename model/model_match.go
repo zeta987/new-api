@@ -6,8 +6,8 @@ import (
 )
 
 // ModelMatchCandidates returns model keys in compatibility order. Exact model
-// configuration wins, followed by a validated GPT-5.6 reasoning wildcard and
-// the normalized billing model.
+// configuration wins, followed by a validated reasoning wildcard, the legacy
+// formatted name, and the routing-normalized base.
 func ModelMatchCandidates(modelName string) []string {
 	if reasoning.IsOpenAIReasoningWildcard(modelName) {
 		return nil
@@ -17,6 +17,7 @@ func ModelMatchCandidates(modelName string) []string {
 	if wildcard, ok := reasoning.OpenAIReasoningWildcardModel(modelName); ok {
 		rawCandidates = append(rawCandidates, wildcard)
 	}
+	rawCandidates = append(rawCandidates, ratio_setting.FormatMatchingModelName(modelName))
 	rawCandidates = append(rawCandidates, ratio_setting.RoutingMatchModelName(modelName))
 
 	candidates := make([]string, 0, len(rawCandidates))

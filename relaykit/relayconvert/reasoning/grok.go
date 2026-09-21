@@ -13,13 +13,14 @@ import (
 // It lives here rather than in the xAI adaptor so pricing, routing and model
 // list expansion share one vocabulary.
 func ParseGrokReasoningEffortSuffix(modelName string) (string, string, bool) {
-	separatorIndex := strings.LastIndex(modelName, "-")
+	prefix, bare := splitModelNamespace(modelName)
+	separatorIndex := strings.LastIndex(bare, "-")
 	if separatorIndex < 0 {
 		return modelName, "", false
 	}
 
-	baseModel := modelName[:separatorIndex]
-	effort := modelName[separatorIndex+1:]
+	baseModel := bare[:separatorIndex]
+	effort := bare[separatorIndex+1:]
 	switch effort {
 	case "low", "medium", "high", "xhigh":
 	default:
@@ -33,13 +34,14 @@ func ParseGrokReasoningEffortSuffix(modelName string) (string, string, bool) {
 	if effort == "xhigh" && major == 4 && minor < 6 {
 		return modelName, "", false
 	}
-	return baseModel, effort, true
+	return prefix + baseModel, effort, true
 }
 
 // IsStandardGrokModel reports whether modelName is a bare grok-<major>.<minor>
-// model name, i.e. one that carries no effort alias of its own.
+// model name, i.e. one that carries no effort alias of its own. An opaque
+// provider namespace is preserved.
 func IsStandardGrokModel(modelName string) bool {
-	_, _, ok := parseStandardGrokVersion(modelName)
+	_, _, ok := parseStandardGrokVersion(lastModelPathSegment(modelName))
 	return ok
 }
 
