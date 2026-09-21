@@ -25,6 +25,7 @@ const (
 	paramOverrideContextRequestHeaders = "request_headers"
 	paramOverrideContextHeaderOverride = "header_override"
 	paramOverrideContextAuditRecorder  = "__param_override_audit_recorder"
+	paramOverrideContextRelayFormat    = "__param_override_relay_format"
 )
 
 var errSourceHeaderNotFound = errors.New("source header does not exist")
@@ -190,6 +191,9 @@ func ApplyParamOverrideWithRelayInfo(jsonData []byte, info *RelayInfo) ([]byte, 
 	}
 
 	overrideCtx := BuildParamOverrideContext(info)
+	if info != nil {
+		overrideCtx[paramOverrideContextRelayFormat] = info.GetFinalRequestRelayFormat()
+	}
 	var recorder *paramOverrideAuditRecorder
 	if shouldEnableParamOverrideAudit(paramOverride) {
 		recorder = &paramOverrideAuditRecorder{}
@@ -843,6 +847,12 @@ func escapeSjsonLiteralKey(key string) string {
 // 直接读写 []byte，每个操作只会产生一份新 buffer。
 func applyOperations(jsonData []byte, operations []ParamOperation, conditionContext map[string]any) ([]byte, error) {
 	context := ensureContextMap(conditionContext)
+	relayFormat, _ := context[paramOverrideContextRelayFormat].(types.RelayFormat)
+	originModel, _ := context["original_model"].(string)
+	upstreamModel, _ := context["upstream_model"].(string)
+	astraRequest := (relayFormat == types.RelayFormatOpenAI || relayFormat == types.RelayFormatOpenAIResponses) &&
+		(kitreasoning.IsGPT6AstraModel(kitreasoning.ParseModelModifiers(originModel).Base) ||
+			kitreasoning.IsGPT6AstraModel(kitreasoning.ParseModelModifiers(upstreamModel).Base))
 	auditRecorder := getParamOverrideAuditRecorder(context)
 	contextJSON, err := marshalContextJSON(context)
 	if err != nil {
@@ -851,6 +861,12 @@ func applyOperations(jsonData []byte, operations []ParamOperation, conditionCont
 
 	result := jsonData
 	for _, op := range operations {
+		// Keep shared Chat/Responses channel overrides in the target schema.
+		// Resolve the alias before keep_origin checks so a suffix effort wins.
+		if relayFormat == types.RelayFormatOpenAIResponses &&
+			isPathBasedOperation(op.Mode) && op.Path == "reasoning_effort" {
+			op.Path = "reasoning.effort"
+		}
 		// 检查条件是否满足
 		ok, err := checkConditions(result, contextJSON, op.Conditions, op.Logic)
 		if err != nil {
@@ -884,6 +900,13 @@ func applyOperations(jsonData []byte, operations []ParamOperation, conditionCont
 		case "set":
 			for _, path := range opPaths {
 				if op.KeepOrigin && gjson.GetBytes(result, path).Exists() {
+					continue
+				}
+				// Shared legacy defaults must not disable Astra reasoning. Leave
+				// effort absent so the upstream model chooses its own default.
+				// Explicit values and forced overrides still reach validation.
+				if astraRequest && op.KeepOrigin && op.Value == "none" &&
+					(path == "reasoning_effort" || path == "reasoning.effort") {
 					continue
 				}
 				result, err = sjson.SetBytes(result, path, op.Value)
