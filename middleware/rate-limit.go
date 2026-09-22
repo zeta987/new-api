@@ -50,20 +50,20 @@ func redisUserRateLimitKey(mark string, userID int) string {
 	return fmt.Sprintf("%s:user:%s:%d", redisRateLimitNamespace, mark, userID)
 }
 
-func authRefreshRateLimitKey(c *gin.Context, mark string) string {
+func authRefreshSessionRateLimitKey(c *gin.Context, mark string) (string, bool) {
 	rawRefreshToken, err := c.Cookie(service.RefreshCookieName)
 	if err != nil {
-		return redisIPRateLimitKey(mark, c.ClientIP())
+		return "", false
 	}
 	sid, ok := service.RefreshTokenSID(rawRefreshToken)
 	if !ok {
-		return redisIPRateLimitKey(mark, c.ClientIP())
+		return "", false
 	}
 	digest := common.GenerateHMACWithKey(
 		[]byte("auth-refresh-rate-limit-v1:"+common.SessionSecret),
 		sid,
 	)
-	return fmt.Sprintf("%s:session:%s:%s", redisRateLimitNamespace, mark, digest)
+	return fmt.Sprintf("%s:session:%s:%s", redisRateLimitNamespace, mark, digest), true
 }
 
 func redisReplyInteger(value any) (int64, error) {
@@ -132,8 +132,7 @@ func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark st
 	)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("rate limit check failed (mark=%s): %v", mark, err))
-		c.Status(http.StatusInternalServerError)
-		c.Abort()
+		writeRateLimitInternalError(c)
 		return
 	}
 	if !allowed {
@@ -154,11 +153,17 @@ func memoryRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark s
 // The in-memory limiter cannot report the remaining window, so callers
 // without a TTL pass the full window duration as a conservative upper bound.
 func writeRateLimited(c *gin.Context, retryAfterSeconds int64) {
-	c.Header("Cache-Control", "no-store")
-	if retryAfterSeconds > 0 {
-		c.Header("Retry-After", strconv.FormatInt(retryAfterSeconds, 10))
-	}
+	setNoStore(c)
+	retryAfterSeconds = max(retryAfterSeconds, 1)
+	c.Header("Retry-After", strconv.FormatInt(retryAfterSeconds, 10))
 	c.Status(http.StatusTooManyRequests)
+	c.Abort()
+}
+
+func writeRateLimitInternalError(c *gin.Context) {
+	setNoStore(c)
+	c.Writer.Header().Del("Retry-After")
+	c.Status(http.StatusInternalServerError)
 	c.Abort()
 }
 
@@ -196,25 +201,55 @@ func CriticalRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+func takeAuthRefreshRateLimit(c *gin.Context, maximum int, duration int64, key, mark string) bool {
+	if common.RedisEnabled {
+		allowed, _, ttlSeconds, err := redisFixedWindowTake(c.Request.Context(), key, maximum, duration)
+		if err != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("rate limit check failed (mark=%s): %v", mark, err))
+			writeRateLimitInternalError(c)
+			return false
+		}
+		if !allowed {
+			writeRateLimited(c, ttlSeconds)
+			return false
+		}
+		return true
+	}
+	if !inMemoryRateLimiter.Request(key, maximum, duration) {
+		writeRateLimited(c, duration)
+		return false
+	}
+	return true
+}
+
 // AuthRefreshRateLimit isolates routine session rotation from interactive
-// login attempts. A refresh cookie's SID is stable across secret rotation;
-// HMACing it keeps the session identifier out of Redis keys and error logs.
+// login attempts. Every request first consumes a broad IP-keyed baseline so
+// forged UUIDs cannot create unbounded buckets. Structurally valid refresh
+// cookies also consume a tighter stable SID bucket; HMACing the SID keeps it
+// out of Redis keys and error logs.
 func AuthRefreshRateLimit() func(c *gin.Context) {
 	if !common.CriticalRateLimitEnable {
 		return defNext
 	}
-	maximum := common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT", 120)
-	duration := int64(common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT_DURATION", 60))
-	const mark = "AR"
-	if common.RedisEnabled {
-		return func(c *gin.Context) {
-			userRedisRateLimiter(c, maximum, duration, authRefreshRateLimitKey(c, mark))
-		}
+	sessionMaximum := common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT", 120)
+	sessionDuration := int64(common.GetEnvOrDefault("AUTH_REFRESH_RATE_LIMIT_DURATION", 60))
+	ipMaximum := common.GetEnvOrDefault("AUTH_REFRESH_IP_RATE_LIMIT", 120)
+	ipDuration := int64(common.GetEnvOrDefault("AUTH_REFRESH_IP_RATE_LIMIT_DURATION", 60))
+	const (
+		ipMark      = "AR-IP"
+		sessionMark = "AR-SESSION"
+	)
+	if !common.RedisEnabled {
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
 	}
-	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
 	return func(c *gin.Context) {
-		if !inMemoryRateLimiter.Request(authRefreshRateLimitKey(c, mark), maximum, duration) {
-			writeRateLimited(c, duration)
+		ipKey := redisIPRateLimitKey(ipMark, c.ClientIP())
+		if !takeAuthRefreshRateLimit(c, ipMaximum, ipDuration, ipKey, ipMark) {
+			return
+		}
+		sessionKey, ok := authRefreshSessionRateLimitKey(c, sessionMark)
+		if ok {
+			takeAuthRefreshRateLimit(c, sessionMaximum, sessionDuration, sessionKey, sessionMark)
 		}
 	}
 }
@@ -276,8 +311,7 @@ func userRedisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key
 	allowed, _, ttlSeconds, err := redisFixedWindowTake(c.Request.Context(), key, maxRequestNum, duration)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("rate limit check failed (key=%s): %v", key, err))
-		c.Status(http.StatusInternalServerError)
-		c.Abort()
+		writeRateLimitInternalError(c)
 		return
 	}
 	if !allowed {

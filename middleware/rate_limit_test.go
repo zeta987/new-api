@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -133,6 +134,7 @@ func TestAuthRefreshRateLimiterUsesSessionIdentityAndPreservesLoginBudget(t *tes
 	assert.Equal(t, http.StatusTooManyRequests, limited.Code)
 	assert.Equal(t, "31", limited.Header().Get("Retry-After"))
 	assert.Equal(t, "no-store", limited.Header().Get("Cache-Control"))
+	assert.Empty(t, limited.Header().Values("Set-Cookie"))
 	assert.Empty(t, limited.Body.String(), "rate-limit responses must not disclose session state")
 	assert.Equal(t, http.StatusNoContent, request("/refresh", sharedAddress, sessionB+".other-secret").Code)
 	assert.Equal(t, http.StatusNoContent, request("/login", sharedAddress, "").Code)
@@ -240,6 +242,30 @@ func TestRedisFixedWindowRepairsCounterWithoutTTL(t *testing.T) {
 	assert.False(t, redisServer.Exists(key), "a recovered counter must not remain permanently rate-limited")
 }
 
+func TestRedisRateLimiterReturnsPositiveRetryAfterAtTTLZero(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	redisServer, _ := useRateLimitMiniRedis(t)
+	const (
+		mark     = "TTL-ZERO"
+		duration = int64(30)
+	)
+	key := redisIPRateLimitKey(mark, "192.0.2.52")
+	redisServer.Set(key, "1")
+	redisServer.SetTTL(key, 500*time.Millisecond)
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/limited", rateLimitFactory(1, duration, mark), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	response := performRateLimitRequest(router, "/limited", "192.0.2.52:12345")
+
+	assert.Equal(t, http.StatusTooManyRequests, response.Code)
+	retryAfter, err := strconv.Atoi(response.Header().Get("Retry-After"))
+	require.NoError(t, err)
+	assert.Positive(t, retryAfter)
+}
+
 func TestRedisFailurePolicies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	_, redisClient := useRateLimitMiniRedis(t)
@@ -262,9 +288,11 @@ func TestRedisFailurePolicies(t *testing.T) {
 
 	ipResponse := performRateLimitRequest(router, "/ip", "192.0.2.60:12345")
 	assert.Equal(t, http.StatusInternalServerError, ipResponse.Code)
+	assert.Equal(t, "no-store", ipResponse.Header().Get("Cache-Control"))
 	assert.Empty(t, ipResponse.Body.String())
 	userResponse := performRateLimitRequest(router, "/user", "192.0.2.61:12345")
 	assert.Equal(t, http.StatusInternalServerError, userResponse.Code)
+	assert.Equal(t, "no-store", userResponse.Header().Get("Cache-Control"))
 	assert.Empty(t, userResponse.Body.String())
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/email", "192.0.2.62:12345").Code)
 }
