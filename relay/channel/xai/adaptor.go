@@ -23,6 +23,24 @@ import (
 type Adaptor struct {
 }
 
+func resolveGrokReasoningAlias(upstreamModelName string, originModelName string) (string, string, bool) {
+	if baseModel, effort, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName); ok {
+		return baseModel, effort, true
+	}
+	if !reasoning.IsStandardGrokModel(upstreamModelName) {
+		return upstreamModelName, "", false
+	}
+	_, originEffort, ok := reasoning.ParseGrokReasoningEffortSuffix(originModelName)
+	if !ok {
+		return upstreamModelName, "", false
+	}
+	targetBase, _, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName + "-" + originEffort)
+	if !ok || targetBase != upstreamModelName {
+		return upstreamModelName, "", false
+	}
+	return upstreamModelName, originEffort, true
+}
+
 func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
 	//TODO implement me
 	return nil, errors.New("not implemented")
@@ -79,7 +97,11 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if info != nil && info.UpstreamModelName != "" {
 		upstreamModelName = info.UpstreamModelName
 	}
-	if baseModel, effort, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName); ok {
+	originModelName := ""
+	if info != nil {
+		originModelName = info.OriginModelName
+	}
+	if baseModel, effort, ok := resolveGrokReasoningAlias(upstreamModelName, originModelName); ok {
 		request.Model = baseModel
 		request.ReasoningEffort = effort
 		if info != nil {
@@ -129,7 +151,11 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		request.Model = upstreamModelName
 	}
 
-	if baseModel, effort, ok := reasoning.ParseGrokReasoningEffortSuffix(upstreamModelName); ok {
+	originModelName := ""
+	if info != nil {
+		originModelName = info.OriginModelName
+	}
+	if baseModel, effort, ok := resolveGrokReasoningAlias(upstreamModelName, originModelName); ok {
 		request.Model = baseModel
 		if request.Reasoning == nil {
 			request.Reasoning = &dto.Reasoning{}

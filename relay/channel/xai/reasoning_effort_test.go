@@ -74,6 +74,37 @@ func TestGrokReasoningEffortChatUsesMappedUpstreamAlias(t *testing.T) {
 	assert.Equal(t, "xhigh", info.ReasoningEffort)
 }
 
+func TestGrokReasoningEffortChatMappedAliasPrecedence(t *testing.T) {
+	tests := []struct {
+		name           string
+		origin         string
+		mapped         string
+		explicitEffort string
+		wantModel      string
+		wantEffort     string
+	}{
+		{name: "origin suffix survives bare mapping", origin: "grok-4.7-xhigh", mapped: "grok-4.7", wantModel: "grok-4.7", wantEffort: "xhigh"},
+		{name: "origin suffix overrides explicit effort", origin: "grok-4.7-xhigh", mapped: "grok-4.7", explicitEffort: "low", wantModel: "grok-4.7", wantEffort: "xhigh"},
+		{name: "mapped suffix overrides origin and explicit effort", origin: "grok-4.7-xhigh", mapped: "grok-4.7-medium", explicitEffort: "low", wantModel: "grok-4.7", wantEffort: "medium"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := &dto.GeneralOpenAIRequest{Model: testCase.mapped, ReasoningEffort: testCase.explicitEffort}
+			info := xaiTestRelayInfo(testCase.mapped)
+			info.OriginModelName = testCase.origin
+
+			converted, err := (&xai.Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+			got := requireXAIChatRequest(t, converted, err)
+
+			assert.Equal(t, testCase.wantModel, got.Model)
+			assert.Equal(t, testCase.wantEffort, got.ReasoningEffort)
+			assert.Equal(t, testCase.wantModel, info.UpstreamModelName)
+			assert.Equal(t, testCase.wantEffort, info.ReasoningEffort)
+		})
+	}
+}
+
 func TestGrokReasoningEffortChatPassesExplicitEffortWithoutSuffix(t *testing.T) {
 	request := &dto.GeneralOpenAIRequest{
 		Model:           "grok-4.6",
@@ -183,6 +214,43 @@ func TestGrokReasoningEffortResponsesCreatesReasoningForMappedAlias(t *testing.T
 	assert.Equal(t, "xhigh", got.Reasoning.Effort)
 	assert.Equal(t, "grok-4.6", info.UpstreamModelName)
 	assert.Equal(t, "xhigh", info.ReasoningEffort)
+}
+
+func TestGrokReasoningEffortResponsesMappedAliasPrecedence(t *testing.T) {
+	tests := []struct {
+		name           string
+		origin         string
+		mapped         string
+		explicitEffort string
+		wantModel      string
+		wantEffort     string
+	}{
+		{name: "origin suffix survives bare mapping", origin: "grok-4.7-xhigh", mapped: "grok-4.7", wantModel: "grok-4.7", wantEffort: "xhigh"},
+		{name: "origin suffix overrides explicit effort", origin: "grok-4.7-xhigh", mapped: "grok-4.7", explicitEffort: "low", wantModel: "grok-4.7", wantEffort: "xhigh"},
+		{name: "mapped suffix overrides origin and explicit effort", origin: "grok-4.7-xhigh", mapped: "grok-4.7-medium", explicitEffort: "low", wantModel: "grok-4.7", wantEffort: "medium"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := dto.OpenAIResponsesRequest{Model: testCase.mapped}
+			if testCase.explicitEffort != "" {
+				request.Reasoning = &dto.Reasoning{Effort: testCase.explicitEffort}
+			}
+			info := xaiTestRelayInfo(testCase.mapped)
+			info.OriginModelName = testCase.origin
+
+			converted, err := (&xai.Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, request)
+			require.NoError(t, err)
+			got, ok := converted.(dto.OpenAIResponsesRequest)
+			require.True(t, ok)
+
+			assert.Equal(t, testCase.wantModel, got.Model)
+			require.NotNil(t, got.Reasoning)
+			assert.Equal(t, testCase.wantEffort, got.Reasoning.Effort)
+			assert.Equal(t, testCase.wantModel, info.UpstreamModelName)
+			assert.Equal(t, testCase.wantEffort, info.ReasoningEffort)
+		})
+	}
 }
 
 func TestGrokReasoningEffortResponsesPassesExplicitEffortWithoutSuffix(t *testing.T) {
