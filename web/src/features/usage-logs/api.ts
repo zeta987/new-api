@@ -51,7 +51,10 @@ async function fetchLogs<T>(
     ...params,
   })
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}?${queryParams}`)
+  const res = await api.get(`${path}?${queryParams}`, {
+    skipRateLimitError: true,
+    skipServerErrorPage: true,
+  })
   return res.data
 }
 
@@ -64,7 +67,10 @@ async function fetchLogStats<T>(
     params as unknown as Record<string, unknown>
   )
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}/stat?${queryParams}`)
+  const res = await api.get(`${path}/stat?${queryParams}`, {
+    skipRateLimitError: true,
+    skipServerErrorPage: true,
+  })
   return res.data
 }
 

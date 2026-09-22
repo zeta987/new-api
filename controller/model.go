@@ -21,7 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )
@@ -175,7 +175,34 @@ func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.Open
 	if owner, ok := ownerByModel[modelName]; ok && owner != "" {
 		oaiModel.OwnedBy = owner
 	}
+	base, knownFamily := reasoning.OpenAIReasoningBaseModel(modelName)
+	// Effort variants expanded from a base model inherit that base's owner;
+	// without this they would all be reported as "custom".
+	ownerBase, hasOwnerBase := base, knownFamily
+	if !hasOwnerBase {
+		if suffixBase := reasoning.EffortSuffixBaseModelName(modelName); suffixBase != "" {
+			ownerBase, hasOwnerBase = suffixBase, true
+		}
+	}
+	if hasOwnerBase && ownerBase != modelName {
+		if oaiModel.OwnedBy == "custom" {
+			if baseModel, ok := openAIModelsMap[ownerBase]; ok {
+				oaiModel.OwnedBy = baseModel.OwnedBy
+			}
+		}
+		for _, candidate := range model.ModelMatchCandidates(modelName) {
+			if owner := ownerByModel[candidate]; owner != "" {
+				oaiModel.OwnedBy = owner
+				break
+			}
+		}
+	}
 	oaiModel.SupportedEndpointTypes = model.GetModelSupportEndpointTypes(modelName)
+	if knownFamily && oaiModel.OwnedBy == "openai" {
+		if _, mode, _, ok := reasoning.ParseOpenAIReasoningModelSuffix(modelName); ok && mode != "" {
+			oaiModel.SupportedEndpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIResponse}
+		}
+	}
 	return oaiModel
 }
 
@@ -249,10 +276,20 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 	models := service.GetGroupsEnabledModels(ownerGroups)
-	for _, modelName := range models {
+	ownerByModel := map[string]string{}
+	if len(ownerGroups) > 0 {
+		ownerByModel = getPreferredModelOwners(models, ownerGroups)
+	}
+	for _, modelName := range reasoning.ExpandOpenAIReasoningModels(models) {
 		if modelLimitEnable {
-			matchingName := ratio_setting.RoutingMatchModelName(modelName)
-			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {
+			allowed := false
+			for _, candidate := range model.ModelMatchCandidates(modelName) {
+				if tokenModelLimit[candidate] {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
 				continue
 			}
 		}
@@ -262,10 +299,6 @@ func ListModels(c *gin.Context, modelType int) {
 		userModelNames = append(userModelNames, modelName)
 	}
 
-	ownerByModel := map[string]string{}
-	if len(ownerGroups) > 0 {
-		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
-	}
 	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
 	for _, modelName := range userModelNames {
 		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
@@ -329,6 +362,11 @@ func DashboardListModels(c *gin.Context) {
 	}
 	for channelType := 1; channelType <= constant.ChannelTypeDummy; channelType++ {
 		if plugin, ok := jsplugin.DefaultRegistry.GetByChannelType(channelType); ok {
+			if channelType == constant.ChannelTypeOpenAI {
+				// Video plugins share OpenAI channels with the text adaptor.
+				modelsByChannel[channelType] = lo.Uniq(append(modelsByChannel[channelType], plugin.Meta.Models...))
+				continue
+			}
 			modelsByChannel[channelType] = append([]string(nil), plugin.Meta.Models...)
 		}
 	}
@@ -339,9 +377,20 @@ func DashboardListModels(c *gin.Context) {
 }
 
 func EnabledListModels(c *gin.Context) {
+	models := make([]string, 0)
+	seen := make(map[string]bool)
+	for _, name := range model.GetEnabledModels() {
+		// Report the key a price would actually be configured under, so the
+		// unset-price view never lists a variant that is already covered.
+		name = model.PricingKeyForModel(name)
+		if !seen[name] {
+			seen[name] = true
+			models = append(models, name)
+		}
+	}
 	c.JSON(200, gin.H{
 		"success": true,
-		"data":    model.GetEnabledModels(),
+		"data":    models,
 	})
 }
 

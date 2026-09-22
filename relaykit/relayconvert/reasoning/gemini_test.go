@@ -16,14 +16,15 @@ func TestRenderGeminiMapsAndClampsInsteadOfRejecting(t *testing.T) {
 	budget100 := 100
 
 	tests := []struct {
-		name       string
-		model      string
-		intent     Intent
-		wantNil    bool
-		wantLevel  string
-		wantBudget *int
-		wantEffort Effort
-		wantCodes  []string
+		name         string
+		model        string
+		intent       Intent
+		wantNil      bool
+		wantLevel    string
+		wantBudget   *int
+		wantThoughts *bool
+		wantEffort   Effort
+		wantCodes    []string
 	}{
 		{
 			name:       "budget on gemini 3.1 pro becomes level",
@@ -110,9 +111,73 @@ func TestRenderGeminiMapsAndClampsInsteadOfRejecting(t *testing.T) {
 			wantCodes: []string{"gemini_thinking_unsupported"},
 		},
 		{
-			name:       "gemini 3 pro image keeps include thoughts only",
+			name:         "gemini 3 pro image keeps include thoughts only",
+			model:        "gemini-3-pro-image-preview",
+			intent:       Intent{Mode: ModeEnabled, Effort: EffortLow, IncludeThoughts: boolPtr(true)},
+			wantThoughts: boolPtr(true),
+			wantEffort:   EffortHigh,
+			wantCodes:    []string{"gemini_thinking_unsupported"},
+		},
+		{
+			name:         "gemini 3 pro image keeps hidden thoughts",
+			model:        "gemini-3-pro-image-preview",
+			intent:       Intent{Mode: ModeEnabled, IncludeThoughts: boolPtr(false), Source: SourceSuffix},
+			wantThoughts: boolPtr(false),
+			wantEffort:   EffortHigh,
+			wantCodes:    []string{"gemini_thinking_unsupported"},
+		},
+		{
+			name:         "gemini 3 pro image keeps thought visibility without a mode",
+			model:        "gemini-3-pro-image-preview",
+			intent:       Intent{IncludeThoughts: boolPtr(true)},
+			wantThoughts: boolPtr(true),
+			wantEffort:   EffortHigh,
+		},
+		{
+			name:       "thinking suffix on gemini 3 pro image synthesizes no config",
 			model:      "gemini-3-pro-image-preview",
-			intent:     Intent{Mode: ModeEnabled, Effort: EffortLow, IncludeThoughts: boolPtr(true)},
+			intent:     Intent{Mode: ModeEnabled, Source: SourceSuffix},
+			wantNil:    true,
+			wantEffort: EffortHigh,
+			wantCodes:  []string{"gemini_thinking_unsupported"},
+		},
+		{
+			name:       "nothinking suffix on gemini 3 pro image is dropped",
+			model:      "gemini-3-pro-image-preview",
+			intent:     Intent{Mode: ModeDisabled, Source: SourceSuffix},
+			wantNil:    true,
+			wantEffort: EffortHigh,
+			wantCodes:  []string{"gemini_thinking_unsupported"},
+		},
+		{
+			name:       "adaptive mode on gemini 3 pro image is dropped",
+			model:      "gemini-3-pro-image-preview",
+			intent:     Intent{Mode: ModeAdaptive},
+			wantNil:    true,
+			wantEffort: EffortHigh,
+			wantCodes:  []string{"gemini_thinking_unsupported"},
+		},
+		{
+			name:       "dynamic budget on gemini 3 pro image is dropped",
+			model:      "gemini-3-pro-image-preview",
+			intent:     Intent{BudgetTokens: intPtr(-1)},
+			wantNil:    true,
+			wantEffort: EffortHigh,
+			wantCodes:  []string{"gemini_thinking_unsupported"},
+		},
+		{
+			name:       "zero budget on gemini 3 pro image is dropped",
+			model:      "gemini-3-pro-image-preview",
+			intent:     Intent{BudgetTokens: intPtr(0)},
+			wantNil:    true,
+			wantEffort: EffortHigh,
+			wantCodes:  []string{"gemini_thinking_unsupported"},
+		},
+		{
+			name:       "explicit budget on gemini 3 pro image is dropped",
+			model:      "gemini-3-pro-image-preview",
+			intent:     Intent{BudgetTokens: intPtr(1024)},
+			wantNil:    true,
 			wantEffort: EffortHigh,
 			wantCodes:  []string{"gemini_thinking_unsupported"},
 		},
@@ -133,10 +198,16 @@ func TestRenderGeminiMapsAndClampsInsteadOfRejecting(t *testing.T) {
 			assert.Equal(t, tt.wantLevel, got.Config.ThinkingLevel)
 			if tt.wantBudget == nil {
 				assert.Nil(t, got.Config.ThinkingBudget)
-				return
+			} else {
+				require.NotNil(t, got.Config.ThinkingBudget)
+				assert.Equal(t, *tt.wantBudget, *got.Config.ThinkingBudget)
 			}
-			require.NotNil(t, got.Config.ThinkingBudget)
-			assert.Equal(t, *tt.wantBudget, *got.Config.ThinkingBudget)
+			if tt.wantThoughts == nil {
+				assert.Nil(t, got.Config.IncludeThoughts)
+			} else {
+				require.NotNil(t, got.Config.IncludeThoughts)
+				assert.Equal(t, *tt.wantThoughts, *got.Config.IncludeThoughts)
+			}
 		})
 	}
 }

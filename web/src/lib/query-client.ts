@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 
-import { handleServerError } from './handle-server-error'
+import { handleServerError, skipsServerErrorPage } from './handle-server-error'
 import { getServerErrorStatus } from './server-error-message'
 
 interface ErrorNotificationMeta extends Record<string, unknown> {
@@ -57,8 +57,21 @@ export function createAppQueryClient(
     }),
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (query.meta?.errorToast !== false) handleServerError(error)
-        if (getServerErrorStatus(error) === 500) onInternalServerError?.()
+        const fetchMeta = query.state.fetchMeta as {
+          errorToast?: boolean
+        } | null
+        if (
+          query.meta?.errorToast !== false &&
+          fetchMeta?.errorToast !== false
+        ) {
+          handleServerError(error)
+        }
+        if (
+          getServerErrorStatus(error) === 500 &&
+          !skipsServerErrorPage(error)
+        ) {
+          onInternalServerError?.()
+        }
       },
     }),
   })

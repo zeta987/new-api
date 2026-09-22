@@ -4,12 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -91,6 +93,51 @@ func TestRedisUserRateLimiterUsesSharedFixedWindow(t *testing.T) {
 	key := redisUserRateLimitKey("USER", 42)
 	assert.True(t, redisServer.Exists(key))
 	assert.Equal(t, 23*time.Second, redisServer.TTL(key))
+}
+
+func TestAuthRefreshRateLimiterUsesSessionIdentityAndPreservesLoginBudget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, _ = useRateLimitMiniRedis(t)
+	previousCriticalRateLimitEnabled := common.CriticalRateLimitEnable
+	common.CriticalRateLimitEnable = true
+	t.Cleanup(func() { common.CriticalRateLimitEnable = previousCriticalRateLimitEnabled })
+	t.Setenv("AUTH_REFRESH_RATE_LIMIT", "1")
+	t.Setenv("AUTH_REFRESH_RATE_LIMIT_DURATION", "31")
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/refresh", AuthRefreshRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/login", rateLimitFactory(1, 31, "CT"), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	request := func(path, remoteAddr, refreshToken string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		httpRequest := httptest.NewRequest(http.MethodGet, path, nil)
+		httpRequest.RemoteAddr = remoteAddr
+		if refreshToken != "" {
+			httpRequest.AddCookie(&http.Cookie{Name: service.RefreshCookieName, Value: refreshToken})
+		}
+		router.ServeHTTP(recorder, httpRequest)
+		return recorder
+	}
+
+	const (
+		sharedAddress = "192.0.2.70:12345"
+		sessionA      = "018f47c0-11ee-7c3c-9d2d-0242ac120002"
+		sessionB      = "018f47c0-11ee-7c3c-9d2d-0242ac120003"
+	)
+	assert.Equal(t, http.StatusNoContent, request("/refresh", sharedAddress, sessionA+".first-secret").Code)
+	limited := request("/refresh", sharedAddress, sessionA+".rotated-secret")
+	assert.Equal(t, http.StatusTooManyRequests, limited.Code)
+	assert.Equal(t, "31", limited.Header().Get("Retry-After"))
+	assert.Equal(t, "no-store", limited.Header().Get("Cache-Control"))
+	assert.Empty(t, limited.Header().Values("Set-Cookie"))
+	assert.Empty(t, limited.Body.String(), "rate-limit responses must not disclose session state")
+	assert.Equal(t, http.StatusNoContent, request("/refresh", sharedAddress, sessionB+".other-secret").Code)
+	assert.Equal(t, http.StatusNoContent, request("/login", sharedAddress, "").Code)
 }
 
 func TestRedisEmailVerificationRateLimiterPreservesResponseAndTTL(t *testing.T) {
@@ -195,6 +242,30 @@ func TestRedisFixedWindowRepairsCounterWithoutTTL(t *testing.T) {
 	assert.False(t, redisServer.Exists(key), "a recovered counter must not remain permanently rate-limited")
 }
 
+func TestRedisRateLimiterReturnsPositiveRetryAfterAtTTLZero(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	redisServer, _ := useRateLimitMiniRedis(t)
+	const (
+		mark     = "TTL-ZERO"
+		duration = int64(30)
+	)
+	key := redisIPRateLimitKey(mark, "192.0.2.52")
+	redisServer.Set(key, "1")
+	redisServer.SetTTL(key, 500*time.Millisecond)
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/limited", rateLimitFactory(1, duration, mark), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	response := performRateLimitRequest(router, "/limited", "192.0.2.52:12345")
+
+	assert.Equal(t, http.StatusTooManyRequests, response.Code)
+	retryAfter, err := strconv.Atoi(response.Header().Get("Retry-After"))
+	require.NoError(t, err)
+	assert.Positive(t, retryAfter)
+}
+
 func TestRedisFailurePolicies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	_, redisClient := useRateLimitMiniRedis(t)
@@ -217,9 +288,11 @@ func TestRedisFailurePolicies(t *testing.T) {
 
 	ipResponse := performRateLimitRequest(router, "/ip", "192.0.2.60:12345")
 	assert.Equal(t, http.StatusInternalServerError, ipResponse.Code)
+	assert.Equal(t, "no-store", ipResponse.Header().Get("Cache-Control"))
 	assert.Empty(t, ipResponse.Body.String())
 	userResponse := performRateLimitRequest(router, "/user", "192.0.2.61:12345")
 	assert.Equal(t, http.StatusInternalServerError, userResponse.Code)
+	assert.Equal(t, "no-store", userResponse.Header().Get("Cache-Control"))
 	assert.Empty(t, userResponse.Body.String())
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/email", "192.0.2.62:12345").Code)
 }

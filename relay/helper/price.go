@@ -94,9 +94,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var cacheCreationRatio1h float64
 	var audioRatio float64
 	var audioCompletionRatio float64
+	var preConsumeMultiplier float64
 	var freeModel bool
 	if !usePrice {
-		preConsumeMultiplier, err := operation_setting.InputPreConsumeMultiplier()
+		var err error
+		preConsumeMultiplier, err = operation_setting.InputPreConsumeMultiplier()
 		if err != nil {
 			return hosttypes.PriceData{}, err
 		}
@@ -174,6 +176,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation5mRatio: cacheCreationRatio5m,
 		CacheCreation1hRatio: cacheCreationRatio1h,
 		QuotaToPreConsume:    preConsumedQuota,
+		PreConsumeMultiplier: preConsumeMultiplier,
 	}
 	if usePrice {
 		for name, ratio := range meta.BillingRatios {
@@ -311,10 +314,18 @@ func HasPriceOrRatioEntry(name string) bool {
 
 func resolveBillingModelName(origin string) string {
 	var candidates []string
-	if !reasoning.ParseModelModifiers(origin).HasModifiers() {
+	// An origin whose plain effort suffix collapses to a base model is reported
+	// as configured by every pricing getter as soon as the base row exists. Ask
+	// the canonical per-effort names first for those, or a base row would
+	// shadow them and silently undercharge the effort variant.
+	collapsesToBase := hostreasoning.EffortSuffixBaseModelName(origin) != ""
+	if !collapsesToBase && !reasoning.ParseModelModifiers(origin).HasModifiers() {
 		candidates = append(candidates, origin)
 	}
 	candidates = append(candidates, hostreasoning.CanonicalBillingModelNames(origin)...)
+	if collapsesToBase {
+		candidates = append(candidates, origin)
+	}
 	base := hostreasoning.BaseModelName(origin)
 	candidates = append(candidates, base)
 

@@ -21,6 +21,8 @@ import (
 )
 
 type Adaptor struct {
+	model       string
+	toolContext *geminiToolContext
 }
 
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
@@ -130,7 +132,11 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
-
+	a.model = ""
+	a.toolContext = nil
+	if info != nil && info.ChannelMeta != nil {
+		a.model = info.UpstreamModelName
+	}
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -174,6 +180,13 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	result, err := service.ConvertRequest(c, info, types.RelayFormatGemini, request)
 	if err != nil {
 		return nil, err
+	}
+	if converted, ok := result.Value.(*dto.GeminiChatRequest); ok &&
+		(strings.HasPrefix(a.model, "gemini-3.") || strings.HasPrefix(a.model, "gemini-3-")) {
+		a.toolContext = newGeminiToolContext(info, request, converted)
+		if c != nil {
+			c.Set(geminiContextKey, a.toolContext)
+		}
 	}
 	return result.Value, nil
 }

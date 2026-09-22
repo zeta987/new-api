@@ -9,9 +9,16 @@ import (
 
 const prefillGroupNameIndex = "uk_prefill_name"
 
+// legacyPrefillGroupNameUnique is the global unique object name older GORM
+// versions generated for prefill_groups.name. The migration matches conflicting
+// objects by definition rather than by this name; upgrade regression tests still
+// build that legacy schema.
+const legacyPrefillGroupNameUnique = "idx_prefill_groups_name"
+
 type conflictingPrefillGroupUniqueness struct {
-	constraints []string
-	indexes     []string
+	constraints    []string
+	indexes        []string
+	invalidIndexes []string
 }
 
 type prefillGroupNameIndexState struct {
@@ -21,6 +28,23 @@ type prefillGroupNameIndexState struct {
 
 func (conflicts conflictingPrefillGroupUniqueness) empty() bool {
 	return len(conflicts.constraints) == 0 && len(conflicts.indexes) == 0
+}
+
+// validateAutomaticMigrationScope refuses to migrate while the recognized legacy
+// index is invalid or not ready, the state PostgreSQL leaves behind after a
+// failed CREATE INDEX CONCURRENTLY. Replacing that index automatically would
+// hide a broken uniqueness build instead of reporting it. Any other invalid
+// index is still dropped and rebuilt as the partial unique index below.
+func (conflicts conflictingPrefillGroupUniqueness) validateAutomaticMigrationScope() error {
+	for _, name := range conflicts.invalidIndexes {
+		if name == legacyPrefillGroupNameUnique {
+			return fmt.Errorf(
+				"prefill group legacy index %q has an unexpected definition: PostgreSQL index is invalid or not ready",
+				name,
+			)
+		}
+	}
+	return nil
 }
 
 func inspectConflictingPrefillGroupUniqueness(db *gorm.DB, tableName string) (conflictingPrefillGroupUniqueness, error) {
@@ -42,8 +66,15 @@ ORDER BY constraint_meta.conname`, tableName, "name").Scan(&conflicts.constraint
 		return conflicts, fmt.Errorf("inspect conflicting prefill group unique constraints: %w", err)
 	}
 
+	var indexRows []struct {
+		Name  string `gorm:"column:index_name"`
+		Valid bool   `gorm:"column:index_valid"`
+		Ready bool   `gorm:"column:index_ready"`
+	}
 	if err := db.Raw(`
-SELECT index_class.relname
+SELECT index_class.relname AS index_name,
+       index_meta.indisvalid AS index_valid,
+       index_meta.indisready AS index_ready
 FROM pg_catalog.pg_index AS index_meta
 JOIN pg_catalog.pg_class AS index_class
   ON index_class.oid = index_meta.indexrelid
@@ -62,8 +93,14 @@ WHERE index_meta.indrelid = to_regclass(?)
       FROM pg_catalog.pg_constraint AS constraint_meta
       WHERE constraint_meta.conindid = index_meta.indexrelid
   )
-ORDER BY index_class.relname`, tableName, "name").Scan(&conflicts.indexes).Error; err != nil {
+ORDER BY index_class.relname`, tableName, "name").Scan(&indexRows).Error; err != nil {
 		return conflicts, fmt.Errorf("inspect conflicting prefill group unique indexes: %w", err)
+	}
+	for _, index := range indexRows {
+		conflicts.indexes = append(conflicts.indexes, index.Name)
+		if !index.Valid || !index.Ready {
+			conflicts.invalidIndexes = append(conflicts.invalidIndexes, index.Name)
+		}
 	}
 
 	return conflicts, nil
@@ -120,13 +157,32 @@ func migratePrefillGroupUniqueness(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	if err := conflicts.validateAutomaticMigrationScope(); err != nil {
+		return err
+	}
 	if conflicts.empty() {
+		// Nothing will be replaced, so a target index left with an unexpected
+		// definition is not repaired below and must be reported instead of
+		// silently passing startup without the intended uniqueness.
+		targetIndex, err := inspectPrefillGroupNameIndex(db, tableName)
+		if err != nil {
+			return err
+		}
+		if targetIndex.exists && !targetIndex.valid {
+			return fmt.Errorf(
+				"prefill group index %q has an unexpected definition",
+				prefillGroupNameIndex,
+			)
+		}
 		return nil
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		migrator := tx.Migrator()
 		if !migrator.HasTable(&PrefillGroup{}) {
 			return nil
+		}
+		if err := configurePostgresMigrationTimeouts(tx); err != nil {
+			return err
 		}
 
 		if err := tx.Exec(
@@ -143,6 +199,10 @@ func migratePrefillGroupUniqueness(db *gorm.DB) error {
 		if conflicts.empty() {
 			return nil
 		}
+		if err := conflicts.validateAutomaticMigrationScope(); err != nil {
+			return err
+		}
+
 		if !migrator.HasColumn(&PrefillGroup{}, "DeletedAt") {
 			if err := migrator.AddColumn(&PrefillGroup{}, "DeletedAt"); err != nil {
 				return fmt.Errorf("add prefill groups deleted_at column: %w", err)

@@ -384,12 +384,23 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 	ListModels(ctx, constant.ChannelTypeOpenAI)
 
 	payload := decodeListModelsPayload(t, recorder)
-	require.Len(t, payload.Data, 1)
-	require.Equal(t, "gemini-3.5-flash", payload.Data[0].Id)
-	require.Equal(t, []constant.EndpointType{
-		constant.EndpointTypeOpenAI,
-		constant.EndpointTypeOpenAIResponse,
-	}, payload.Data[0].SupportedEndpointTypes)
+	// The channel registers the base name only; the published effort variants
+	// are expanded from it and the advanced-custom route regex covers them all.
+	ids := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		ids = append(ids, item.Id)
+		require.Equal(t, []constant.EndpointType{
+			constant.EndpointTypeOpenAI,
+			constant.EndpointTypeOpenAIResponse,
+		}, item.SupportedEndpointTypes, item.Id)
+	}
+	require.Equal(t, []string{
+		"gemini-3.5-flash",
+		"gemini-3.5-flash-minimal",
+		"gemini-3.5-flash-low",
+		"gemini-3.5-flash-medium",
+		"gemini-3.5-flash-high",
+	}, ids)
 }
 
 func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {

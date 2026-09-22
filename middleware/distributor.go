@@ -18,9 +18,11 @@ import (
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	kitreasoning "github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -49,6 +51,12 @@ func Distribute() func(c *gin.Context) {
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
+		}
+		if allowedTypes, ok := reasoningAllowedChannelTypes(c.Request.URL.Path, modelRequest.Model); ok {
+			constraints.AddFilter(taskdto.ChannelFilter{
+				Kind:                taskdto.FilterAllowedChannelTypes,
+				AllowedChannelTypes: allowedTypes,
+			})
 		}
 		_, pinned, _ := constraints.ResolvedPin()
 		if !pinned {
@@ -128,6 +136,30 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func reasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
+	isChat := requestPath == "/v1/chat/completions" || strings.HasPrefix(requestPath, "/pg/chat/completions")
+	if isChat && !model_setting.ShouldPreserveThinkingSuffix(modelName) {
+		base := kitreasoning.ParseModelModifiers(modelName).Base
+		if _, _, ok := reasoning.ParseQwenReasoningEffortSuffix(base); ok {
+			return []int{constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter}, true
+		}
+	}
+	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(modelName); !ok {
+		return nil, false
+	}
+	if requestPath == "/v1/chat/completions" || strings.HasPrefix(requestPath, "/pg/chat/completions") {
+		return []int{
+			constant.ChannelTypeZhipu_v4,
+			constant.ChannelTypeOpenAI,
+			constant.ChannelTypeOpenRouter,
+		}, true
+	}
+	if requestPath == "/v1/responses" {
+		return []int{constant.ChannelTypeZhipu_v4, constant.ChannelTypeOpenRouter}, true
+	}
+	return []int{}, true
 }
 
 // noAvailableChannelMessage explains a 503 for a task-plugin-claimed model.
@@ -514,14 +546,13 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 // model. Exact name, wildcard-normalized name, and routing-normalized name
 // (modifiers and legacy aliases stripped) are all accepted. The Responses
 // WebSocket relay shares this rule so both transports admit the same names.
-func TokenModelLimitAllows(limit map[string]bool, model string) bool {
-	if limit[model] {
-		return true
+func TokenModelLimitAllows(limit map[string]bool, modelName string) bool {
+	for _, candidate := range model.ModelMatchCandidates(modelName) {
+		if limit[candidate] {
+			return true
+		}
 	}
-	if formatted := ratio_setting.FormatMatchingModelName(model); limit[formatted] {
-		return true
-	}
-	return limit[ratio_setting.RoutingMatchModelName(model)]
+	return false
 }
 
 // 修复 #4834: GET /v1/video/generations/:task_id && /v1/video/:task_id 此前不解析 model，

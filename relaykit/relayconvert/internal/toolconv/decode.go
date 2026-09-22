@@ -71,10 +71,51 @@ func extractOpenAIChatRequest(request any) (any, Set, error) {
 			})
 			continue
 		}
-		if len(tool.Custom) == 0 {
-			return nil, Set{}, fmt.Errorf("tools[%d] has unsupported type %q without a native payload", index, tool.Type)
+		nativePayload := tool.Custom
+		if tool.Type == dto.CustomType && len(nativePayload) > 0 {
+			// Chat represents a Responses custom tool as
+			// {"type":"custom","custom":{...definition fields...}}. The nested
+			// object is an envelope body, not a complete native tool definition.
+			var fields map[string]json.RawMessage
+			if err := kitutil.Unmarshal(nativePayload, &fields); err != nil {
+				return nil, Set{}, fmt.Errorf("tools[%d].custom: %w", index, err)
+			}
+			if fields == nil {
+				return nil, Set{}, fmt.Errorf("tools[%d].custom must be an object", index)
+			}
+			var nativeType string
+			if rawType, exists := fields["type"]; exists {
+				if err := kitutil.Unmarshal(rawType, &nativeType); err != nil {
+					return nil, Set{}, fmt.Errorf("tools[%d].custom.type: %w", index, err)
+				}
+			}
+			if strings.TrimSpace(nativeType) == "" {
+				fields["type"] = json.RawMessage(`"custom"`)
+				encoded, err := kitutil.Marshal(fields)
+				if err != nil {
+					return nil, Set{}, fmt.Errorf("tools[%d].custom: %w", index, err)
+				}
+				nativePayload = encoded
+			}
 		}
-		definition, err := decodeOpenAIResponsesDefinition(tool.Custom)
+		if len(nativePayload) == 0 {
+			// Parameter overrides may place native Responses tools directly in
+			// Chat tools. Preserve their fields without the chat-only function.
+			encoded, err := kitutil.Marshal(tool)
+			if err != nil {
+				return nil, Set{}, fmt.Errorf("tools[%d]: %w", index, err)
+			}
+			var fields map[string]json.RawMessage
+			if err := kitutil.Unmarshal(encoded, &fields); err != nil {
+				return nil, Set{}, fmt.Errorf("tools[%d]: %w", index, err)
+			}
+			delete(fields, "function")
+			nativePayload, err = kitutil.Marshal(fields)
+			if err != nil {
+				return nil, Set{}, fmt.Errorf("tools[%d]: %w", index, err)
+			}
+		}
+		definition, err := decodeOpenAIResponsesDefinition(nativePayload)
 		if err != nil {
 			return nil, Set{}, fmt.Errorf("tools[%d]: %w", index, err)
 		}

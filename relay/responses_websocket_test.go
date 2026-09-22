@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -120,20 +121,29 @@ func TestSelectResponsesWSChannelHonorsPinsAndFilters(t *testing.T) {
 // The WebSocket relay must admit the same model names as the HTTP distributor
 // when a token restricts models (reasoning suffixes and @modifiers included).
 func TestCheckResponsesWSModelAccessMatchesHTTPTokenLimits(t *testing.T) {
+	geminiSettings := model_setting.GetGeminiSettings()
+	oldThinkingAdapter := geminiSettings.ThinkingAdapterEnabled
+	geminiSettings.ThinkingAdapterEnabled = true
+	t.Cleanup(func() { geminiSettings.ThinkingAdapterEnabled = oldThinkingAdapter })
+
 	for _, tc := range []struct {
+		name   string
+		limit  map[string]bool
 		model  string
 		status int
 	}{
-		{model: "gpt-5.1"},
-		{model: "gpt-5.1-high"},
-		{model: "gpt-5.1@thinking:on"},
-		{model: "gpt-4o", status: http.StatusForbidden},
+		{name: "exact model", limit: map[string]bool{"gpt-5.1": true}, model: "gpt-5.1"},
+		{name: "reasoning wildcard", limit: map[string]bool{"gpt-5.6-luna-*": true}, model: "gpt-5.6-luna-pro-max"},
+		{name: "legacy thinking budget wildcard", limit: map[string]bool{"gemini-2.5-flash-thinking-*": true}, model: "gemini-2.5-flash-thinking-8192"},
+		{name: "reasoning suffix base", limit: map[string]bool{"gpt-5.1": true}, model: "gpt-5.1-high"},
+		{name: "modifier base", limit: map[string]bool{"gpt-5.1": true}, model: "gpt-5.1@thinking:on"},
+		{name: "forbidden", limit: map[string]bool{"gpt-5.1": true}, model: "gpt-4o", status: http.StatusForbidden},
 	} {
-		t.Run(tc.model, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
 			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
 			common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
-			common.SetContextKey(c, constant.ContextKeyTokenModelLimit, map[string]bool{"gpt-5.1": true})
+			common.SetContextKey(c, constant.ContextKeyTokenModelLimit, tc.limit)
 			apiErr := checkResponsesWSModelAccess(c, tc.model)
 			if tc.status == 0 {
 				assert.Nil(t, apiErr)

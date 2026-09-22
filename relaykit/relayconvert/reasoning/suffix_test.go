@@ -7,6 +7,126 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParseDeepSeekV4ThinkingSuffixSupportsLow(t *testing.T) {
+	for _, model := range []string{"deepseek-v4-flash-low", "deepseek-v4-pro-low"} {
+		t.Run(model, func(t *testing.T) {
+			baseModel, thinkingType, effort, ok := ParseDeepSeekV4ThinkingSuffix(model)
+
+			require.True(t, ok)
+			assert.Equal(t, model[:len(model)-len("-low")], baseModel)
+			assert.Equal(t, "enabled", thinkingType)
+			assert.Equal(t, "low", effort)
+		})
+	}
+}
+
+func TestParseGLMReasoningEffortSuffix(t *testing.T) {
+	tests := []struct {
+		model  string
+		base   string
+		effort string
+		ok     bool
+	}{
+		{model: "glm-5.2-none", base: "glm-5.2", effort: "none", ok: true},
+		{model: "glm-5.2-minimal", base: "glm-5.2", effort: "minimal", ok: true},
+		{model: "glm-5.2-low", base: "glm-5.2", effort: "low", ok: true},
+		{model: "glm-5.2-medium", base: "glm-5.2", effort: "medium", ok: true},
+		{model: "glm-5.2-high", base: "glm-5.2", effort: "high", ok: true},
+		{model: "glm-5.2-xhigh", base: "glm-5.2", effort: "xhigh", ok: true},
+		{model: "glm-5.2-max", base: "glm-5.2", effort: "max", ok: true},
+		{model: "glm-5.3-high", base: "glm-5.3", effort: "high", ok: true},
+		{model: "glm-5.3-flash-low", base: "glm-5.3-flash", effort: "low", ok: true},
+		{model: "glm-5.3-flash-high", base: "glm-5.3-flash", effort: "high", ok: true},
+		{model: "glm-5.3-flash-max", base: "glm-5.3-flash", effort: "max", ok: true},
+		{model: "glm-future-model-xhigh", base: "glm-future-model", effort: "xhigh", ok: true},
+		{model: "glm-5.3-flash", base: "glm-5.3-flash"},
+		{model: "glm-5.3-flash-fast", base: "glm-5.3-flash-fast"},
+		{model: "glm-5.3-flash-max-extra", base: "glm-5.3-flash-max-extra"},
+		{model: "glm-low", base: "glm-low"},
+		{model: "glm--low", base: "glm--low"},
+		{model: "GLM-5.3-high", base: "GLM-5.3-high"},
+		{model: "custom-glm-5.3-high", base: "custom-glm-5.3-high"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.model, func(t *testing.T) {
+			base, effort, ok := ParseGLMReasoningEffortSuffix(test.model)
+			assert.Equal(t, test.base, base)
+			assert.Equal(t, test.effort, effort)
+			assert.Equal(t, test.ok, ok)
+		})
+	}
+}
+
+func TestIsGLMReasoningEffortModel(t *testing.T) {
+	for _, model := range []string{"glm-5", "glm-5.1", "glm-5.2", "glm-5.3-flash", "glm-future-model", "glm-5.3-flash-fast"} {
+		assert.True(t, IsGLMReasoningEffortModel(model))
+	}
+	for _, model := range []string{"glm-5.2-max", "glm-5.3-flash-low", "glm-low", "glm--low", "GLM-5.3", "custom-glm-5.3"} {
+		assert.False(t, IsGLMReasoningEffortModel(model))
+	}
+}
+
+func TestGLMBasePredicateAndSuffixParserAreMutuallyExclusive(t *testing.T) {
+	for _, model := range []string{"glm-5.3-flash", "glm-5.3-flash-low", "glm-future-model-xhigh", "glm-low", "glm--low"} {
+		_, _, parsed := ParseGLMReasoningEffortSuffix(model)
+		assert.False(t, parsed && IsGLMReasoningEffortModel(model), model)
+	}
+}
+
+func TestParseKimiReasoningEffortSuffix(t *testing.T) {
+	tests := []struct {
+		model  string
+		base   string
+		effort string
+		ok     bool
+	}{
+		{model: "kimi-k3-none", base: "kimi-k3", effort: "none", ok: true},
+		{model: "kimi-k3-low", base: "kimi-k3", effort: "low", ok: true},
+		{model: "kimi-k3-high", base: "kimi-k3", effort: "high", ok: true},
+		{model: "kimi-k3-max", base: "kimi-k3", effort: "max", ok: true},
+		{model: "kimi-k3-turbo-high", base: "kimi-k3-turbo", effort: "high", ok: true},
+		// Outside the none/low/high/max vocabulary.
+		{model: "kimi-k3-medium", base: "kimi-k3-medium"},
+		{model: "kimi-k3-xhigh", base: "kimi-k3-xhigh"},
+		{model: "kimi-k3-minimal", base: "kimi-k3-minimal"},
+		// -thinking names a model, never an effort level.
+		{model: "kimi-k2-thinking", base: "kimi-k2-thinking"},
+		{model: "kimi-k3", base: "kimi-k3"},
+		{model: "kimi-k3-high-extra", base: "kimi-k3-high-extra"},
+		// A bare effort word is its own model name, not a suffixed one.
+		{model: "kimi-low", base: "kimi-low"},
+		{model: "kimi--low", base: "kimi--low"},
+		{model: "KIMI-K3-high", base: "KIMI-K3-high"},
+		{model: "custom-kimi-k3-high", base: "custom-kimi-k3-high"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.model, func(t *testing.T) {
+			base, effort, ok := ParseKimiReasoningEffortSuffix(test.model)
+			assert.Equal(t, test.base, base)
+			assert.Equal(t, test.effort, effort)
+			assert.Equal(t, test.ok, ok)
+		})
+	}
+}
+
+func TestIsKimiReasoningEffortModel(t *testing.T) {
+	for _, model := range []string{"kimi-k2-thinking", "kimi-k3", "kimi-k3-turbo", "kimi-latest", "kimi-k3-medium"} {
+		assert.True(t, IsKimiReasoningEffortModel(model), model)
+	}
+	for _, model := range []string{"kimi-k3-high", "kimi-k3-max", "kimi-low", "kimi--low", "KIMI-K3", "custom-kimi-k3"} {
+		assert.False(t, IsKimiReasoningEffortModel(model), model)
+	}
+}
+
+func TestKimiBasePredicateAndSuffixParserAreMutuallyExclusive(t *testing.T) {
+	for _, model := range []string{"kimi-k3", "kimi-k3-high", "kimi-k3-turbo-max", "kimi-k2-thinking", "kimi-low", "kimi--low"} {
+		_, _, parsed := ParseKimiReasoningEffortSuffix(model)
+		assert.False(t, parsed && IsKimiReasoningEffortModel(model), model)
+	}
+}
+
 func TestParseGeminiModelSuffixNoThinkingDisablesReasoning(t *testing.T) {
 	t.Parallel()
 
