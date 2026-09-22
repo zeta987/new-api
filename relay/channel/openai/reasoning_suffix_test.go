@@ -210,6 +210,62 @@ func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) 
 	}
 }
 
+func TestConvertOpenAIResponsesRequestKeepsOpaqueModelIDs(t *testing.T) {
+	settings := model_setting.GetGlobalSettings()
+	originalBlacklist := append([]string(nil), settings.ThinkingModelBlacklist...)
+	t.Cleanup(func() { settings.ThinkingModelBlacklist = originalBlacklist })
+
+	tests := []struct {
+		name         string
+		origin       string
+		mapped       string
+		blacklist    string
+		wantUpstream string
+	}{
+		{name: "direct opaque effort tail", origin: "vendor-model-high", wantUpstream: "vendor-model-high"},
+		{name: "mapped opaque target suppresses origin effort", origin: "gpt-5.6-luna-high", mapped: "vendor-model-high", wantUpstream: "vendor-model-high"},
+		{name: "blacklisted OpenAI alias", origin: "gpt-5.6-luna-high", blacklist: "gpt-5.6-luna-high", wantUpstream: "gpt-5.6-luna-high"},
+		{name: "blacklisted OpenAI base", origin: "gpt-5.5-high", blacklist: "gpt-5.5", wantUpstream: "gpt-5.5-high"},
+		{name: "special Grok variant", origin: "grok-4.7-preview-high", wantUpstream: "grok-4.7-preview-high"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			settings.ThinkingModelBlacklist = append([]string(nil), originalBlacklist...)
+			if testCase.blacklist != "" {
+				settings.ThinkingModelBlacklist = append(settings.ThinkingModelBlacklist, testCase.blacklist)
+			}
+
+			gin.SetMode(gin.TestMode)
+			c, _ := gin.CreateTestContext(nil)
+			request := &dto.OpenAIResponsesRequest{Model: testCase.origin}
+			info := &relaycommon.RelayInfo{
+				OriginModelName: testCase.origin,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelType:       constant.ChannelTypeOpenAI,
+					UpstreamModelName: testCase.origin,
+				},
+			}
+			if testCase.mapped != "" {
+				mapping, err := common.Marshal(map[string]string{testCase.origin: testCase.mapped})
+				require.NoError(t, err)
+				c.Set("model_mapping", string(mapping))
+				require.NoError(t, helper.ModelMappedHelper(c, info, request))
+			}
+
+			converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, info, *request)
+			require.NoError(t, err)
+			got, ok := converted.(dto.OpenAIResponsesRequest)
+			require.True(t, ok)
+
+			assert.Equal(t, testCase.wantUpstream, got.Model)
+			assert.Nil(t, got.Reasoning)
+			assert.Equal(t, testCase.wantUpstream, info.UpstreamModelName)
+			assert.Empty(t, info.ReasoningEffort)
+		})
+	}
+}
+
 func TestConvertOpenAIResponsesRequestUsesOriginalModelSuffixAfterMapping(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "gpt-5.6-luna-pro-max",
