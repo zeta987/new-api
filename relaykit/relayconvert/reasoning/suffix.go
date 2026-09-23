@@ -21,6 +21,7 @@ var (
 	legacyOpenAIModelPattern = regexp.MustCompile(`^(gpt-[a-z0-9][a-z0-9._-]*|o[1-9][a-z0-9._-]*)$`)
 	legacyClaudeModelPattern = regexp.MustCompile(`^claude-[a-z0-9][a-z0-9._-]*$`)
 	legacyGeminiModelPattern = regexp.MustCompile(`^gemini-[a-z0-9][a-z0-9._-]*$`)
+	standardGPT6ModelPattern = regexp.MustCompile(`^(gpt-6(?:-(?:sol|luna)|\.(?:0|[1-9][0-9]?)(?:-(?:sol|luna))?))(?:-(.*))?$`)
 )
 
 type ModelModifier struct {
@@ -137,6 +138,13 @@ func ParseOpenAIReasoningEffortFromModelSuffix(modelName string, preserveEffortT
 	}
 	if _, _, known := splitGPT56Model(modelName); known {
 		base, mode, effort, ok := ParseGPT56ReasoningModelSuffix(modelName)
+		if !ok || mode != "" {
+			return "", modelName
+		}
+		return effort, base
+	}
+	if _, _, known := splitStandardGPT6Model(modelName); known {
+		base, mode, effort, ok := ParseStandardGPT6ReasoningModelSuffix(modelName)
 		if !ok || mode != "" {
 			return "", modelName
 		}
@@ -374,6 +382,9 @@ func ParseOpenAIReasoningModelSuffix(modelName string) (baseModel string, mode s
 	if _, _, isGPT56 := splitGPT56Model(modelName); isGPT56 {
 		return ParseGPT56ReasoningModelSuffix(modelName)
 	}
+	if _, _, isStandardGPT6 := splitStandardGPT6Model(modelName); isStandardGPT6 {
+		return ParseStandardGPT6ReasoningModelSuffix(modelName)
+	}
 
 	baseModel, effort, ok = TrimEffortSuffixWithSuffixes(modelName, OpenAIEffortSuffixes)
 	if !ok {
@@ -401,7 +412,16 @@ func IsGPT56ReasoningWildcard(modelName string) bool {
 
 func ParseGPT56ReasoningModelSuffix(modelName string) (baseModel string, mode string, effort string, ok bool) {
 	baseModel, suffix, isGPT56 := splitGPT56Model(modelName)
-	if !isGPT56 || suffix == "" {
+	return parseGPTReasoningModelSuffix(modelName, baseModel, suffix, isGPT56)
+}
+
+func ParseStandardGPT6ReasoningModelSuffix(modelName string) (baseModel string, mode string, effort string, ok bool) {
+	baseModel, suffix, standard := splitStandardGPT6Model(modelName)
+	return parseGPTReasoningModelSuffix(modelName, baseModel, suffix, standard)
+}
+
+func parseGPTReasoningModelSuffix(modelName, baseModel, suffix string, known bool) (string, string, string, bool) {
+	if !known || suffix == "" {
 		return modelName, "", "", false
 	}
 
@@ -513,6 +533,14 @@ func splitGPT56Model(modelName string) (baseModel string, suffix string, ok bool
 		}
 	}
 	return "", "", false
+}
+
+func splitStandardGPT6Model(modelName string) (baseModel string, suffix string, ok bool) {
+	match := standardGPT6ModelPattern.FindStringSubmatch(modelName)
+	if match == nil {
+		return "", "", false
+	}
+	return match[1], match[2], true
 }
 
 func canonicalGPT56ReasoningMode(mode string) (string, bool) {

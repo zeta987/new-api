@@ -87,7 +87,7 @@ func TestResponsesMappedReasoningPrecedenceAfterPreprocessing(t *testing.T) {
 	}
 }
 
-func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) {
+func TestConvertOpenAIResponsesRequestAppliesGPTReasoningSuffix(t *testing.T) {
 	tests := []struct {
 		name          string
 		request       dto.OpenAIResponsesRequest
@@ -119,6 +119,29 @@ func TestConvertOpenAIResponsesRequestAppliesGPT56ReasoningSuffix(t *testing.T) 
 			name:          "pro max sets both fields",
 			request:       dto.OpenAIResponsesRequest{Model: "gpt-5.6-luna-pro-max"},
 			wantModel:     "gpt-5.6-luna",
+			wantMode:      "pro",
+			wantEffort:    "max",
+			wantReasoning: true,
+		},
+		{
+			name:          "GPT-6 Sol pro effort",
+			request:       dto.OpenAIResponsesRequest{Model: "gpt-6-sol-pro-high"},
+			wantModel:     "gpt-6-sol",
+			wantMode:      "pro",
+			wantEffort:    "high",
+			wantReasoning: true,
+		},
+		{
+			name:          "GPT-6 Luna none",
+			request:       dto.OpenAIResponsesRequest{Model: "gpt-6-luna-none"},
+			wantModel:     "gpt-6-luna",
+			wantEffort:    "none",
+			wantReasoning: true,
+		},
+		{
+			name:          "future GPT-6 minor",
+			request:       dto.OpenAIResponsesRequest{Model: "gpt-6.1-pro-max"},
+			wantModel:     "gpt-6.1",
 			wantMode:      "pro",
 			wantEffort:    "max",
 			wantReasoning: true,
@@ -287,9 +310,10 @@ func TestConvertOpenAIResponsesRequestUsesOriginalModelSuffixAfterMapping(t *tes
 }
 
 func TestModelListIncludesGPT56Models(t *testing.T) {
-	for _, model := range []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"} {
+	for _, model := range []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-sol", "gpt-6-luna"} {
 		assert.Truef(t, slices.Contains(ModelList, model), "ModelList is missing %s", model)
 	}
+	assert.NotContains(t, ModelList, "gpt-6-terra")
 }
 
 func TestQwenReasoningEffortSuffixBoundaries(t *testing.T) {

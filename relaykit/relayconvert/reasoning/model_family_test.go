@@ -26,6 +26,14 @@ func TestEffortSuffixModelNames(t *testing.T) {
 			want: []string{"claude-opus-5", "claude-opus-5-low", "claude-opus-5-medium", "claude-opus-5-high", "claude-opus-5-xhigh", "claude-opus-5-max"},
 		},
 		{
+			base: "claude-opus-5-5",
+			want: []string{"claude-opus-5-5", "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high", "claude-opus-5-5-xhigh", "claude-opus-5-5-max"},
+		},
+		{
+			base: "claude-sonnet-5-5",
+			want: []string{"claude-sonnet-5-5", "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high", "claude-sonnet-5-5-xhigh", "claude-sonnet-5-5-max"},
+		},
+		{
 			base: "claude-sonnet-5",
 			want: []string{"claude-sonnet-5", "claude-sonnet-5-low", "claude-sonnet-5-medium", "claude-sonnet-5-high", "claude-sonnet-5-xhigh", "claude-sonnet-5-max"},
 		},
@@ -97,6 +105,10 @@ func TestEffortSuffixModelNames(t *testing.T) {
 			base: "grok-4.7",
 			want: []string{"grok-4.7", "grok-4.7-low", "grok-4.7-medium", "grok-4.7-high", "grok-4.7-xhigh"},
 		},
+		{
+			base: "grok-4.9",
+			want: []string{"grok-4.9", "grok-4.9-low", "grok-4.9-medium", "grok-4.9-high", "grok-4.9-xhigh"},
+		},
 		// Namespace prefixes are carried onto every variant.
 		{
 			base: "vendor/kimi-k3",
@@ -131,6 +143,10 @@ func TestEffortSuffixModelNamesRejectsUnknownBases(t *testing.T) {
 		"grok-4.7-reasoning",
 		"grok-4.7-multi-agent",
 		"claude-fable-5-high",
+		"claude-sonnet-5-5-preview",
+		"claude-sonnet-5-5-20260923",
+		"claude-sonnet-5-20260630",
+		"vendor/claude-sonnet-5-20260630",
 		"gemini-2.5-flash",
 		"qwen3.8-max",
 		"claude-fable-5@thinking:on",
@@ -147,7 +163,7 @@ func TestEffortSuffixVocabularyOmissions(t *testing.T) {
 	for _, base := range []string{"gemini-3.7-flash", "gemini-3.8-flash"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-minimal")
 	}
-	for _, base := range []string{"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-fable-5-1"} {
+	for _, base := range []string{"claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-fable-5", "claude-fable-5-1"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-none")
 	}
 }
@@ -178,6 +194,21 @@ func TestEffortSuffixVocabularyIsRenderable(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestClaudeOpus55DefaultAndDisabledThinking(t *testing.T) {
+	defaultIntent := ResolveClaudeDefault("claude-opus-5-5", Intent{})
+	assert.Equal(t, ModeAdaptive, defaultIntent.Mode)
+	assert.Equal(t, EffortMedium, defaultIntent.Effort)
+	assert.Equal(t, EffortHigh, ResolveClaudeDefault("claude-opus-5", Intent{}).Effort)
+
+	rendered, err := RenderClaude("claude-opus-5-5", Intent{Mode: ModeDisabled}, nil, 0.8)
+	require.NoError(t, err)
+	require.NotNil(t, rendered.Thinking)
+	assert.Equal(t, "adaptive", rendered.Thinking.Type)
+	assert.Equal(t, EffortLow, rendered.OutputEffort)
+	assert.Equal(t, EffortLow, rendered.EffectiveEffort)
+	assert.False(t, claudeCapabilitiesFor("claude-opus-5-5").supportsManual)
 }
 
 func TestParseGrokReasoningEffortSuffix(t *testing.T) {

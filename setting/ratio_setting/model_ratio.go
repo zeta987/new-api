@@ -813,6 +813,9 @@ func FormatMatchingModelName(name string) string {
 	if baseModel, _, _, ok := hostreasoning.ParseGPT56ReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
+	if baseModel, _, _, ok := hostreasoning.ParseStandardGPT6ReasoningModelSuffix(name); ok {
+		name = baseModel
+	}
 	if baseModel, _, _, ok := hostreasoning.ParseGPT6AstraReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
@@ -831,10 +834,14 @@ func FormatMatchingModelName(name string) string {
 		name = handleThinkingBudgetModel(name, "gemini-2.5-pro", "gemini-2.5-pro-thinking-*")
 	}
 
-	if name == "claude-sonnet-5" || strings.HasPrefix(name, "claude-sonnet-5-") {
+	if base := hostreasoning.EffortSuffixBaseModelName(name); hostreasoning.IsStandardClaudeFiveModel(base) ||
+		isDatedClaudeFiveModel(base, "claude-opus-5") || isDatedClaudeFiveModel(base, "claude-sonnet-5") {
+		name = base
+	}
+	if name == "claude-sonnet-5" || isDatedClaudeFiveModel(name, "claude-sonnet-5") {
 		name = "claude-sonnet-5"
 	}
-	if name == "claude-opus-5" || strings.HasPrefix(name, "claude-opus-5-") {
+	if name == "claude-opus-5" || isDatedClaudeFiveModel(name, "claude-opus-5") {
 		name = "claude-opus-5"
 	}
 
@@ -845,6 +852,19 @@ func FormatMatchingModelName(name string) string {
 		name = "gpt-4o-gizmo-*"
 	}
 	return name
+}
+
+func isDatedClaudeFiveModel(name, base string) bool {
+	date, ok := strings.CutPrefix(name, base+"-")
+	if !ok || len(date) != 8 {
+		return false
+	}
+	for _, digit := range date {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // result: 倍率or价格， usePrice， exist

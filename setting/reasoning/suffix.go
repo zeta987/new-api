@@ -21,23 +21,25 @@ var (
 )
 
 var (
-	IsClaudeEffortLevel                 = kitreasoning.IsClaudeEffortLevel
-	TrimEffortSuffix                    = kitreasoning.TrimEffortSuffix
-	IsClaudeAdaptiveThinkingModel       = kitreasoning.IsClaudeAdaptiveThinkingModel
-	IsClaudePost46AdaptiveThinkingModel = kitreasoning.IsClaudePost46AdaptiveThinkingModel
-	TrimEffortSuffixWithSuffixes        = kitreasoning.TrimEffortSuffixWithSuffixes
-	GPT56ReasoningWildcardModel         = kitreasoning.GPT56ReasoningWildcardModel
-	IsGPT56ReasoningWildcard            = kitreasoning.IsGPT56ReasoningWildcard
-	ParseGPT56ReasoningModelSuffix      = kitreasoning.ParseGPT56ReasoningModelSuffix
-	IsQwenReasoningModel                = kitreasoning.IsQwenReasoningModel
-	ParseGLMReasoningEffortSuffix       = kitreasoning.ParseGLMReasoningEffortSuffix
-	IsGLMReasoningEffortModel           = kitreasoning.IsGLMReasoningEffortModel
-	ParseDeepSeekV4ThinkingSuffix       = kitreasoning.ParseDeepSeekV4ThinkingSuffix
-	ParseKimiReasoningEffortSuffix      = kitreasoning.ParseKimiReasoningEffortSuffix
-	IsKimiReasoningEffortModel          = kitreasoning.IsKimiReasoningEffortModel
-	ParseGrokReasoningEffortSuffix      = kitreasoning.ParseGrokReasoningEffortSuffix
-	IsStandardGrokModel                 = kitreasoning.IsStandardGrokModel
-	TrimGeminiThinkingSuffix            = kitreasoning.TrimGeminiThinkingSuffix
+	IsClaudeEffortLevel                   = kitreasoning.IsClaudeEffortLevel
+	TrimEffortSuffix                      = kitreasoning.TrimEffortSuffix
+	IsClaudeAdaptiveThinkingModel         = kitreasoning.IsClaudeAdaptiveThinkingModel
+	IsClaudePost46AdaptiveThinkingModel   = kitreasoning.IsClaudePost46AdaptiveThinkingModel
+	TrimEffortSuffixWithSuffixes          = kitreasoning.TrimEffortSuffixWithSuffixes
+	GPT56ReasoningWildcardModel           = kitreasoning.GPT56ReasoningWildcardModel
+	IsGPT56ReasoningWildcard              = kitreasoning.IsGPT56ReasoningWildcard
+	ParseGPT56ReasoningModelSuffix        = kitreasoning.ParseGPT56ReasoningModelSuffix
+	ParseStandardGPT6ReasoningModelSuffix = kitreasoning.ParseStandardGPT6ReasoningModelSuffix
+	IsStandardClaudeFiveModel             = kitreasoning.IsStandardClaudeFiveModel
+	IsQwenReasoningModel                  = kitreasoning.IsQwenReasoningModel
+	ParseGLMReasoningEffortSuffix         = kitreasoning.ParseGLMReasoningEffortSuffix
+	IsGLMReasoningEffortModel             = kitreasoning.IsGLMReasoningEffortModel
+	ParseDeepSeekV4ThinkingSuffix         = kitreasoning.ParseDeepSeekV4ThinkingSuffix
+	ParseKimiReasoningEffortSuffix        = kitreasoning.ParseKimiReasoningEffortSuffix
+	IsKimiReasoningEffortModel            = kitreasoning.IsKimiReasoningEffortModel
+	ParseGrokReasoningEffortSuffix        = kitreasoning.ParseGrokReasoningEffortSuffix
+	IsStandardGrokModel                   = kitreasoning.IsStandardGrokModel
+	TrimGeminiThinkingSuffix              = kitreasoning.TrimGeminiThinkingSuffix
 )
 
 // ParseQwenReasoningEffortSuffix applies the host thinking-suffix blacklist to

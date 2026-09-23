@@ -30,11 +30,12 @@ type claudeCapabilities struct {
 	supportsXHigh   bool
 	supportsMax     bool
 	strictSampling  bool
+	defaultEffort   Effort
 }
 
 func claudeCapabilitiesFor(model string) claudeCapabilities {
 	model = strings.ToLower(model)
-	capabilities := claudeCapabilities{supportsManual: true, supportsDisable: true}
+	capabilities := claudeCapabilities{supportsManual: true, supportsDisable: true, defaultEffort: EffortHigh}
 
 	switch {
 	case strings.HasPrefix(model, "claude-fable-5"),
@@ -53,6 +54,16 @@ func claudeCapabilitiesFor(model string) claudeCapabilities {
 		capabilities.supportsDisable = false
 		capabilities.supportsMax = true
 		capabilities.strictSampling = true
+	case model == "claude-opus-5-5" || strings.HasPrefix(model, "claude-opus-5-5-"):
+		capabilities.adaptive = true
+		capabilities.supportsManual = false
+		capabilities.defaultThinking = true
+		capabilities.supportsDisable = false
+		capabilities.supportsEffort = true
+		capabilities.supportsXHigh = true
+		capabilities.supportsMax = true
+		capabilities.strictSampling = true
+		capabilities.defaultEffort = EffortMedium
 	case strings.HasPrefix(model, "claude-opus-5"),
 		strings.HasPrefix(model, "claude-sonnet-5"),
 		strings.HasPrefix(model, "claude-opus-4-8"),
@@ -114,12 +125,12 @@ func RenderClaude(model string, intent Intent, maxTokens *uint, adapterBudgetPer
 			}
 			return ClaudeRender{
 				Thinking:        thinking,
-				EffectiveEffort: EffortHigh,
+				EffectiveEffort: capabilities.defaultEffort,
 				ClearSampling:   capabilities.strictSampling,
 			}, nil
 		}
 		if capabilities.defaultThinking {
-			return ClaudeRender{EffectiveEffort: EffortHigh, ClearSampling: capabilities.strictSampling}, nil
+			return ClaudeRender{EffectiveEffort: capabilities.defaultEffort, ClearSampling: capabilities.strictSampling}, nil
 		}
 		return ClaudeRender{ClearSampling: capabilities.strictSampling}, nil
 	}
@@ -176,7 +187,7 @@ func RenderClaude(model string, intent Intent, maxTokens *uint, adapterBudgetPer
 			effort = EffortFromBudget(*intent.BudgetTokens)
 		}
 		if effort == "" && intent.Mode == ModeEnabled {
-			effort = EffortHigh
+			effort = capabilities.defaultEffort
 		}
 		normalizedEffort := normalizeClaudeEffort(effort, capabilities)
 		if effort != "" && normalizedEffort != effort {
@@ -188,7 +199,7 @@ func RenderClaude(model string, intent Intent, maxTokens *uint, adapterBudgetPer
 		effort = normalizedEffort
 		effectiveEffort := effort
 		if effectiveEffort == "" && intent.Mode == ModeAdaptive {
-			effectiveEffort = EffortHigh
+			effectiveEffort = capabilities.defaultEffort
 		}
 
 		// Claude effort can be used without enabling thinking. Preserve that
@@ -335,11 +346,12 @@ func IsKnownClaudeModel(model string) bool {
 }
 
 func ResolveClaudeDefault(model string, intent Intent) Intent {
-	if intent.HasStrength() || !claudeCapabilitiesFor(model).defaultThinking {
+	capabilities := claudeCapabilitiesFor(model)
+	if intent.HasStrength() || !capabilities.defaultThinking {
 		return intent
 	}
 	intent.Mode = ModeAdaptive
-	intent.Effort = EffortHigh
+	intent.Effort = capabilities.defaultEffort
 	return intent
 }
 

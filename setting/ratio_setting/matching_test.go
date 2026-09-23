@@ -100,6 +100,25 @@ func TestNamespacedGrokPricingCandidatesIncludeExactBase(t *testing.T) {
 	assert.Contains(t, ModelPricingCandidates("x-ai/grok-4.7-xhigh"), "x-ai/grok-4.7")
 }
 
+func TestNewModelEffortAliasesKeepTheirOwnPricingBase(t *testing.T) {
+	for _, tc := range []struct{ alias, base string }{
+		{"gpt-6-sol-pro-max", "gpt-6-sol"},
+		{"gpt-6-luna-none", "gpt-6-luna"},
+		{"claude-opus-5-5-max", "claude-opus-5-5"},
+		{"claude-sonnet-5-5-high", "claude-sonnet-5-5"},
+		{"gpt-6.1-pro-xhigh", "gpt-6.1"},
+	} {
+		t.Run(tc.alias, func(t *testing.T) {
+			assert.Equal(t, tc.base, FormatMatchingModelName(tc.alias))
+			assert.Contains(t, ModelPricingCandidates(tc.alias), tc.base)
+		})
+	}
+	assert.NotContains(t, ModelPricingCandidates("claude-opus-5-5-max"), "claude-opus-5")
+	assert.Equal(t, "claude-sonnet-5", FormatMatchingModelName("claude-sonnet-5-20260630"))
+	assert.Equal(t, "claude-sonnet-5", FormatMatchingModelName("claude-sonnet-5-20260630-high"))
+	assert.Contains(t, ModelPricingCandidates("claude-sonnet-5-20260630-high"), "claude-sonnet-5")
+}
+
 func TestRoutingMatchModelNamePreservesExemptAtName(t *testing.T) {
 	settings := model_setting.GetGlobalSettings()
 	original := append([]string(nil), settings.ThinkingModelBlacklist...)
