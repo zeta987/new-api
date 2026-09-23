@@ -21,6 +21,12 @@ func TestClaudeModelListIncludesOpus5EffortSeriesAndOmitsSonnet5Thinking(t *test
 		"claude-opus-5-high",
 		"claude-opus-5-xhigh",
 		"claude-opus-5-max",
+		"claude-opus-5-5",
+		"claude-opus-5-5-low",
+		"claude-opus-5-5-medium",
+		"claude-opus-5-5-high",
+		"claude-opus-5-5-xhigh",
+		"claude-opus-5-5-max",
 	} {
 		require.Contains(t, models, model)
 	}
@@ -196,6 +202,29 @@ func TestOpenAIChatRequestToClaudeMessagesEnablesSonnet5EffortSuffix(t *testing.
 	require.Nil(t, claudeReq.Temperature)
 	require.Nil(t, claudeReq.TopP)
 	require.Nil(t, claudeReq.TopK)
+}
+
+func TestOpenAIChatRequestToClaudeOpus55UsesAdaptiveEffort(t *testing.T) {
+	for _, tc := range []struct{ model, wantEffort string }{
+		{"claude-opus-5-5", ""},
+		{"claude-opus-5-5-low", "low"},
+		{"claude-opus-5-5-max", "max"},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			req := dto.GeneralOpenAIRequest{
+				Model:    tc.model,
+				Messages: []dto.Message{{Role: "user", Content: "hello"}},
+			}
+			claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
+			require.NoError(t, err)
+			require.Equal(t, "claude-opus-5-5", claudeReq.Model)
+			if tc.wantEffort != "" {
+				require.NotNil(t, claudeReq.Thinking)
+				require.Equal(t, "adaptive", claudeReq.Thinking.Type)
+				require.Equal(t, tc.wantEffort, gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
+			}
+		})
+	}
 }
 
 func TestOpenAIChatRequestToClaudeMessagesMapsSonnet5ReasoningEffort(t *testing.T) {

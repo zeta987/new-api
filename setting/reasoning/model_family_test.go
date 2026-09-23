@@ -17,6 +17,27 @@ func TestModelFamilyDiscoveryKeepsExplicitAndOpaqueNames(t *testing.T) {
 	assert.Equal(t, []string{"gpt-6-astra"}, ExpandOpenAIReasoningModels([]string{"gpt-6-astra", "gpt-6-astra-*"}))
 }
 
+func TestGPT6StandardModelsExpandOnlySupportedAliases(t *testing.T) {
+	for _, base := range []string{"gpt-6-sol", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol", "gpt-6.1-luna"} {
+		t.Run(base, func(t *testing.T) {
+			variants := ExpandOpenAIReasoningModels([]string{base})
+			require.Len(t, variants, 21)
+			assert.Equal(t, base, variants[0])
+			for _, effort := range []string{"none", "low", "medium", "high", "xhigh", "max"} {
+				assert.Contains(t, variants, base+"-"+effort)
+				assert.Contains(t, variants, base+"-pro-"+effort)
+			}
+			assert.NotContains(t, variants, base+"-minimal")
+			assert.NotContains(t, variants, base+"-ultra")
+			assert.Equal(t, variants[1:], ExpandOpenAIReasoningModels([]string{base + "-*"}))
+		})
+	}
+	assert.Equal(t, []string{"gpt-6-terra"}, ExpandOpenAIReasoningModels([]string{"gpt-6-terra"}))
+	for _, opaque := range []string{"gpt-6.1-terra", "gpt-6.1-preview", "gpt-6.1-20260923", "gpt-6.1-ultra"} {
+		assert.Equal(t, []string{opaque}, ExpandOpenAIReasoningModels([]string{opaque}))
+	}
+}
+
 func TestExpandEffortSuffixFamilies(t *testing.T) {
 	tests := []struct {
 		base string
@@ -24,6 +45,8 @@ func TestExpandEffortSuffixFamilies(t *testing.T) {
 	}{
 		{base: "claude-fable-5", want: []string{"claude-fable-5", "claude-fable-5-low", "claude-fable-5-medium", "claude-fable-5-high", "claude-fable-5-xhigh", "claude-fable-5-max"}},
 		{base: "claude-opus-5", want: []string{"claude-opus-5", "claude-opus-5-low", "claude-opus-5-medium", "claude-opus-5-high", "claude-opus-5-xhigh", "claude-opus-5-max"}},
+		{base: "claude-opus-5-5", want: []string{"claude-opus-5-5", "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high", "claude-opus-5-5-xhigh", "claude-opus-5-5-max"}},
+		{base: "claude-sonnet-5-5", want: []string{"claude-sonnet-5-5", "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high", "claude-sonnet-5-5-xhigh", "claude-sonnet-5-5-max"}},
 		{base: "gemini-3.8-flash", want: []string{"gemini-3.8-flash", "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"}},
 		{base: "glm-5.3-flash", want: []string{"glm-5.3-flash", "glm-5.3-flash-low", "glm-5.3-flash-high", "glm-5.3-flash-max"}},
 		{base: "deepseek-v4-pro", want: []string{"deepseek-v4-pro", "deepseek-v4-pro-none", "deepseek-v4-pro-low", "deepseek-v4-pro-high", "deepseek-v4-pro-max"}},
@@ -32,6 +55,10 @@ func TestExpandEffortSuffixFamilies(t *testing.T) {
 		{base: "grok-4.5", want: []string{"grok-4.5", "grok-4.5-low", "grok-4.5-medium", "grok-4.5-high"}},
 		{base: "grok-4.6", want: []string{"grok-4.6", "grok-4.6-low", "grok-4.6-medium", "grok-4.6-high", "grok-4.6-xhigh"}},
 		{base: "grok-4.7", want: []string{"grok-4.7", "grok-4.7-low", "grok-4.7-medium", "grok-4.7-high", "grok-4.7-xhigh"}},
+		{base: "grok-4.9", want: []string{"grok-4.9", "grok-4.9-low", "grok-4.9-medium", "grok-4.9-high", "grok-4.9-xhigh"}},
+		{base: "gpt-6-terra", want: []string{"gpt-6-terra"}},
+		{base: "claude-sonnet-5-20260630", want: []string{"claude-sonnet-5-20260630"}},
+		{base: "vendor/claude-sonnet-5-20260630", want: []string{"vendor/claude-sonnet-5-20260630"}},
 		// Names outside the published vocabulary expand to themselves.
 		{base: "glm-5.2", want: []string{"glm-5.2"}},
 		{base: "glm-5.2-max-extra", want: []string{"glm-5.2-max-extra"}},
@@ -82,7 +109,7 @@ func TestExpandEffortSuffixFamiliesRespectsBlacklistAndDeduplicates(t *testing.T
 // controller/model_family_test.go where ModelMatchCandidates is importable.
 func TestExpandedVariantsFoldBackToTheirBase(t *testing.T) {
 	for _, base := range []string{
-		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5",
+		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5",
 		"gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.1-pro-preview",
 		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.0", "grok-4.5", "grok-4.6", "grok-4.7", "x-ai/grok-4.7",
 	} {

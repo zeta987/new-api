@@ -47,9 +47,16 @@ func OpenAIReasoningWildcardModel(model string) (string, bool) {
 	if base, _, _, ok := ParseGPT6AstraReasoningModelSuffix(model); ok {
 		return base + "-*", true
 	}
+	if base, _, _, ok := ParseStandardGPT6ReasoningModelSuffix(model); ok {
+		return base + "-*", true
+	}
 	return GPT56ReasoningWildcardModel(model)
 }
 
 func IsOpenAIReasoningWildcard(model string) bool {
-	return model == GPT6Astra+"-*" || IsGPT56ReasoningWildcard(model)
+	if model == GPT6Astra+"-*" || IsGPT56ReasoningWildcard(model) {
+		return true
+	}
+	_, suffix, standard := splitStandardGPT6Model(model)
+	return standard && suffix == "*"
 }
