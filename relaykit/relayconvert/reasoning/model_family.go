@@ -19,6 +19,13 @@ func OpenAIReasoningBaseModel(name string) (string, bool) {
 		base, _, _, ok := ParseGPT56ReasoningModelSuffix(name)
 		return base, ok
 	}
+	if base, suffix, known := splitStandardGPT6Model(name); known {
+		if suffix == "" || suffix == "*" {
+			return base, true
+		}
+		base, _, _, ok := ParseStandardGPT6ReasoningModelSuffix(name)
+		return base, ok
+	}
 	base, _, _, ok := ParseGPT6AstraReasoningModelSuffix(name)
 	return base, ok
 }

@@ -128,6 +128,49 @@ func TestGPT6AstraBuiltinBilling(t *testing.T) {
 	})
 }
 
+func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
+	settings := config.GlobalConfig.Get("billing_setting").(*billing_setting.BillingSetting)
+	saved := *settings
+	savedRatios, savedPrices := ratio_setting.ModelRatio2JSONString(), ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		*settings = saved
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(savedPrices))
+	})
+	*settings = billing_setting.BillingSetting{BillingMode: map[string]string{}, BillingExpr: map[string]string{}}
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
+
+	for _, tc := range []struct {
+		name         string
+		model, alias string
+		usage        dto.Usage
+		claude       bool
+		wantQuota    int
+	}{
+		{"sol cache rates", "gpt-6-sol", "gpt-6-sol-pro-max", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200, CacheWriteTokens: 100}}, false, 1345},
+		{"sol context boundary", "gpt-6-sol", "gpt-6-sol-high", dto.Usage{PromptTokens: 272000, CompletionTokens: 1000}, false, 277000},
+		{"sol long context", "gpt-6-sol", "gpt-6-sol-high", dto.Usage{PromptTokens: 272001, CompletionTokens: 1000}, false, 551502},
+		{"luna cache rates", "gpt-6-luna", "gpt-6-luna-none", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200, CacheWriteTokens: 100}}, false, 67},
+		{"luna context boundary", "gpt-6-luna", "gpt-6-luna-high", dto.Usage{PromptTokens: 272000, CompletionTokens: 1000}, false, 13850},
+		{"luna long context", "gpt-6-luna", "gpt-6-luna-high", dto.Usage{PromptTokens: 272001, CompletionTokens: 1000}, false, 27575},
+		{"opus cache rates", "claude-opus-5-5", "claude-opus-5-5-max", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 3470},
+		{"opus long context standard rates", "claude-opus-5-5", "claude-opus-5-5-high", dto.Usage{PromptTokens: 300000, CompletionTokens: 1000, UsageSemantic: "anthropic"}, true, 610000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(tc.alias))
+			expression, ok := billing_setting.GetBillingExpr(tc.alias)
+			require.True(t, ok)
+			params := service.BuildTieredTokenParams(&tc.usage, tc.claude, billingexpr.UsedVars(expression))
+			result, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{
+				ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: 500000,
+			}, params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantQuota, result.ActualQuotaAfterGroup)
+		})
+	}
+}
+
 func TestImageModelBuiltinPricesAndOverrides(t *testing.T) {
 	settings := config.GlobalConfig.Get("billing_setting").(*billing_setting.BillingSetting)
 	saved := *settings

@@ -71,6 +71,38 @@ func TestListModelsExpandsReasoningFamilies(t *testing.T) {
 	}
 }
 
+func TestListModelsIncludesNewOfficialEffortFamilies(t *testing.T) {
+	withSelfUseModeDisabled(t)
+	prices, ratios := ratio_setting.ModelPrice2JSONString(), ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(prices))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(ratios))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.Channel{Id: 813, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Key: "fixture"}).Error)
+	for _, name := range []string{"gpt-6-sol", "gpt-6-luna", "claude-opus-5-5"} {
+		require.NoError(t, db.Create(&model.Ability{Group: "default", Model: name, ChannelId: 813, Enabled: true}).Error)
+	}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+	payload := decodeListModelsPayload(t, recorder)
+	require.Len(t, payload.Data, 48)
+	ids := make(map[string]bool, len(payload.Data))
+	for _, item := range payload.Data {
+		ids[item.Id] = true
+	}
+	for _, name := range []string{"gpt-6-sol-none", "gpt-6-sol-pro-max", "gpt-6-luna-xhigh", "claude-opus-5-5-low", "claude-opus-5-5-max"} {
+		assert.True(t, ids[name], name)
+	}
+	assert.False(t, ids["gpt-6-terra"])
+	assert.False(t, ids["claude-opus-5-5-none"])
+}
+
 func TestEnabledModelsOffersBasePricingOnce(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.Create(&model.Channel{Id: 811, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Key: "fixture"}).Error)
@@ -126,12 +158,19 @@ func TestReasoningFamilySelectorsAndMetadata(t *testing.T) {
 // covers GLM too, whose collapse lives in FormatMatchingModelName rather than
 // in the suffix normalizer.
 func TestExpandedVariantsRouteBackToRegisteredBase(t *testing.T) {
+	for _, base := range []string{"gpt-6-sol", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol", "gpt-6.1-luna"} {
+		t.Run(base, func(t *testing.T) {
+			for _, variant := range reasoning.ExpandOpenAIReasoningModels([]string{base}) {
+				assert.Contains(t, model.ModelMatchCandidates(variant), base, variant)
+			}
+		})
+	}
 	for _, base := range []string{
-		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5",
+		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5",
 		"gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash",
 		"gemini-3.8-flash", "gemini-3.1-pro-preview",
 		"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx",
-		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.6", "grok-4.7", "x-ai/grok-4.7",
+		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.6", "grok-4.7", "grok-4.9", "x-ai/grok-4.7",
 	} {
 		t.Run(base, func(t *testing.T) {
 			variants := reasoning.ExpandOpenAIReasoningModels([]string{base})
