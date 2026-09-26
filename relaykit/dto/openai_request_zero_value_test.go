@@ -214,6 +214,25 @@ func TestGeneralOpenAIRequestGetSystemRoleName(t *testing.T) {
 	}
 }
 
+func TestGetOpenAIChatCapabilitiesGPT6Family(t *testing.T) {
+	tests := []struct {
+		model string
+		want  OpenAIChatCapabilities
+	}{
+		{model: "gpt-6-astra", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
+		{model: "gpt-6-sol", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
+		{model: "gpt-6-luna", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
+		{model: "gpt-6-sol-2026-09-23", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
+		{model: "gpt-6-luna-pro", want: OpenAIChatCapabilities{SupportsTemperature: true, SupportsTopP: true, SupportsLogProbs: true}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			assert.Equal(t, tt.want, GetOpenAIChatCapabilities(tt.model, "none"))
+		})
+	}
+}
+
 func TestIsOpenAIGPT5Model(t *testing.T) {
 	tests := []struct {
 		model string

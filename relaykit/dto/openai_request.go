@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -329,7 +330,10 @@ func GetOpenAIChatCapabilities(modelName, reasoningEffort string) OpenAIChatCapa
 	}
 
 	isGPT5Model := IsOpenAIGPT5Model(modelName)
-	if !isGPT5Model && !isOpenAIModelSnapshot(modelName, "gpt-6-astra") {
+	isGPT6Model := slices.ContainsFunc([]string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}, func(baseModel string) bool {
+		return isOpenAIModelSnapshot(modelName, baseModel)
+	})
+	if !isGPT5Model && !isGPT6Model {
 		return capabilities
 	}
 	capabilities.UseMaxCompletionTokens = true
@@ -337,7 +341,7 @@ func GetOpenAIChatCapabilities(modelName, reasoningEffort string) OpenAIChatCapa
 
 	// These standard GPT-5 models default to none and support sampling only
 	// without reasoning. Named variants (pro, codex, chat-latest, etc.) do not
-	// inherit this exception. GPT-6 Astra never supports these parameters.
+	// inherit this exception. GPT-6 models never support these parameters.
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.4
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra
