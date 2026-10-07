@@ -11,7 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestClaudeModelListIncludesOpus5EffortSeriesAndOmitsSonnet5Thinking(t *testing.T) {
+func TestClaudeModelListIncludesClaude5EffortSeriesAndOmitsSonnet5Thinking(t *testing.T) {
 	models := (&Adaptor{}).GetModelList()
 
 	for _, model := range []string{
@@ -27,6 +27,12 @@ func TestClaudeModelListIncludesOpus5EffortSeriesAndOmitsSonnet5Thinking(t *test
 		"claude-opus-5-5-high",
 		"claude-opus-5-5-xhigh",
 		"claude-opus-5-5-max",
+		"claude-haiku-5-5",
+		"claude-haiku-5-5-low",
+		"claude-haiku-5-5-medium",
+		"claude-haiku-5-5-high",
+		"claude-haiku-5-5-xhigh",
+		"claude-haiku-5-5-max",
 	} {
 		require.Contains(t, models, model)
 	}
@@ -225,6 +231,60 @@ func TestOpenAIChatRequestToClaudeOpus55UsesAdaptiveEffort(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOpenAIChatRequestToClaudeHaiku55UsesAdaptiveEffortWithoutSampling(t *testing.T) {
+	topP := 0.8
+	temperature := 0.7
+	for _, tc := range []struct{ name, model, reasoningEffort, wantEffort string }{
+		{"bare", "claude-haiku-5-5", "", ""},
+		{"effort suffix", "claude-haiku-5-5-low", "", "low"},
+		{"thinking suffix", "claude-haiku-5-5-thinking", "", "medium"},
+		{"reasoning effort", "claude-haiku-5-5", "high", "high"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := dto.GeneralOpenAIRequest{
+				Model:           tc.model,
+				ReasoningEffort: tc.reasoningEffort,
+				TopP:            &topP,
+				Temperature:     &temperature,
+				Messages:        []dto.Message{{Role: "user", Content: "hello"}},
+			}
+			claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
+			require.NoError(t, err)
+			require.Equal(t, "claude-haiku-5-5", claudeReq.Model)
+			require.Nil(t, claudeReq.Temperature)
+			require.Nil(t, claudeReq.TopP)
+			if tc.wantEffort == "" {
+				require.Nil(t, claudeReq.Thinking)
+				require.Empty(t, claudeReq.OutputConfig)
+				return
+			}
+			require.NotNil(t, claudeReq.Thinking)
+			require.Equal(t, "adaptive", claudeReq.Thinking.Type)
+			require.Nil(t, claudeReq.Thinking.BudgetTokens)
+			require.Equal(t, tc.wantEffort, gjson.GetBytes(claudeReq.OutputConfig, "effort").String())
+		})
+	}
+}
+
+func TestOpenAIChatRequestToClaudeSonnet55TurnsThinkingOffWithBetweenTools(t *testing.T) {
+	temperature := 0.7
+	req := dto.GeneralOpenAIRequest{
+		Model:           "claude-sonnet-5-5",
+		ReasoningEffort: "none",
+		Temperature:     &temperature,
+		Messages:        []dto.Message{{Role: "user", Content: "hello"}},
+	}
+
+	claudeReq, err := relayconvert.OpenAIChatRequestToClaudeMessages(context.Background(), adaptiveThinkingTestMeta(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, "claude-sonnet-5-5", claudeReq.Model)
+	require.NotNil(t, claudeReq.Thinking)
+	require.Equal(t, dto.Thinking{Type: "between_tools"}, *claudeReq.Thinking)
+	require.Empty(t, claudeReq.OutputConfig)
+	require.Nil(t, claudeReq.Temperature)
 }
 
 func TestOpenAIChatRequestToClaudeMessagesMapsSonnet5ReasoningEffort(t *testing.T) {

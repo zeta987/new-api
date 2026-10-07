@@ -31,11 +31,13 @@ type claudeCapabilities struct {
 	supportsMax     bool
 	strictSampling  bool
 	defaultEffort   Effort
+	// disabledType is the thinking type that turns thinking off.
+	disabledType string
 }
 
 func claudeCapabilitiesFor(model string) claudeCapabilities {
 	model = strings.ToLower(model)
-	capabilities := claudeCapabilities{supportsManual: true, supportsDisable: true, defaultEffort: EffortHigh}
+	capabilities := claudeCapabilities{supportsManual: true, supportsDisable: true, defaultEffort: EffortHigh, disabledType: "disabled"}
 
 	switch {
 	case strings.HasPrefix(model, "claude-fable-5"),
@@ -64,6 +66,28 @@ func claudeCapabilitiesFor(model string) claudeCapabilities {
 		capabilities.supportsMax = true
 		capabilities.strictSampling = true
 		capabilities.defaultEffort = EffortMedium
+	case strings.HasPrefix(model, "claude-haiku-5"):
+		// Haiku 5.x still accepts disabled thinking at effort high or below;
+		// the disabled render never sends an effort.
+		capabilities.adaptive = true
+		capabilities.supportsManual = false
+		capabilities.defaultThinking = true
+		capabilities.supportsEffort = true
+		capabilities.supportsXHigh = true
+		capabilities.supportsMax = true
+		capabilities.strictSampling = true
+		capabilities.defaultEffort = EffortMedium
+	case model == "claude-sonnet-5-5" || strings.HasPrefix(model, "claude-sonnet-5-5-"):
+		// Sonnet 5.5 rejects "disabled"; between_tools is its lowest setting
+		// and is accepted at the default effort, which the disabled render keeps.
+		capabilities.adaptive = true
+		capabilities.supportsManual = false
+		capabilities.defaultThinking = true
+		capabilities.supportsEffort = true
+		capabilities.supportsXHigh = true
+		capabilities.supportsMax = true
+		capabilities.strictSampling = true
+		capabilities.disabledType = "between_tools"
 	case strings.HasPrefix(model, "claude-opus-5"),
 		strings.HasPrefix(model, "claude-sonnet-5"),
 		strings.HasPrefix(model, "claude-opus-4-8"),
@@ -167,7 +191,7 @@ func RenderClaude(model string, intent Intent, maxTokens *uint, adapterBudgetPer
 			return ClaudeRender{Diagnostics: diagnostics}, nil
 		}
 		return ClaudeRender{
-			Thinking:        &dto.Thinking{Type: "disabled"},
+			Thinking:        &dto.Thinking{Type: capabilities.disabledType},
 			EffectiveEffort: EffortNone,
 			ClearSampling:   capabilities.strictSampling,
 			Diagnostics:     diagnostics,
