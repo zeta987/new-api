@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,6 +33,10 @@ func TestEffortSuffixModelNames(t *testing.T) {
 		{
 			base: "claude-sonnet-5-5",
 			want: []string{"claude-sonnet-5-5", "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high", "claude-sonnet-5-5-xhigh", "claude-sonnet-5-5-max"},
+		},
+		{
+			base: "claude-haiku-5-5",
+			want: []string{"claude-haiku-5-5", "claude-haiku-5-5-low", "claude-haiku-5-5-medium", "claude-haiku-5-5-high", "claude-haiku-5-5-xhigh", "claude-haiku-5-5-max"},
 		},
 		{
 			base: "claude-sonnet-5",
@@ -163,7 +168,7 @@ func TestEffortSuffixVocabularyOmissions(t *testing.T) {
 	for _, base := range []string{"gemini-3.7-flash", "gemini-3.8-flash"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-minimal")
 	}
-	for _, base := range []string{"claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-fable-5", "claude-fable-5-1"} {
+	for _, base := range []string{"claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-none")
 	}
 }
@@ -209,6 +214,47 @@ func TestClaudeOpus55DefaultAndDisabledThinking(t *testing.T) {
 	assert.Equal(t, EffortLow, rendered.OutputEffort)
 	assert.Equal(t, EffortLow, rendered.EffectiveEffort)
 	assert.False(t, claudeCapabilitiesFor("claude-opus-5-5").supportsManual)
+}
+
+func TestClaudeHaiku55AdaptiveDefaultsAndDisabledThinking(t *testing.T) {
+	defaultIntent := ResolveClaudeDefault("claude-haiku-5-5", Intent{})
+	assert.Equal(t, ModeAdaptive, defaultIntent.Mode)
+	assert.Equal(t, EffortMedium, defaultIntent.Effort)
+
+	budget := 8000
+	rendered, err := RenderClaude("claude-haiku-5-5", Intent{Mode: ModeEnabled, BudgetTokens: &budget}, nil, 0.8)
+	require.NoError(t, err)
+	require.NotNil(t, rendered.Thinking)
+	assert.Equal(t, "adaptive", rendered.Thinking.Type)
+	assert.Nil(t, rendered.Thinking.BudgetTokens)
+	assert.NotEmpty(t, rendered.OutputEffort)
+	assert.True(t, rendered.ClearSampling)
+
+	// Unlike Opus 5.5 and Sonnet 5.5, Haiku 5.5 accepts disabled thinking.
+	rendered, err = RenderClaude("claude-haiku-5-5", Intent{Mode: ModeDisabled}, nil, 0.8)
+	require.NoError(t, err)
+	require.NotNil(t, rendered.Thinking)
+	assert.Equal(t, "disabled", rendered.Thinking.Type)
+	assert.Empty(t, rendered.OutputEffort)
+	assert.True(t, rendered.ClearSampling)
+}
+
+func TestClaudeDisabledThinkingTypePerModel(t *testing.T) {
+	for _, tc := range []struct{ model, want string }{
+		{"claude-sonnet-5-5", "between_tools"},
+		{"claude-sonnet-5", "disabled"},
+		{"claude-opus-5", "disabled"},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			rendered, err := RenderClaude(tc.model, Intent{Mode: ModeDisabled, Effort: EffortNone}, nil, 0.8)
+			require.NoError(t, err)
+			require.NotNil(t, rendered.Thinking)
+			// between_tools rejects every other thinking field and needs effort high or below.
+			assert.Equal(t, dto.Thinking{Type: tc.want}, *rendered.Thinking)
+			assert.Empty(t, rendered.OutputEffort)
+			assert.Equal(t, EffortNone, rendered.EffectiveEffort)
+		})
+	}
 }
 
 func TestParseGrokReasoningEffortSuffix(t *testing.T) {
