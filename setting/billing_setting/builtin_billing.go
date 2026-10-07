@@ -20,4 +20,21 @@ var builtinBillingExpr = map[string]string{
 	// https://platform.claude.com/docs/en/models/opus-5-5/overview
 	// Claude's 1M context uses the standard token rates throughout.
 	"claude-opus-5-5": `tier("standard", p * 4 + c * 20 + cr * 0.2 + cc * 5 + cc1h * 8)`,
+	// https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+	// Cache reads dropped to 0.05x on 2026-10-07 (release notes).
+	"claude-sonnet-5-5": `tier("standard", p * 2 + c * 10 + cr * 0.1 + cc * 2.5 + cc1h * 4)`,
+	// https://platform.claude.com/docs/en/about-claude/pricing
+	// The $2 / $10 launch price became Sonnet 5's standard price.
+	"claude-sonnet-5": `tier("standard", p * 2 + c * 10 + cr * 0.2 + cc * 2.5 + cc1h * 4)`,
+	// https://platform.claude.com/docs/en/models/fable-5-1/overview
+	// Cache reads are 0.025x the base input price; Mythos 5.1 is priced the same.
+	"claude-fable-5-1":  `tier("standard", p * 10 + c * 50 + cr * 0.25 + cc * 12.5 + cc1h * 20)`,
+	"claude-mythos-5-1": `tier("standard", p * 10 + c * 50 + cr * 0.25 + cc * 12.5 + cc1h * 20)`,
+	// https://platform.claude.com/docs/en/models/fable-5/overview
+	// Mythos 5 is priced the same as Fable 5.
+	"claude-fable-5":  `tier("standard", p * 10 + c * 50 + cr * 1 + cc * 12.5 + cc1h * 20)`,
+	"claude-mythos-5": `tier("standard", p * 10 + c * 50 + cr * 1 + cc * 12.5 + cc1h * 20)`,
+	// https://platform.claude.com/docs/en/about-claude/pricing
+	// Prompts over 100,000 tokens move every Haiku 5.5 rate to the higher card.
+	"claude-haiku-5-5": `len <= 100000 ? tier("standard", p * 0.1 + c * 0.5 + cr * 0.01 + cc * 0.125 + cc1h * 0.2) : tier("long_context", p * 0.5 + c * 2.5 + cr * 0.05 + cc * 0.625 + cc1h * 1)`,
 }

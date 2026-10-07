@@ -156,6 +156,15 @@ func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
 		{"luna long context", "gpt-6-luna", "gpt-6-luna-high", dto.Usage{PromptTokens: 272001, CompletionTokens: 1000}, false, 27575},
 		{"opus cache rates", "claude-opus-5-5", "claude-opus-5-5-max", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 3470},
 		{"opus long context standard rates", "claude-opus-5-5", "claude-opus-5-5-high", dto.Usage{PromptTokens: 300000, CompletionTokens: 1000, UsageSemantic: "anthropic"}, true, 610000},
+		{"sonnet 5.5 cache rates", "claude-sonnet-5-5", "claude-sonnet-5-5-high", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 1735},
+		{"fable 5.1 cache rates", "claude-fable-5-1", "claude-fable-5-1-max", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 8650},
+		{"mythos 5.1 cache rates", "claude-mythos-5-1", "claude-mythos-5-1-high", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 8650},
+		{"sonnet 5 dated alias", "claude-sonnet-5", "claude-sonnet-5-20260630-xhigh", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 1745},
+		{"fable 5 cache rates", "claude-fable-5", "claude-fable-5-high", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 8725},
+		{"mythos 5 cache rates", "claude-mythos-5", "claude-mythos-5", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 100, ClaudeCacheCreation1hTokens: 50}, true, 8725},
+		{"haiku cache rates", "claude-haiku-5-5", "claude-haiku-5-5-low", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200}, ClaudeCacheCreation5mTokens: 400, ClaudeCacheCreation1hTokens: 100}, true, 111},
+		{"haiku context boundary counts cache", "claude-haiku-5-5", "claude-haiku-5-5-high", dto.Usage{PromptTokens: 60000, CompletionTokens: 1000, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 40000}}, true, 3450},
+		{"haiku long context counts cache", "claude-haiku-5-5", "claude-haiku-5-5-high", dto.Usage{PromptTokens: 60000, CompletionTokens: 1000, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 40002}}, true, 17250},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(tc.alias))
@@ -168,6 +177,14 @@ func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantQuota, result.ActualQuotaAfterGroup)
 		})
+	}
+
+	// A default legacy ratio row would take precedence over these built-in prices.
+	defaultRatios, err := common.Marshal(ratio_setting.GetDefaultModelRatioMap())
+	require.NoError(t, err)
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(defaultRatios)))
+	for _, alias := range []string{"claude-sonnet-5", "claude-sonnet-5-high", "claude-fable-5", "claude-fable-5-max", "claude-mythos-5", "claude-mythos-5-1"} {
+		assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(alias), alias)
 	}
 }
 
