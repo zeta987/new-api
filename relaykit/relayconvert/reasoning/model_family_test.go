@@ -23,6 +23,14 @@ func TestEffortSuffixModelNames(t *testing.T) {
 			want: []string{"claude-fable-5-1", "claude-fable-5-1-low", "claude-fable-5-1-medium", "claude-fable-5-1-high", "claude-fable-5-1-xhigh", "claude-fable-5-1-max"},
 		},
 		{
+			base: "claude-mythos-5",
+			want: []string{"claude-mythos-5", "claude-mythos-5-low", "claude-mythos-5-medium", "claude-mythos-5-high", "claude-mythos-5-xhigh", "claude-mythos-5-max"},
+		},
+		{
+			base: "claude-mythos-5-1",
+			want: []string{"claude-mythos-5-1", "claude-mythos-5-1-low", "claude-mythos-5-1-medium", "claude-mythos-5-1-high", "claude-mythos-5-1-xhigh", "claude-mythos-5-1-max"},
+		},
+		{
 			base: "claude-opus-5",
 			want: []string{"claude-opus-5", "claude-opus-5-low", "claude-opus-5-medium", "claude-opus-5-high", "claude-opus-5-xhigh", "claude-opus-5-max"},
 		},
@@ -148,6 +156,8 @@ func TestEffortSuffixModelNamesRejectsUnknownBases(t *testing.T) {
 		"grok-4.7-reasoning",
 		"grok-4.7-multi-agent",
 		"claude-fable-5-high",
+		// Mythos Preview still takes manual budgets and is not a 5.x family member.
+		"claude-mythos-preview",
 		"claude-sonnet-5-5-preview",
 		"claude-sonnet-5-5-20260923",
 		"claude-sonnet-5-20260630",
@@ -168,7 +178,7 @@ func TestEffortSuffixVocabularyOmissions(t *testing.T) {
 	for _, base := range []string{"gemini-3.7-flash", "gemini-3.8-flash"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-minimal")
 	}
-	for _, base := range []string{"claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1"} {
+	for _, base := range []string{"claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1", "claude-mythos-5", "claude-mythos-5-1"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-none")
 	}
 }
