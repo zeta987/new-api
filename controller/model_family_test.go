@@ -166,7 +166,7 @@ func TestExpandedVariantsRouteBackToRegisteredBase(t *testing.T) {
 		})
 	}
 	for _, base := range []string{
-		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5",
+		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-mythos-5", "claude-mythos-5-1",
 		"gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash",
 		"gemini-3.8-flash", "gemini-3.1-pro-preview",
 		"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx",
