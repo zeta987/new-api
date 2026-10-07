@@ -10,7 +10,7 @@ var (
 	toggleEffortLevels      = []string{"none", "low", "high", "max"}
 	grokCoreEffortLevels    = []string{"low", "medium", "high"}
 	grokEffortLevels        = []string{"low", "medium", "high", "xhigh"}
-	standardClaudeFiveModel = regexp.MustCompile(`^claude-(?:fable|opus|sonnet|haiku)-5(?:-[1-9][0-9]?)?$`)
+	standardClaudeFiveModel = regexp.MustCompile(`^claude-(?:fable|mythos|opus|sonnet|haiku)-5(?:-[1-9][0-9]?)?$`)
 )
 
 // effortSuffixVocabulary is the authoritative per-base effort vocabulary used
