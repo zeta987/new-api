@@ -84,8 +84,7 @@ func TestEffortSuffixBillingModePrecedence(t *testing.T) {
 		wantMode string
 		wantExpr string
 	}{
-		// No billing_mode entry of its own: the base expression answers, even
-		// though defaultModelRatio seeds a ratio row for the variant.
+		// No billing_mode entry of its own: the base expression answers.
 		{model: "claude-fable-5-high", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"fable\", p * 2)"},
 		{model: "claude-fable-5-max", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"fable\", p * 2)"},
 		{model: "claude-fable-5", wantMode: BillingModeTieredExpr, wantExpr: "tier(\"fable\", p * 2)"},
