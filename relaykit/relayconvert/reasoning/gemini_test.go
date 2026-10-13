@@ -8,6 +8,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGeminiArgonThinkingLevels(t *testing.T) {
+	for _, level := range []string{"low", "medium", "high"} {
+		t.Run(level, func(t *testing.T) {
+			base, intent, found, err := ParseGeminiModelSuffix("gemini-4-argon-"+level, false)
+			require.NoError(t, err)
+			require.True(t, found)
+			assert.Equal(t, "gemini-4-argon", base)
+			rendered, err := RenderGemini(base, intent, nil, 0)
+			require.NoError(t, err)
+			require.NotNil(t, rendered.Config)
+			assert.Equal(t, level, rendered.Config.ThinkingLevel)
+			assert.Nil(t, rendered.Config.ThinkingBudget)
+			assert.Equal(t, Effort(level), rendered.EffectiveEffort)
+			assert.Empty(t, rendered.Diagnostics)
+
+			generation := &dto.GeminiChatGenerationConfig{ThinkingConfig: &dto.GeminiThinkingConfig{ThinkingLevel: level}}
+			effort, diagnostics, err := NormalizeGeminiThinkingConfig(base, generation)
+			require.NoError(t, err)
+			assert.Equal(t, level, generation.ThinkingConfig.ThinkingLevel)
+			assert.Equal(t, Effort(level), effort)
+			assert.Empty(t, diagnostics)
+		})
+	}
+
+	rendered, err := RenderGemini("gemini-4-argon", Intent{}, nil, 0)
+	require.NoError(t, err)
+	assert.Nil(t, rendered.Config)
+	assert.Empty(t, rendered.EffectiveEffort)
+	defaultIntent := ResolveGeminiDefault("gemini-4-argon", Intent{})
+	assert.Equal(t, ModeEnabled, defaultIntent.Mode)
+	assert.Equal(t, EffortMedium, defaultIntent.Effort)
+
+	for _, model := range []string{"gemini-4-future", "gemini-4-argon-preview"} {
+		rendered, err := RenderGemini(model, Intent{Effort: EffortMedium}, nil, 0)
+		require.NoError(t, err)
+		assert.Nil(t, rendered.Config)
+		assert.Equal(t, []string{"gemini_unknown_capability"}, diagnosticCodes(rendered.Diagnostics))
+		assert.True(t, ResolveGeminiDefault(model, Intent{}).IsEmpty())
+	}
+}
+
 func TestRenderGeminiMapsAndClampsInsteadOfRejecting(t *testing.T) {
 	t.Parallel()
 
@@ -26,6 +67,38 @@ func TestRenderGeminiMapsAndClampsInsteadOfRejecting(t *testing.T) {
 		wantEffort   Effort
 		wantCodes    []string
 	}{
+		{
+			name:       "minimal on argon uses lowest level",
+			model:      "gemini-4-argon",
+			intent:     Intent{Effort: EffortMinimal},
+			wantLevel:  "low",
+			wantEffort: EffortLow,
+			wantCodes:  []string{"gemini_level_adjusted"},
+		},
+		{
+			name:       "disabled thinking on argon uses lowest level",
+			model:      "gemini-4-argon",
+			intent:     Intent{Mode: ModeDisabled, Effort: EffortNone},
+			wantLevel:  "low",
+			wantEffort: EffortLow,
+			wantCodes:  []string{"gemini_thinking_disable_unsupported"},
+		},
+		{
+			name:       "max effort on argon uses highest level",
+			model:      "gemini-4-argon",
+			intent:     Intent{Effort: EffortMax},
+			wantLevel:  "high",
+			wantEffort: EffortHigh,
+			wantCodes:  []string{"gemini_level_adjusted"},
+		},
+		{
+			name:       "deprecated budget on argon becomes level",
+			model:      "gemini-4-argon",
+			intent:     Intent{BudgetTokens: &budget8192},
+			wantLevel:  "medium",
+			wantEffort: EffortMedium,
+			wantCodes:  []string{"gemini_budget_to_level"},
+		},
 		{
 			name:       "budget on gemini 3.1 pro becomes level",
 			model:      "gemini-3.1-pro-preview",
@@ -227,6 +300,30 @@ func TestNormalizeGeminiThinkingConfigRewritesNativeConfig(t *testing.T) {
 		wantEffort   Effort
 		wantCodes    []string
 	}{
+		{
+			name:       "deprecated native budget on argon becomes level",
+			model:      "gemini-4-argon",
+			config:     dto.GeminiThinkingConfig{ThinkingBudget: intPtr(8192)},
+			wantLevel:  "medium",
+			wantEffort: EffortMedium,
+			wantCodes:  []string{"gemini_budget_to_level"},
+		},
+		{
+			name:       "zero native budget on argon uses lowest level",
+			model:      "gemini-4-argon",
+			config:     dto.GeminiThinkingConfig{ThinkingBudget: intPtr(0)},
+			wantLevel:  "low",
+			wantEffort: EffortLow,
+			wantCodes:  []string{"gemini_thinking_disable_unsupported"},
+		},
+		{
+			name:       "native level on argon wins over deprecated budget",
+			model:      "gemini-4-argon",
+			config:     dto.GeminiThinkingConfig{ThinkingBudget: intPtr(8192), ThinkingLevel: "high"},
+			wantLevel:  "high",
+			wantEffort: EffortHigh,
+			wantCodes:  []string{"gemini_budget_level_conflict"},
+		},
 		{
 			name:       "budget on gemini 3.1 pro becomes level",
 			model:      "gemini-3.1-pro-preview",

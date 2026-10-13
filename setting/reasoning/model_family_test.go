@@ -48,6 +48,9 @@ func TestExpandEffortSuffixFamilies(t *testing.T) {
 		{base: "claude-opus-5-5", want: []string{"claude-opus-5-5", "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high", "claude-opus-5-5-xhigh", "claude-opus-5-5-max"}},
 		{base: "claude-sonnet-5-5", want: []string{"claude-sonnet-5-5", "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high", "claude-sonnet-5-5-xhigh", "claude-sonnet-5-5-max"}},
 		{base: "gemini-3.8-flash", want: []string{"gemini-3.8-flash", "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"}},
+		{base: "gemini-4-argon", want: []string{"gemini-4-argon", "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"}},
+		{base: "gemini-4-argon-preview", want: []string{"gemini-4-argon-preview"}},
+		{base: "gemini-4-future", want: []string{"gemini-4-future"}},
 		{base: "glm-5.3-flash", want: []string{"glm-5.3-flash", "glm-5.3-flash-low", "glm-5.3-flash-high", "glm-5.3-flash-max"}},
 		{base: "deepseek-v4-pro", want: []string{"deepseek-v4-pro", "deepseek-v4-pro-none", "deepseek-v4-pro-low", "deepseek-v4-pro-high", "deepseek-v4-pro-max"}},
 		{base: "kimi-k3", want: []string{"kimi-k3", "kimi-k3-none", "kimi-k3-low", "kimi-k3-high", "kimi-k3-max"}},
@@ -110,7 +113,7 @@ func TestExpandEffortSuffixFamiliesRespectsBlacklistAndDeduplicates(t *testing.T
 func TestExpandedVariantsFoldBackToTheirBase(t *testing.T) {
 	for _, base := range []string{
 		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5",
-		"gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.1-pro-preview",
+		"gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-4-argon",
 		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.0", "grok-4.5", "grok-4.6", "grok-4.7", "x-ai/grok-4.7",
 	} {
 		t.Run(base, func(t *testing.T) {

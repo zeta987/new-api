@@ -188,6 +188,56 @@ func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
 	}
 }
 
+func TestGeminiArgonBuiltinBillingAndOverrides(t *testing.T) {
+	settings := config.GlobalConfig.Get("billing_setting").(*billing_setting.BillingSetting)
+	saved := *settings
+	savedRatios, savedPrices := ratio_setting.ModelRatio2JSONString(), ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		*settings = saved
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(savedPrices))
+	})
+	*settings = billing_setting.BillingSetting{BillingMode: map[string]string{}, BillingExpr: map[string]string{}}
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
+	wantExpression := `tier("standard", p * 4 + c * 20 + cr * 0.2)`
+	wantQuota := 2620
+	for _, name := range []string{"gemini-4-argon", "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(name))
+			expression, ok := billing_setting.GetBillingExpr(name)
+			require.True(t, ok)
+			assert.Equal(t, wantExpression, expression)
+			usage := &dto.Usage{PromptTokens: 1000, CompletionTokens: 100, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200, AudioTokens: 300}}
+			result, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{
+				ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: 500000,
+			}, service.BuildTieredTokenParams(usage, false, billingexpr.UsedVars(expression)))
+			require.NoError(t, err)
+			assert.Equal(t, wantQuota, result.ActualQuotaAfterGroup)
+		})
+	}
+	assert.Equal(t, wantExpression, billing_setting.GetBuiltinBillingExprCopy()["gemini-4-argon"])
+	assert.Equal(t, wantExpression, billing_setting.GetBillingExprCopy()["gemini-4-argon"])
+	assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingModeCopy()["gemini-4-argon"])
+
+	for _, priceKey := range []string{"gemini-4-argon", "gemini-4-argon-high", "gemini-4-argon-*"} {
+		encoded, err := common.Marshal(map[string]float64{priceKey: 0})
+		require.NoError(t, err)
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(encoded)))
+		assert.Equal(t, billing_setting.BillingModeRatio, billing_setting.GetBillingMode("gemini-4-argon-high"))
+		_, ok := billing_setting.GetBillingExpr("gemini-4-argon-high")
+		assert.False(t, ok)
+	}
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"gemini-4-argon":0.01}`))
+	assert.Equal(t, billing_setting.BillingModeRatio, billing_setting.GetBillingMode("gemini-4-argon-low"))
+	settings.BillingMode["gemini-4-argon"] = billing_setting.BillingModeTieredExpr
+	settings.BillingExpr["gemini-4-argon"] = `tier("custom", p * 7)`
+	expression, ok := billing_setting.GetBillingExpr("gemini-4-argon-medium")
+	require.True(t, ok)
+	assert.Equal(t, `tier("custom", p * 7)`, expression)
+}
+
 func TestImageModelBuiltinPricesAndOverrides(t *testing.T) {
 	settings := config.GlobalConfig.Get("billing_setting").(*billing_setting.BillingSetting)
 	saved := *settings

@@ -3,6 +3,10 @@ package billing_setting
 // Built-in token prices use actual USD per million tokens. Keep new model
 // defaults here instead of splitting them across the legacy ratio tables.
 var builtinBillingExpr = map[string]string{
+	// https://aistudio.google.com/docs/pricing#gemini-4-argon
+	// Standard prices from December 1, 2026; implicit cache reads only.
+	// All input modalities share one rate, with no long-context surcharge.
+	"gemini-4-argon": `tier("standard", p * 4 + c * 20 + cr * 0.2)`,
 	// https://developers.openai.com/api/docs/pricing (Standard, 2026-09-09).
 	// The Images API reports image output in output_tokens, normalized to c.
 	"gpt-image-2":            `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,

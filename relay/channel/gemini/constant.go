@@ -1,6 +1,8 @@
 package gemini
 
-var ModelList = []string{
+import "github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
+
+var ModelList = append([]string{
 	// stable version
 	"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash",
 	"gemini-2.0-flash-001", "gemini-2.0-flash-lite-001", "gemini-2.0-flash-lite",
@@ -31,7 +33,7 @@ var ModelList = []string{
 	"veo-3.1-generate-preview", "veo-3.1-fast-generate-preview",
 	// other models
 	"aqa",
-}
+}, reasoning.EffortSuffixModelNames("gemini-4-argon")...)
 
 var SafetySettingList = []string{
 	"HARM_CATEGORY_HARASSMENT",
