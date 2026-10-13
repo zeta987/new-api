@@ -395,6 +395,66 @@ func TestGeminiThinkingLevelCaseInsensitiveAcrossPaths(t *testing.T) {
 	})
 }
 
+func TestGeminiArgonRequestReasoning(t *testing.T) {
+	for _, level := range []string{"low", "medium", "high"} {
+		t.Run("suffix "+level, func(t *testing.T) {
+			info := &convmeta.Values{
+				OriginModelName:     "gemini-4-argon-" + level,
+				UpstreamModelName:   "gemini-4-argon",
+				ChannelMetaAttached: true,
+				ReasoningConversion: &dto.ReasoningConversionState{Mode: "enabled", Effort: level, IncludeThoughts: kitutil.GetPointer(true)},
+			}
+			req := &dto.GeminiChatRequest{}
+			require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
+			require.NotNil(t, req.GenerationConfig.ThinkingConfig)
+			assert.Equal(t, level, req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+			assert.Nil(t, req.GenerationConfig.ThinkingConfig.ThinkingBudget)
+			assert.Equal(t, level, info.GetReasoningEffort())
+		})
+	}
+
+	t.Run("bare model leaves upstream default unspecified", func(t *testing.T) {
+		info := &convmeta.Values{OriginModelName: "gemini-4-argon", UpstreamModelName: "gemini-4-argon"}
+		for _, crossProtocol := range []bool{false, true} {
+			req := &dto.GeminiChatRequest{}
+			if crossProtocol {
+				require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info, dto.GeneralOpenAIRequest{Model: "gemini-4-argon"}))
+			} else {
+				require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
+			}
+			assert.Nil(t, req.GenerationConfig.ThinkingConfig)
+			assert.Empty(t, info.GetReasoningEffort())
+		}
+	})
+
+	t.Run("native explicit level preserves visibility and overrides generic effort", func(t *testing.T) {
+		info := &convmeta.Values{OriginModelName: "gemini-4-argon", UpstreamModelName: "gemini-4-argon"}
+		req := &dto.GeminiChatRequest{GenerationConfig: dto.GeminiChatGenerationConfig{
+			ThinkingConfig: &dto.GeminiThinkingConfig{ThinkingLevel: "high", IncludeThoughts: kitutil.GetPointer(false)},
+		}}
+		require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
+		require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info, dto.GeneralOpenAIRequest{Model: "gemini-4-argon", ReasoningEffort: "low"}))
+		assert.Equal(t, "high", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+		require.NotNil(t, req.GenerationConfig.ThinkingConfig.IncludeThoughts)
+		assert.False(t, *req.GenerationConfig.ThinkingConfig.IncludeThoughts)
+		assert.Equal(t, "high", info.GetReasoningEffort())
+	})
+
+	t.Run("source Gemini default becomes medium in OpenAI", func(t *testing.T) {
+		info := &convmeta.Values{
+			OriginModelName: "gemini-4-argon", UpstreamModelName: "gemini-4-argon",
+			ConversionChain: []types.RelayFormat{types.RelayFormatGemini},
+		}
+		req := &dto.GeminiChatRequest{Contents: []dto.GeminiChatContent{{Role: "user", Parts: []dto.GeminiPart{{Text: "hello"}}}}}
+		result, err := ConvertRequest(nil, info, types.RelayFormatOpenAI, req)
+		require.NoError(t, err)
+		openaiReq, ok := result.Value.(*dto.GeneralOpenAIRequest)
+		require.True(t, ok)
+		assert.Equal(t, "medium", openaiReq.ReasoningEffort)
+		assert.Equal(t, "medium", info.GetReasoningEffort())
+	})
+}
+
 func TestConvertRequestViaExecutesExplicitPath(t *testing.T) {
 	info := &convmeta.Values{
 		ConversionChain: []types.RelayFormat{types.RelayFormatOpenAI},
