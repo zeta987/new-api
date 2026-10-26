@@ -1,6 +1,14 @@
 package moonshot
 
 var ModelList = []string{
+	"kimi-k3.1-pro",
+	"kimi-k3.1-pro-low",
+	"kimi-k3.1-pro-high",
+	"kimi-k3.1-pro-max",
+	"kimi-k3.1-pro-highspeed",
+	"kimi-k3.1-pro-highspeed-low",
+	"kimi-k3.1-pro-highspeed-high",
+	"kimi-k3.1-pro-highspeed-max",
 	"kimi-k3",
 	"kimi-k3-none",
 	"kimi-k3-low",

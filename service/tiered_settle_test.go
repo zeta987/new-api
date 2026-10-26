@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -34,6 +36,30 @@ const cacheExpr = `tier("default", p * 2 + c * 10 + cr * 0.2 + cc * 2.5 + cc1h *
 const probeExpr = `param("service_tier") == "fast" ? tier("fast", p * 4 + c * 20) : tier("normal", p * 2 + c * 10)`
 
 const testQuotaPerUnit = 500_000.0
+
+func TestKimiIncludedInputCacheTTLBilling(t *testing.T) {
+	usage := &dto.Usage{PromptTokens: 1000, CompletionTokens: 100, UsageSemantic: dto.BillingUsageSemanticOpenAI,
+		PromptTokensDetails:         dto.InputTokenDetails{CachedTokens: 100, CacheWriteTokens: 500},
+		ClaudeCacheCreation5mTokens: 200, ClaudeCacheCreation1hTokens: 300}
+	for _, tc := range []struct {
+		name        string
+		vars        map[string]bool
+		p, cc, cc1h float64
+	}{
+		{"all TTL prices", map[string]bool{"cr": true, "cc": true, "cc1h": true}, 400, 200, 300},
+		{"1h fallback retains surcharge", map[string]bool{"cr": true, "cc": true}, 400, 800, 0},
+		{"write fallback retains surcharge", map[string]bool{"cr": true}, 1200, 0, 0},
+		{"only 1h priced", map[string]bool{"cr": true, "cc1h": true}, 600, 0, 300},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := BuildTieredTokenParams(usage, false, tc.vars)
+			assert.Equal(t, tc.p, params.P)
+			assert.Equal(t, tc.cc, params.CC)
+			assert.Equal(t, tc.cc1h, params.CC1h)
+			assert.Equal(t, float64(1000), params.Len)
+		})
+	}
+}
 
 func makeSnapshot(expr string, groupRatio float64, estPrompt, estCompletion int) *billingexpr.BillingSnapshot {
 	return &billingexpr.BillingSnapshot{
@@ -479,6 +505,7 @@ func TestReserveKimiToolLoopQuotaStartsBillingForFreeModelPaidToolAndSettlesPart
 		},
 	}
 	ctx, _ := gin.CreateTestContext(nil)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	ctx.Set("token_quota", 10_000)
 
 	require.Nil(t, ReserveKimiToolLoopQuota(ctx, info, 0))
@@ -544,6 +571,7 @@ func TestReserveKimiToolLoopQuotaRejectsPaidToolWhenWalletInsufficient(t *testin
 	ctx, _ := gin.CreateTestContext(nil)
 	ctx.Set("token_quota", 10_000)
 
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	apiErr := ReserveKimiToolLoopQuota(ctx, info, 0)
 
 	require.NotNil(t, apiErr)
@@ -747,6 +775,10 @@ func TestAppendKimiToolLoopAuditInfoContainsOnlyAccountingMetadata(t *testing.T)
 	assert.NotContains(t, loopInfo, "tool_results")
 }
 
+func (s *recordingBillingSettler) ReserveBeforeSubmit(targetQuota int) error {
+	return s.Reserve(targetQuota)
+}
+
 func TestPrepareTieredBillingForSelectedGroupUpdatesReservation(t *testing.T) {
 	const expr = `tier("base", p)`
 	billing := &recordingBillingSettler{preConsumedQuota: 50_000}
@@ -803,7 +835,8 @@ func TestPrepareTieredBillingForSelectedGroupStartsBillingAfterFreeGroup(t *test
 			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 0.20},
 		},
 	}
-	ctx, _ := gin.CreateTestContext(nil)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 
 	require.Nil(t, PrepareTieredBillingForSelectedGroup(ctx, relayInfo))
 	require.NotNil(t, relayInfo.Billing)
@@ -1347,6 +1380,86 @@ func TestBuildTieredTokenParams_Len_Claude(t *testing.T) {
 	// Claude: P is not reduced (isClaudeUsageSemantic = true)
 	if params.P != 5000 {
 		t.Fatalf("P = %f, want 5000 (no subtraction for Claude)", params.P)
+	}
+}
+
+func TestBuildTieredTokenParams_ClaudeUnsplitCacheWrites(t *testing.T) {
+	expr := `tier("base", p * 3 + c * 15 + cr * 0.3 + cc * 3.75 + cc1h * 6)`
+	for _, tc := range []struct {
+		name             string
+		split5m, split1h int
+		wantCC, wantCC1h float64
+	}{
+		{"total without split", 0, 0, 10000, 0},
+		{"split missing part of total", 0, 4000, 6000, 4000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			usage := &dto.Usage{
+				PromptTokens:                100,
+				CompletionTokens:            50,
+				UsageSemantic:               "anthropic",
+				PromptTokensDetails:         dto.InputTokenDetails{CachedCreationTokens: 10000},
+				ClaudeCacheCreation5mTokens: tc.split5m,
+				ClaudeCacheCreation1hTokens: tc.split1h,
+			}
+			params := BuildTieredTokenParams(usage, true, billingexpr.UsedVars(expr))
+			assert.Equal(t, tc.wantCC, params.CC)
+			assert.Equal(t, tc.wantCC1h, params.CC1h)
+			assert.Equal(t, float64(100+10000), params.Len, "len counts every cache write")
+		})
+	}
+}
+
+// A long-lived cache write without its own price costs a fixed multiple of the
+// short write price: 2x for OpenAI 12h, 6/3.75x for Claude 1h. The short price
+// is cc, or p when cc has no price either.
+func TestBuildTieredTokenParams_UnpricedLongTTLCacheWrites(t *testing.T) {
+	// The OpenAI prompt caching guide example: 12000 input tokens with 4000
+	// cache reads and 7000 writes, 3000 of them 30m and 4000 12h.
+	openai := dto.Usage{PromptTokens: 12000, PromptTokensDetails: dto.InputTokenDetails{
+		CachedTokens: 4000, CacheWriteTokens: 7000,
+		CacheWriteTokensDetails: &dto.CacheWriteTokenDetails{TTL30mTokens: 3000, TTL12hTokens: 4000},
+	}}
+	unsplit := openai
+	unsplit.PromptTokensDetails.CacheWriteTokensDetails = nil
+	claude := func(split5m, split1h int) dto.Usage {
+		return dto.Usage{PromptTokens: 100, UsageSemantic: "anthropic",
+			ClaudeCacheCreation5mTokens: split5m, ClaudeCacheCreation1hTokens: split1h,
+			PromptTokensDetails: dto.InputTokenDetails{CachedCreationTokens: split5m + split1h}}
+	}
+	for _, tc := range []struct {
+		name               string
+		usage              dto.Usage
+		expr               string
+		p, cc, cc1h, cc12h float64
+		cost               float64
+	}{
+		{"openai 30m and 12h priced", openai, `tier("base", p * 10 + cr * 1 + cc * 12.5 + cc12h * 25)`, 1000, 3000, 0, 4000, 151500},
+		{"openai 12h joins cc at twice its count", openai, `tier("base", p * 10 + cr * 1 + cc * 12.5)`, 1000, 11000, 0, 0, 151500},
+		{"openai 30m stays in p", openai, `tier("base", p * 10 + cr * 1 + cc12h * 25)`, 4000, 0, 0, 4000, 144000},
+		{"openai 12h bills twice in p", openai, `tier("base", p * 10 + cr * 1)`, 12000, 0, 0, 0, 124000},
+		{"openai writes without a ttl split", unsplit, `tier("base", p * 10 + cr * 1 + cc * 12.5 + cc12h * 25)`, 1000, 7000, 0, 0, 101500},
+		{"claude 1h joins cc at 1.6x", claude(0, 10000), `tier("base", p * 3 + c * 15 + cr * 0.3 + cc * 3.75)`, 100, 16000, 0, 0, 60300},
+		{"claude 5m bills as input", claude(10000, 0), `tier("base", p * 3 + c * 15)`, 10100, 0, 0, 0, 30300},
+		{"claude 5m bills as input beside priced 1h", claude(2000, 10000), `tier("base", p * 3 + cc1h * 6)`, 2100, 0, 10000, 0, 66300},
+		{"claude 1h bills as input at 1.6x", claude(2000, 10000), `tier("base", p * 3)`, 18100, 0, 0, 0, 54300},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isClaude := tc.usage.UsageSemantic == "anthropic"
+			params := BuildTieredTokenParams(&tc.usage, isClaude, billingexpr.UsedVars(tc.expr))
+			assert.Equal(t, tc.p, params.P)
+			assert.Equal(t, tc.cc, params.CC)
+			assert.Equal(t, tc.cc1h, params.CC1h)
+			assert.Equal(t, tc.cc12h, params.CC12h)
+			wantLen := float64(tc.usage.PromptTokens)
+			if isClaude {
+				wantLen += float64(tc.usage.PromptTokensDetails.CacheCreationTokensTotal())
+			}
+			assert.Equal(t, wantLen, params.Len, "len keeps the unweighted counts")
+			cost, _, err := billingexpr.RunExpr(tc.expr, params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.cost, cost)
+		})
 	}
 }
 

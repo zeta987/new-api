@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -101,6 +102,8 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 			return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
 		} else if info.RelayMode == constant.RelayModeCompletions {
 			return fmt.Sprintf("%s/v1/completions", info.ChannelBaseUrl), nil
+		} else if info.RelayMode == constant.RelayModeResponses {
+			return fmt.Sprintf("%s/v1/responses", info.ChannelBaseUrl), nil
 		}
 		return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
 	}
@@ -128,10 +131,10 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	}
 	reasoningEffort := ""
 	reasoningModel := upstreamModelName
-	switch upstreamModelName {
-	case "kimi-k3-none", "kimi-k3-low", "kimi-k3-high", "kimi-k3-max":
-		reasoningModel, reasoningEffort, _ = reasoning.ParseKimiReasoningEffortSuffix(upstreamModelName)
-	default:
+	if base, effort, ok := reasoning.ParseKimiReasoningEffortSuffix(upstreamModelName); ok &&
+		(base == "kimi-k3" || base == "kimi-k3.1-pro" || base == "kimi-k3.1-pro-highspeed") {
+		reasoningModel, reasoningEffort = base, effort
+	} else {
 		// A model mapping can replace the effort alias with the model's base
 		// name or a pinned snapshot of it, and the suffix then survives only on
 		// the origin name. Recover the effort from there, but keep the mapped
@@ -153,6 +156,19 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 				info.UpstreamModelName = request.Model
 			}
 		}
+	}
+	if upstreamModelName == "kimi-k3.1-pro-none" || upstreamModelName == "kimi-k3.1-pro-highspeed-none" {
+		return nil, newKimiLoopError("invalid_reasoning_effort", http.StatusBadRequest, "Kimi K3.1 Pro supports reasoning_effort low, high, or max")
+	}
+	if upstreamModelName == "kimi-k3.1-pro" || upstreamModelName == "kimi-k3.1-pro-highspeed" {
+		switch request.ReasoningEffort {
+		case "", "low", "high", "max":
+		default:
+			return nil, newKimiLoopError("invalid_reasoning_effort", http.StatusBadRequest, "Kimi K3.1 Pro supports reasoning_effort low, high, or max")
+		}
+		request.THINKING = nil
+		request.FrequencyPenalty = nil
+		request.PresencePenalty = nil
 	}
 	if usesFixedSamplingParameters(upstreamModelName) {
 		request.Temperature = nil
@@ -177,12 +193,36 @@ func getUpstreamModelName(info *relaycommon.RelayInfo, fallback string) string {
 }
 
 func usesFixedSamplingParameters(model string) bool {
-	return strings.EqualFold(model, "kimi-k2.6") || strings.EqualFold(model, "kimi-k3")
+	return strings.EqualFold(model, "kimi-k2.6") || strings.EqualFold(model, "kimi-k3") ||
+		model == "kimi-k3.1-pro" || model == "kimi-k3.1-pro-highspeed"
 }
 
+// ConvertOpenAIResponsesRequest forwards Responses requests natively.
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	// TODO implement me
-	return nil, errors.New("not implemented")
+	model := getUpstreamModelName(info, request.Model)
+	base, _, _ := reasoning.ParseKimiReasoningEffortSuffix(model)
+	if base != "kimi-k3.1-pro" && base != "kimi-k3.1-pro-highspeed" &&
+		model != "kimi-k3.1-pro" && model != "kimi-k3.1-pro-highspeed" &&
+		model != "kimi-k3.1-pro-none" && model != "kimi-k3.1-pro-highspeed-none" {
+		return request, nil
+	}
+	chat := &dto.GeneralOpenAIRequest{Model: request.Model}
+	if request.Reasoning != nil {
+		chat.ReasoningEffort = request.Reasoning.Effort
+	}
+	if _, err := a.ConvertOpenAIRequest(c, info, chat); err != nil {
+		return nil, err
+	}
+	request.Model = chat.Model
+	if chat.ReasoningEffort != "" {
+		if request.Reasoning == nil {
+			request.Reasoning = &dto.Reasoning{}
+		}
+		request.Reasoning.Effort = chat.ReasoningEffort
+	}
+	request.Temperature, request.TopP = nil, nil
+	request.FrequencyPenalty, request.PresencePenalty, request.TopK = nil, nil, nil
+	return request, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
@@ -209,8 +249,58 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		return adaptor.DoResponse(c, resp, info)
 	default:
 		adaptor := openai.Adaptor{}
-		return adaptor.DoResponse(c, resp, info)
+		usage, apiErr := adaptor.DoResponse(c, resp, info)
+		if parsed, ok := usage.(*dto.Usage); ok && parsed != nil {
+			// Managed Formula rounds have already incorporated each response's
+			// headers; the final response header describes only its last round.
+			if info.KimiToolLoop == nil || len(info.KimiToolLoop.Usages) == 0 {
+				applyKimiCacheUsage(parsed, resp.Header)
+			}
+		}
+		return usage, apiErr
 	}
+}
+
+// applyKimiCacheUsage preserves OpenAI's inclusive input-token semantics while
+// carrying Kimi's authoritative TTL counts through the shared cache counters.
+func applyKimiCacheUsage(usage *dto.Usage, headers http.Header) {
+	usage.UsageSemantic = dto.BillingUsageSemanticOpenAI
+	if usage.BillingUsage != nil && usage.BillingUsage.OpenAIUsage != nil {
+		defer func() {
+			usage.BillingUsage.OpenAIUsage.UsageSemantic = usage.UsageSemantic
+			usage.BillingUsage.OpenAIUsage.PromptTokensDetails = usage.PromptTokensDetails.Clone()
+			if usage.InputTokensDetails != nil {
+				details := usage.InputTokensDetails.Clone()
+				usage.BillingUsage.OpenAIUsage.InputTokensDetails = &details
+			}
+			usage.BillingUsage.OpenAIUsage.ClaudeCacheCreation5mTokens = usage.ClaudeCacheCreation5mTokens
+			usage.BillingUsage.OpenAIUsage.ClaudeCacheCreation1hTokens = usage.ClaudeCacheCreation1hTokens
+		}()
+	}
+	short, long := headers.Get("Msh-Usage-Cache-Write-Tokens-5m"), headers.Get("Msh-Usage-Cache-Write-Tokens-1h")
+	total := usage.PromptTokensDetails.CacheCreationTokensTotal()
+	if short == "" && long == "" {
+		if total > 0 && usage.ClaudeCacheCreation5mTokens == 0 && usage.ClaudeCacheCreation1hTokens == 0 {
+			common.SysError("Kimi cache-write TTL unavailable; retaining aggregate cache-write billing")
+		}
+		return
+	}
+	write5m, err5m := strconv.Atoi(short)
+	write1h, err1h := strconv.Atoi(long)
+	cached, prompt := usage.PromptTokensDetails.CachedTokens, usage.PromptTokens
+	if err5m != nil || err1h != nil || cached < 0 || cached > prompt || write5m < 0 || write1h < 0 ||
+		write5m > prompt-cached || write1h > prompt-cached-write5m ||
+		write5m+write1h != total {
+		common.SysError("invalid Kimi cache-write TTL breakdown; retaining aggregate cache-write billing")
+		return
+	}
+	usage.PromptTokensDetails.CacheWriteTokens = write5m + write1h
+	usage.PromptTokensDetails.CacheWriteTokensDetails = nil
+	if usage.InputTokensDetails != nil {
+		usage.InputTokensDetails.CacheWriteTokens = write5m + write1h
+		usage.InputTokensDetails.CacheWriteTokensDetails = nil
+	}
+	usage.ClaudeCacheCreation5mTokens, usage.ClaudeCacheCreation1hTokens = write5m, write1h
 }
 
 func (a *Adaptor) GetModelList() []string {

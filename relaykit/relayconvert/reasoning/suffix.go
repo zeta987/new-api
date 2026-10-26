@@ -160,6 +160,10 @@ func ParseOpenAIReasoningEffortFromModelSuffix(modelName string, preserveEffortT
 	return effort, baseModel
 }
 
+// ParseClaudeModelSuffix folds the naked claude-* aliases (-thinking,
+// -nothinking, -thinking-<budget>, and effort tails such as -high) into an
+// Intent. allowThinkingAlias is the host toggle for legacy thinking aliases;
+// effort tails are parsed independently of that toggle.
 func ParseClaudeModelSuffix(modelName string, allowThinkingAlias bool) (string, Intent, bool, error) {
 	prefix, bare := splitModelNamespace(modelName)
 	if !strings.HasPrefix(bare, "claude-") {
@@ -195,6 +199,8 @@ func isKnownClaudeModel(modelName string) bool {
 	return false
 }
 
+// ParseGeminiModelSuffix is the gemini-* counterpart of ParseClaudeModelSuffix
+// and honours allowThinkingAlias the same way.
 func ParseGeminiModelSuffix(modelName string, allowThinkingAlias bool) (string, Intent, bool, error) {
 	prefix, bare := splitModelNamespace(modelName)
 	if !strings.HasPrefix(bare, "gemini-") {
@@ -238,37 +244,36 @@ func TrimGeminiThinkingSuffix(modelName string) (string, bool) {
 	return baseModel, ok && err == nil
 }
 
+// parseProviderModelSuffix recognises a provider family's naked model-name
+// aliases. The host toggle gates thinking aliases and numeric budgets only;
+// effort tails remain available when the thinking adapter is disabled.
 func parseProviderModelSuffix(modelName string, requiredPrefix string, allowThinkingAlias bool, includeThoughts bool) (string, Intent, bool, error) {
-	if allowThinkingAlias {
-		if marker := strings.LastIndex(modelName, "-thinking-"); marker >= 0 {
-			baseModel := modelName[:marker]
-			if !strings.HasPrefix(baseModel, requiredPrefix) {
-				return modelName, Intent{}, false, nil
-			}
-			budget, err := strconv.Atoi(modelName[marker+len("-thinking-"):])
-			if err != nil {
-				return modelName, Intent{}, false, fmt.Errorf("invalid thinking budget suffix on model %q: %w", modelName, err)
-			}
-			intent := Intent{BudgetTokens: &budget, Source: SourceSuffix, BudgetSource: SourceSuffix}
-			if includeThoughts {
-				value := true
-				intent.IncludeThoughts = &value
-			}
-			return baseModel, intent, true, nil
+	if marker := strings.LastIndex(modelName, "-thinking-"); allowThinkingAlias && marker >= 0 {
+		baseModel := modelName[:marker]
+		if !strings.HasPrefix(baseModel, requiredPrefix) {
+			return modelName, Intent{}, false, nil
 		}
-		if before, ok := strings.CutSuffix(modelName, "-nothinking"); ok {
-			baseModel := before
-			return baseModel, Intent{Mode: ModeDisabled, Effort: EffortNone, Source: SourceSuffix}, true, nil
+		budget, err := strconv.Atoi(modelName[marker+len("-thinking-"):])
+		if err != nil {
+			return modelName, Intent{}, false, fmt.Errorf("invalid thinking budget suffix on model %q: %w", modelName, err)
 		}
-		if before, ok := strings.CutSuffix(modelName, "-thinking"); ok {
-			baseModel := before
-			intent := Intent{Mode: ModeEnabled, Source: SourceSuffix}
-			if includeThoughts {
-				value := true
-				intent.IncludeThoughts = &value
-			}
-			return baseModel, intent, true, nil
+		intent := Intent{BudgetTokens: &budget, Source: SourceSuffix, BudgetSource: SourceSuffix}
+		if includeThoughts {
+			value := true
+			intent.IncludeThoughts = &value
 		}
+		return baseModel, intent, true, nil
+	}
+	if baseModel, ok := strings.CutSuffix(modelName, "-nothinking"); allowThinkingAlias && ok {
+		return baseModel, Intent{Mode: ModeDisabled, Effort: EffortNone, Source: SourceSuffix}, true, nil
+	}
+	if baseModel, ok := strings.CutSuffix(modelName, "-thinking"); allowThinkingAlias && ok {
+		intent := Intent{Mode: ModeEnabled, Source: SourceSuffix}
+		if includeThoughts {
+			value := true
+			intent.IncludeThoughts = &value
+		}
+		return baseModel, intent, true, nil
 	}
 
 	suffixes := []string{"-max", "-xhigh", "-high", "-medium", "-low", "-minimal", "-none"}
@@ -290,6 +295,9 @@ func parseProviderModelSuffix(modelName string, requiredPrefix string, allowThin
 	return baseModel, intent, true, nil
 }
 
+// ParseDeepSeekV4ThinkingSuffix maps the -none/-low/-high/-max tails of
+// deepseek-flash and deepseek-v4-* onto DeepSeek's thinking switch and
+// effort. A bare name keeps DeepSeek's default (thinking on, effort high).
 func ParseDeepSeekV4ThinkingSuffix(modelName string) (baseModel string, thinkingType string, effort string, ok bool) {
 	baseModel, suffix, ok := TrimEffortSuffixWithSuffixes(modelName, DeepSeekV4EffortSuffixes)
 	if !ok || (baseModel != "deepseek-flash" && !strings.HasPrefix(baseModel, "deepseek-v4-")) {
@@ -483,15 +491,19 @@ func isGLMReasoningEffort(effort string) bool {
 	}
 }
 
-// KimiEffortSuffixes is the complete Kimi effort vocabulary. It deliberately
+// KimiEffortSuffixes is the legacy Kimi effort vocabulary. It deliberately
 // excludes "-thinking", which names a distinct model rather than an effort
-// level, so kimi-k2-thinking stays an opaque model id.
+// level, so kimi-k2-thinking stays an opaque model id. K3.1 excludes none.
 var KimiEffortSuffixes = []string{"-none", "-low", "-high", "-max"}
 
 // IsKimiReasoningEffortModel reports whether modelName is a bare Kimi base
 // model, i.e. a kimi- model that does not already end in an effort level. A
 // name such as kimi-low is treated as its own model, not as a suffixed one.
+// K3.1 recognizes only its two published base names.
 func IsKimiReasoningEffortModel(modelName string) bool {
+	if modelName == "kimi-k3.1" || strings.HasPrefix(modelName, "kimi-k3.1-") {
+		return modelName == "kimi-k3.1-pro" || modelName == "kimi-k3.1-pro-highspeed"
+	}
 	if !strings.HasPrefix(modelName, "kimi-") {
 		return false
 	}
@@ -508,6 +520,10 @@ func IsKimiReasoningEffortModel(modelName string) bool {
 func ParseKimiReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
 	baseModel, effort, ok = TrimEffortSuffixWithSuffixes(modelName, KimiEffortSuffixes)
 	if !ok || !IsKimiReasoningEffortModel(baseModel) {
+		return modelName, "", false
+	}
+	// K3.1 always reasons; none must remain part of the opaque model name.
+	if strings.HasPrefix(baseModel, "kimi-k3.1-") && effort == "none" {
 		return modelName, "", false
 	}
 	return baseModel, effort, true

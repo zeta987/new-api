@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/tokenkit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -144,7 +145,7 @@ func doKimiFormulaRequest(a *Adaptor, c *gin.Context, info *relaycommon.RelayInf
 		if len(outboundBody) > maxKimiManagedRequestBytes {
 			return nil, kimiLoopError(info, c, "kimi_tool_loop_request_too_large", http.StatusRequestEntityTooLarge, "managed Kimi request is too large")
 		}
-		estimatedPromptTokens := service.CountTextToken(string(outboundBody), info.UpstreamModelName)
+		estimatedPromptTokens := tokenkit.Count(info.UpstreamModelName, string(outboundBody))
 		if len(outboundBody) > estimatedPromptTokens {
 			estimatedPromptTokens = len(outboundBody)
 		}
@@ -175,6 +176,7 @@ func doKimiFormulaRequest(a *Adaptor, c *gin.Context, info *relaycommon.RelayInf
 
 		chatResponse, usage, err := parseKimiChatResponse(responseBody)
 		if usage != nil {
+			applyKimiCacheUsage(usage, resp.Header)
 			loopInfo.Usages = append(loopInfo.Usages, *usage)
 		}
 		if err != nil {
@@ -567,7 +569,7 @@ func validKimiUsage(usage dto.Usage) bool {
 }
 
 func aggregateKimiUsages(usages []dto.Usage) dto.Usage {
-	var total dto.Usage
+	total := dto.Usage{UsageSemantic: dto.BillingUsageSemanticOpenAI}
 	for _, usage := range usages {
 		total.PromptTokens = saturatingKimiAdd(total.PromptTokens, usage.PromptTokens)
 		total.CompletionTokens = saturatingKimiAdd(total.CompletionTokens, usage.CompletionTokens)

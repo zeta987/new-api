@@ -7,6 +7,7 @@ var (
 	geminiFullEffortLevels  = []string{"minimal", "low", "medium", "high"}
 	geminiCoreEffortLevels  = []string{"low", "medium", "high"}
 	glmEffortLevels         = []string{"low", "high", "max"}
+	kimiK31EffortLevels     = []string{"low", "high", "max"}
 	toggleEffortLevels      = []string{"none", "low", "high", "max"}
 	grokCoreEffortLevels    = []string{"low", "medium", "high"}
 	grokEffortLevels        = []string{"low", "medium", "high", "xhigh"}
@@ -48,14 +49,20 @@ var effortSuffixVocabulary = map[string][]string{
 	"deepseek-flash":  toggleEffortLevels,
 	"deepseek-v4-pro": toggleEffortLevels,
 
-	"kimi-k3": toggleEffortLevels,
+	"kimi-k3":                 toggleEffortLevels,
+	"kimi-k3.1-pro":           kimiK31EffortLevels,
+	"kimi-k3.1-pro-highspeed": kimiK31EffortLevels,
 }
 
 // EffortSuffixModelNames returns the base model followed by each published
 // effort variant, or nil when the name is not a known base. A namespace prefix
-// such as "vendor/" is carried onto every returned name.
+// such as "vendor/" is carried onto every returned name except Kimi K3.1,
+// whose namespaced IDs stay opaque to match its suffix parser.
 func EffortSuffixModelNames(base string) []string {
 	modelName := lastModelPathSegment(base)
+	if base != modelName && (modelName == "kimi-k3.1-pro" || modelName == "kimi-k3.1-pro-highspeed") {
+		return nil
+	}
 	levels, known := effortSuffixVocabulary[modelName]
 	if IsStandardClaudeFiveModel(modelName) {
 		levels = claudeEffortLevels

@@ -51,6 +51,9 @@ type recordingBilling struct {
 func (b *recordingBilling) Settle(int) error    { return nil }
 func (b *recordingBilling) Refund(*gin.Context) {}
 func (b *recordingBilling) NeedsRefund() bool   { return false }
+func (b *recordingBilling) ReserveBeforeSubmit(targetQuota int) error {
+	return b.Reserve(targetQuota)
+}
 func (b *recordingBilling) GetPreConsumedQuota() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -219,10 +222,14 @@ func TestKimiFormulaLoopExecutesAllManagedToolsAndAggregatesUsage(t *testing.T) 
 			assert.Equal(t, http.MethodPost, r.Method)
 			chatRound++
 			if chatRound == 1 {
-				writeJSON(t, w, `{"id":"chatcmpl-round-1","object":"chat.completion","created":1,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"full private reasoning","vendor_extension":{"keep":true},"tool_calls":[{"id":"call-search","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"k3\"}"}},{"id":"call-fetch","type":"function","function":{"name":"read_web","arguments":"{\"url\":\"https://example.com\"}"}},{"id":"call-code","type":"function","function":{"name":"run_python","arguments":"{\"code\":\"print(3)\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":80,"completion_tokens":10,"total_tokens":90,"cached_tokens":20,"completion_tokens_details":{"reasoning_tokens":4}}}`)
+				w.Header().Set("Msh-Usage-Cache-Write-Tokens-5m", "5")
+				w.Header().Set("Msh-Usage-Cache-Write-Tokens-1h", "5")
+				writeJSON(t, w, `{"id":"chatcmpl-round-1","object":"chat.completion","created":1,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"full private reasoning","vendor_extension":{"keep":true},"tool_calls":[{"id":"call-search","type":"function","function":{"name":"web_search","arguments":"{\"query\": \"k3\"}"}},{"id":"call-fetch","type":"function","function":{"name":"read_web","arguments":"{\"url\":\"https://example.com\"}"}},{"id":"call-code","type":"function","function":{"name":"run_python","arguments":"{\"code\":\"print(3)\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":80,"completion_tokens":10,"total_tokens":90,"cached_tokens":20,"prompt_tokens_details":{"cache_write_tokens":10},"completion_tokens_details":{"reasoning_tokens":4}}}`)
 				return
 			}
-			writeJSON(t, w, `{"id":"chatcmpl-final","object":"chat.completion","created":2,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"done","reasoning_content":"final reasoning"},"finish_reason":"stop"}],"usage":{"prompt_tokens":150,"completion_tokens":20,"total_tokens":170,"cached_tokens":999,"prompt_tokens_details":{"cached_tokens":40},"completion_tokens_details":{"reasoning_tokens":3}}}`)
+			w.Header().Set("Msh-Usage-Cache-Write-Tokens-5m", "10")
+			w.Header().Set("Msh-Usage-Cache-Write-Tokens-1h", "20")
+			writeJSON(t, w, `{"id":"chatcmpl-final","object":"chat.completion","created":2,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"done","reasoning_content":"final reasoning"},"finish_reason":"stop"}],"usage":{"prompt_tokens":150,"completion_tokens":20,"total_tokens":170,"cached_tokens":999,"prompt_tokens_details":{"cached_tokens":40,"cache_write_tokens":30},"completion_tokens_details":{"reasoning_tokens":3}}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -251,6 +258,9 @@ func TestKimiFormulaLoopExecutesAllManagedToolsAndAggregatesUsage(t *testing.T) 
 	promptDetails, ok := usage["prompt_tokens_details"].(map[string]any)
 	require.True(t, ok)
 	assert.EqualValues(t, 60, promptDetails["cached_tokens"])
+	assert.EqualValues(t, 40, promptDetails["cache_write_tokens"])
+	assert.EqualValues(t, 15, usage["claude_cache_creation_5_m_tokens"])
+	assert.EqualValues(t, 25, usage["claude_cache_creation_1_h_tokens"])
 	completionDetails, ok := usage["completion_tokens_details"].(map[string]any)
 	require.True(t, ok)
 	assert.EqualValues(t, 7, completionDetails["reasoning_tokens"])
@@ -259,6 +269,8 @@ func TestKimiFormulaLoopExecutesAllManagedToolsAndAggregatesUsage(t *testing.T) 
 	assert.True(t, info.KimiToolLoop.Completed)
 	assert.Empty(t, info.KimiToolLoop.ErrorCode)
 	assert.Len(t, info.KimiToolLoop.Usages, 2)
+	assert.Equal(t, 5, info.KimiToolLoop.Usages[0].ClaudeCacheCreation1hTokens)
+	assert.Equal(t, 20, info.KimiToolLoop.Usages[1].ClaudeCacheCreation1hTokens)
 	assert.Equal(t, map[string]int{"web-search": 1, "fetch": 1, "code-runner": 1}, info.KimiToolLoop.ToolCalls)
 	assert.Equal(t, map[string]int{"web-search": 1, "fetch": 1, "code-runner": 1}, info.KimiToolLoop.AttemptedToolCalls)
 

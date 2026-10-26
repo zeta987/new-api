@@ -107,6 +107,14 @@ func TestEffortSuffixModelNames(t *testing.T) {
 			want: []string{"kimi-k3", "kimi-k3-none", "kimi-k3-low", "kimi-k3-high", "kimi-k3-max"},
 		},
 		{
+			base: "kimi-k3.1-pro",
+			want: []string{"kimi-k3.1-pro", "kimi-k3.1-pro-low", "kimi-k3.1-pro-high", "kimi-k3.1-pro-max"},
+		},
+		{
+			base: "kimi-k3.1-pro-highspeed",
+			want: []string{"kimi-k3.1-pro-highspeed", "kimi-k3.1-pro-highspeed-low", "kimi-k3.1-pro-highspeed-high", "kimi-k3.1-pro-highspeed-max"},
+		},
+		{
 			base: "grok-4.0",
 			want: []string{"grok-4.0", "grok-4.0-low", "grok-4.0-medium", "grok-4.0-high"},
 		},
@@ -144,6 +152,21 @@ func TestEffortSuffixModelNames(t *testing.T) {
 	}
 }
 
+func TestKimiK31NamespacedModelsRemainOpaque(t *testing.T) {
+	for _, base := range []string{"vendor/kimi-k3.1-pro", "vendor/kimi-k3.1-pro-highspeed"} {
+		t.Run(base, func(t *testing.T) {
+			assert.Nil(t, EffortSuffixModelNames(base))
+			for _, effort := range []string{"low", "high", "max"} {
+				alias := base + "-" + effort
+				parsedBase, parsedEffort, recognized := ParseKimiReasoningEffortSuffix(alias)
+				assert.False(t, recognized)
+				assert.Equal(t, alias, parsedBase)
+				assert.Empty(t, parsedEffort)
+			}
+		})
+	}
+}
+
 func TestEffortSuffixModelNamesRejectsUnknownBases(t *testing.T) {
 	for _, name := range []string{
 		"",
@@ -152,6 +175,9 @@ func TestEffortSuffixModelNamesRejectsUnknownBases(t *testing.T) {
 		"glm-5.2-max-extra",
 		"kimi-k2-thinking",
 		"kimi-k2.5",
+		"kimi-k3.1-pro-none",
+		"kimi-k3.1-pro-preview",
+		"kimi-k3.1-pro-highspeed-vendor",
 		"deepseek-chat",
 		"grok-4.7-preview",
 		"grok-4.7-latest",
@@ -270,6 +296,41 @@ func TestClaudeDisabledThinkingTypePerModel(t *testing.T) {
 			assert.Equal(t, dto.Thinking{Type: tc.want}, *rendered.Thinking)
 			assert.Empty(t, rendered.OutputEffort)
 			assert.Equal(t, EffortNone, rendered.EffectiveEffort)
+		})
+	}
+}
+
+func TestClaudeDisabledThinkingPreservesSupportedExplicitEffort(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		model        string
+		effort       Effort
+		thinkingType string
+		outputEffort Effort
+		code         string
+	}{
+		{name: "haiku keeps high", model: "claude-haiku-5-5", effort: EffortHigh, thinkingType: "disabled", outputEffort: EffortHigh},
+		{name: "haiku clamps max", model: "claude-haiku-5-5", effort: EffortMax, thinkingType: "disabled", outputEffort: EffortHigh, code: "claude_effort_adjusted"},
+		{name: "opus clamps xhigh", model: "claude-opus-5", effort: EffortXHigh, thinkingType: "disabled", outputEffort: EffortHigh, code: "claude_effort_adjusted"},
+		{name: "sonnet uses between tools", model: "claude-sonnet-5-5", effort: EffortMax, thinkingType: "between_tools", outputEffort: EffortHigh, code: "claude_effort_adjusted"},
+		{name: "unsupported effort is removed", model: "claude-3-7-sonnet", effort: EffortHigh, thinkingType: "disabled", code: "claude_effort_unsupported"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rendered, err := RenderClaude(tc.model, Intent{Mode: ModeDisabled, Effort: tc.effort}, nil, 0.8)
+			require.NoError(t, err)
+			require.NotNil(t, rendered.Thinking)
+			assert.Equal(t, dto.Thinking{Type: tc.thinkingType}, *rendered.Thinking)
+			assert.Equal(t, tc.outputEffort, rendered.OutputEffort)
+			assert.Equal(t, EffortNone, rendered.EffectiveEffort)
+			if tc.code == "" {
+				assert.Empty(t, rendered.Diagnostics)
+			} else {
+				codes := make([]string, 0, len(rendered.Diagnostics))
+				for _, diagnostic := range rendered.Diagnostics {
+					codes = append(codes, diagnostic.Code)
+				}
+				assert.Contains(t, codes, tc.code)
+			}
 		})
 	}
 }

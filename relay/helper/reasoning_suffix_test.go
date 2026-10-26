@@ -161,6 +161,28 @@ func TestApplyReasoningModelSuffixGeminiNoThinkingWhenAdapterEnabled(t *testing.
 	assert.Equal(t, "none", info.ReasoningConversion.Effort)
 }
 
+func TestApplyReasoningModelSuffixClaudeEffortRemainsIndependentOfThinkingAdapter(t *testing.T) {
+	settings := model_setting.GetClaudeSettings()
+	original := settings.ThinkingAdapterEnabled
+	t.Cleanup(func() { settings.ThinkingAdapterEnabled = original })
+	settings.ThinkingAdapterEnabled = false
+
+	req := &dto.ClaudeRequest{Model: "claude-opus-5-5-high"}
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "claude-opus-5-5-high",
+		Request:         req,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "claude-opus-5-5-high",
+		},
+	}
+
+	mustApplyReasoningModelSuffix(t, info, req)
+	assert.Equal(t, "claude-opus-5-5", info.UpstreamModelName)
+	assert.Equal(t, "claude-opus-5-5", req.Model)
+	require.NotNil(t, info.ReasoningConversion)
+	assert.Equal(t, "high", info.ReasoningConversion.Effort)
+}
+
 func TestApplyReasoningModelSuffixPreservesEffortTailModelID(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "qwen-max",

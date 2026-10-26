@@ -7,9 +7,31 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func TestFilterAbilitiesOnChannelLookupFailure(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	previousDB := DB
+	DB = db
+	t.Cleanup(func() {
+		DB = previousDB
+		require.NoError(t, sqlDB.Close())
+	})
+	// The private database has no channels table, so every lookup must fail.
+	var channels []*Channel
+	require.Error(t, db.Find(&channels).Error)
+	abilities := []Ability{{ChannelId: 1, Model: "shared", Group: "default", Enabled: true}}
+	endpointFilters := []dto.ChannelFilter{{Kind: dto.FilterTaskPluginEndpoint, TaskPluginKeys: []string{"alpha"}}}
+	assert.Empty(t, filterAbilitiesByConstraints(abilities, "shared", endpointFilters))
+	assert.Equal(t, abilities, filterAbilitiesByConstraints(abilities, "shared", nil))
+}
 
 func TestFilterCandidateIDs(t *testing.T) {
 	alphaSetting := `{"task_plugin_key":"alpha"}`

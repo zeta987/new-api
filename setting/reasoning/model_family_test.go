@@ -54,6 +54,10 @@ func TestExpandEffortSuffixFamilies(t *testing.T) {
 		{base: "glm-5.3-flash", want: []string{"glm-5.3-flash", "glm-5.3-flash-low", "glm-5.3-flash-high", "glm-5.3-flash-max"}},
 		{base: "deepseek-v4-pro", want: []string{"deepseek-v4-pro", "deepseek-v4-pro-none", "deepseek-v4-pro-low", "deepseek-v4-pro-high", "deepseek-v4-pro-max"}},
 		{base: "kimi-k3", want: []string{"kimi-k3", "kimi-k3-none", "kimi-k3-low", "kimi-k3-high", "kimi-k3-max"}},
+		{base: "kimi-k3.1-pro", want: []string{"kimi-k3.1-pro", "kimi-k3.1-pro-low", "kimi-k3.1-pro-high", "kimi-k3.1-pro-max"}},
+		{base: "kimi-k3.1-pro-highspeed", want: []string{"kimi-k3.1-pro-highspeed", "kimi-k3.1-pro-highspeed-low", "kimi-k3.1-pro-highspeed-high", "kimi-k3.1-pro-highspeed-max"}},
+		{base: "kimi-k3.1-pro-none", want: []string{"kimi-k3.1-pro-none"}},
+		{base: "kimi-k3.1-pro-preview", want: []string{"kimi-k3.1-pro-preview"}},
 		{base: "grok-4.0", want: []string{"grok-4.0", "grok-4.0-low", "grok-4.0-medium", "grok-4.0-high"}},
 		{base: "grok-4.5", want: []string{"grok-4.5", "grok-4.5-low", "grok-4.5-medium", "grok-4.5-high"}},
 		{base: "grok-4.6", want: []string{"grok-4.6", "grok-4.6-low", "grok-4.6-medium", "grok-4.6-high", "grok-4.6-xhigh"}},
@@ -111,10 +115,18 @@ func TestExpandEffortSuffixFamiliesRespectsBlacklistAndDeduplicates(t *testing.T
 // invariant that covers every family, GLM included, is asserted in
 // controller/model_family_test.go where ModelMatchCandidates is importable.
 func TestExpandedVariantsFoldBackToTheirBase(t *testing.T) {
+	claudeSettings := model_setting.GetClaudeSettings()
+	geminiSettings := model_setting.GetGeminiSettings()
+	oldClaude, oldGemini := claudeSettings.ThinkingAdapterEnabled, geminiSettings.ThinkingAdapterEnabled
+	claudeSettings.ThinkingAdapterEnabled, geminiSettings.ThinkingAdapterEnabled = false, false
+	t.Cleanup(func() {
+		claudeSettings.ThinkingAdapterEnabled, geminiSettings.ThinkingAdapterEnabled = oldClaude, oldGemini
+	})
+
 	for _, base := range []string{
 		"claude-fable-5", "claude-fable-5-1", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5",
 		"gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-4-argon",
-		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "grok-4.0", "grok-4.5", "grok-4.6", "grok-4.7", "x-ai/grok-4.7",
+		"deepseek-flash", "deepseek-v4-pro", "kimi-k3", "kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "grok-4.0", "grok-4.5", "grok-4.6", "grok-4.7", "x-ai/grok-4.7",
 	} {
 		t.Run(base, func(t *testing.T) {
 			variants := ExpandOpenAIReasoningModels([]string{base})
@@ -125,4 +137,9 @@ func TestExpandedVariantsFoldBackToTheirBase(t *testing.T) {
 			}
 		})
 	}
+	assert.Equal(t, []string{
+		"gemini-3.8-flash@effort:high@thinking:on",
+		"gemini-3.8-flash@thinking:on",
+	}, CanonicalBillingModelNames("gemini-3.8-flash-high"))
+	assert.Empty(t, CanonicalBillingModelNames("gemini-3.8-flash-thinking"))
 }
