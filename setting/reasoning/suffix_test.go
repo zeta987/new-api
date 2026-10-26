@@ -312,6 +312,13 @@ func TestBaseModelNameStripsEffortSuffixFamilies(t *testing.T) {
 		{name: "deepseek-flash-none", want: "deepseek-flash"},
 		{name: "kimi-k3-high", want: "kimi-k3"},
 		{name: "kimi-k3-max", want: "kimi-k3"},
+		{name: "kimi-k3.1-pro-low", want: "kimi-k3.1-pro"},
+		{name: "kimi-k3.1-pro-high", want: "kimi-k3.1-pro"},
+		{name: "kimi-k3.1-pro-max", want: "kimi-k3.1-pro"},
+		{name: "kimi-k3.1-pro-highspeed-high", want: "kimi-k3.1-pro-highspeed"},
+		{name: "kimi-k3.1-pro-none", want: "kimi-k3.1-pro-none"},
+		{name: "kimi-k3.1-pro-highspeed-none", want: "kimi-k3.1-pro-highspeed-none"},
+		{name: "kimi-k3.1-pro-preview-high", want: "kimi-k3.1-pro-preview-high"},
 		// Outside every family vocabulary, or blacklisted.
 		{name: "kimi-k3-medium", want: "kimi-k3-medium"},
 		{name: "kimi-k2-thinking", want: "kimi-k2-thinking"},
@@ -347,6 +354,11 @@ func TestEffortSuffixBaseModelName(t *testing.T) {
 		{name: "deepseek-flash-max", want: "deepseek-flash"},
 		{name: "kimi-k3-high", want: "kimi-k3"},
 		{name: "kimi-k3-none", want: "kimi-k3"},
+		{name: "kimi-k3.1-pro-high", want: "kimi-k3.1-pro"},
+		{name: "kimi-k3.1-pro-highspeed-max", want: "kimi-k3.1-pro-highspeed"},
+		{name: "kimi-k3.1-pro-none", want: ""},
+		{name: "kimi-k3.1-pro-highspeed-none", want: ""},
+		{name: "kimi-k3.1-pro-preview-high", want: ""},
 		// Nothing to strip.
 		{name: "kimi-k3-medium", want: ""},
 		{name: "", want: ""},
@@ -379,4 +391,9 @@ func TestExemptAtNameIsOpaqueForBillingIdentity(t *testing.T) {
 	assert.Empty(t, CanonicalBillingModelNames(model))
 	assert.Equal(t, "kimi-k2-thinking", BaseModelName("kimi-k2-thinking"))
 	assert.Empty(t, CanonicalBillingModelNames("kimi-k2-thinking"))
+	for _, model := range []string{"kimi-k3.1-pro-none", "kimi-k3.1-pro-highspeed-none", "kimi-k3.1-pro-preview-high", "kimi-k3.1-pro-highspeed-vendor-max"} {
+		assert.Equal(t, model, BaseModelName(model))
+		assert.Empty(t, EffortSuffixBaseModelName(model))
+		assert.Empty(t, CanonicalBillingModelNames(model))
+	}
 }

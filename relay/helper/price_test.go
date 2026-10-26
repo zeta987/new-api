@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -894,6 +895,116 @@ func TestModelPriceHelperPreservesGpt51CodexMaxIdentity(t *testing.T) {
 	assert.Equal(t, 1.75, priceData.ModelRatio)
 }
 
+// DeepSeek thinking tails and @ modifiers inherit the base model's built-in
+// expression. Plain aliases retain their log identity, explicit administrator
+// prices win, and a blacklisted name stays opaque and needs its own price.
+func TestModelPriceHelperDeepSeekThinkingTailsBillAtBase(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
+	savedRatios, savedPrices := ratio_setting.ModelRatio2JSONString(), ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(savedPrices))
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode":         `{}`,
+		"billing_setting.billing_expr":         `{}`,
+		"quota_setting.pre_consume_multiplier": `1`,
+		"group_ratio_setting.group_ratio":      `{"default":1}`,
+	}))
+	oldSelfUse := operation_setting.SelfUseModeEnabled
+	operation_setting.SelfUseModeEnabled = false
+	t.Cleanup(func() { operation_setting.SelfUseModeEnabled = oldSelfUse })
+	settings := model_setting.GetGlobalSettings()
+	originalBlacklist := append([]string(nil), settings.ThinkingModelBlacklist...)
+	t.Cleanup(func() { settings.ThinkingModelBlacklist = originalBlacklist })
+	settings.ThinkingModelBlacklist = append(originalBlacklist, "deepseek-v4-pro-max")
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	ctx.Set("group", "default")
+	for origin, base := range map[string]string{
+		"deepseek-flash-none":           "deepseek-flash",
+		"deepseek-flash-low":            "deepseek-flash",
+		"deepseek-flash-max":            "deepseek-flash",
+		"deepseek-v4-pro-low":           "deepseek-v4-pro",
+		"deepseek-flash@effort:max":     "deepseek-flash",
+		"deepseek-flash-max@effort:low": "deepseek-flash",
+		"deepseek-v4-pro@thinking:off":  "deepseek-v4-pro",
+	} {
+		info := &relaycommon.RelayInfo{
+			OriginModelName: origin, UserGroup: "default", UsingGroup: "default",
+			BillingRequestInput: &billingexpr.RequestInput{Body: []byte(`{}`)},
+		}
+		price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+		require.NoError(t, err, origin)
+		billingName := origin
+		if strings.Contains(origin, "@") {
+			billingName = base
+		}
+		assert.Equal(t, billingName, info.GetBillingModelName(), origin)
+		expression, _ := billing_setting.GetBuiltinBillingExpr(base)
+		require.NotNil(t, info.TieredBillingSnapshot, origin)
+		assert.Equal(t, expression, info.TieredBillingSnapshot.ExprString, origin)
+		assert.Equal(t, billingName, info.TieredBillingSnapshot.ModelName, origin)
+		inputPrice := 0.15
+		if base == "deepseek-v4-pro" {
+			inputPrice = 0.66
+		}
+		assert.Contains(t, []int{
+			common.QuotaRound(inputPrice / 1000 * common.QuotaPerUnit),
+			common.QuotaRound(inputPrice * 2 / 1000 * common.QuotaPerUnit),
+		}, price.QuotaToPreConsume, origin)
+		assert.Equal(t, price.QuotaToPreConsume, info.TieredBillingSnapshot.EstimatedQuotaAfterGroup, origin)
+	}
+
+	info := &relaycommon.RelayInfo{OriginModelName: "deepseek-v4-pro-max", UserGroup: "default", UsingGroup: "default"}
+	_, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.Error(t, err)
+	assert.Equal(t, "deepseek-v4-pro-max", info.GetBillingModelName())
+
+	for _, tc := range []struct {
+		name, ratios, prices, mode, expr string
+		wantQuota                        int
+		wantUsePrice                     bool
+	}{
+		{"exact free ratio", `{"deepseek-flash-low":0}`, `{}`, `{}`, `{}`, 0, false},
+		{"wildcard ratio", `{"deepseek-flash-*":1.5}`, `{}`, `{}`, `{}`, 1500, false},
+		{"exact request price", `{}`, `{"deepseek-flash-low":0.02}`, `{}`, `{}`, 10000, true},
+		{"exact expression", `{}`, `{}`, `{"deepseek-flash-low":"tiered_expr"}`, `{"deepseek-flash-low":"tier(\"custom\", p * 9)"}`, 4500, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(tc.ratios))
+			require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(tc.prices))
+			require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+				"billing_setting.billing_mode": tc.mode,
+				"billing_setting.billing_expr": tc.expr,
+			}))
+			info := &relaycommon.RelayInfo{OriginModelName: "deepseek-flash-low", UserGroup: "default", UsingGroup: "default",
+				BillingRequestInput: &billingexpr.RequestInput{Body: []byte(`{}`)}}
+			price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			assert.Equal(t, "deepseek-flash-low", info.GetBillingModelName())
+			assert.Equal(t, tc.wantUsePrice, price.UsePrice)
+			assert.Equal(t, tc.wantQuota, price.QuotaToPreConsume)
+			if tc.expr != `{}` {
+				require.NotNil(t, info.TieredBillingSnapshot)
+				assert.Equal(t, `tier("custom", p * 9)`, info.TieredBillingSnapshot.ExprString)
+			} else {
+				assert.Nil(t, info.TieredBillingSnapshot)
+			}
+		})
+	}
+}
+
 func TestModelPriceHelperNativeGeminiNoThinkingDoesNotAliasBillingModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1027,3 +1138,5 @@ func (s *priceTestReservation) Refund(*gin.Context)      {}
 func (s *priceTestReservation) NeedsRefund() bool        { return false }
 func (s *priceTestReservation) GetPreConsumedQuota() int { return s.held }
 func (s *priceTestReservation) Reserve(quota int) error  { s.held = max(s.held, quota); return nil }
+
+func (s *priceTestReservation) ReserveBeforeSubmit(quota int) error { return s.Reserve(quota) }

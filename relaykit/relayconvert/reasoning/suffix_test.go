@@ -85,7 +85,23 @@ func TestParseKimiReasoningEffortSuffix(t *testing.T) {
 		{model: "kimi-k3-low", base: "kimi-k3", effort: "low", ok: true},
 		{model: "kimi-k3-high", base: "kimi-k3", effort: "high", ok: true},
 		{model: "kimi-k3-max", base: "kimi-k3", effort: "max", ok: true},
+		{model: "kimi-k3.1-pro-low", base: "kimi-k3.1-pro", effort: "low", ok: true},
+		{model: "kimi-k3.1-pro-high", base: "kimi-k3.1-pro", effort: "high", ok: true},
+		{model: "kimi-k3.1-pro-max", base: "kimi-k3.1-pro", effort: "max", ok: true},
+		{model: "kimi-k3.1-pro-highspeed-low", base: "kimi-k3.1-pro-highspeed", effort: "low", ok: true},
+		{model: "kimi-k3.1-pro-highspeed-high", base: "kimi-k3.1-pro-highspeed", effort: "high", ok: true},
+		{model: "kimi-k3.1-pro-highspeed-max", base: "kimi-k3.1-pro-highspeed", effort: "max", ok: true},
+		{model: "kimi-k3.1-pro", base: "kimi-k3.1-pro"},
+		{model: "kimi-k3.1-pro-highspeed", base: "kimi-k3.1-pro-highspeed"},
+		{model: "kimi-k3.1-pro-none", base: "kimi-k3.1-pro-none"},
+		{model: "kimi-k3.1-pro-highspeed-none", base: "kimi-k3.1-pro-highspeed-none"},
+		{model: "kimi-k3.1-pro-medium", base: "kimi-k3.1-pro-medium"},
+		{model: "kimi-k3.1-pro-xhigh", base: "kimi-k3.1-pro-xhigh"},
+		{model: "kimi-k3.1-pro-preview-high", base: "kimi-k3.1-pro-preview-high"},
+		{model: "kimi-k3.1-pro-highspeed-vendor-max", base: "kimi-k3.1-pro-highspeed-vendor-max"},
+		{model: "vendor/kimi-k3.1-pro-high", base: "vendor/kimi-k3.1-pro-high"},
 		{model: "kimi-k3-turbo-high", base: "kimi-k3-turbo", effort: "high", ok: true},
+		{model: "kimi-k3.10-high", base: "kimi-k3.10", effort: "high", ok: true},
 		// Outside the none/low/high/max vocabulary.
 		{model: "kimi-k3-medium", base: "kimi-k3-medium"},
 		{model: "kimi-k3-xhigh", base: "kimi-k3-xhigh"},
@@ -112,10 +128,10 @@ func TestParseKimiReasoningEffortSuffix(t *testing.T) {
 }
 
 func TestIsKimiReasoningEffortModel(t *testing.T) {
-	for _, model := range []string{"kimi-k2-thinking", "kimi-k3", "kimi-k3-turbo", "kimi-latest", "kimi-k3-medium"} {
+	for _, model := range []string{"kimi-k2-thinking", "kimi-k3", "kimi-k3-turbo", "kimi-latest", "kimi-k3-medium", "kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"} {
 		assert.True(t, IsKimiReasoningEffortModel(model), model)
 	}
-	for _, model := range []string{"kimi-k3-high", "kimi-k3-max", "kimi-low", "kimi--low", "KIMI-K3", "custom-kimi-k3"} {
+	for _, model := range []string{"kimi-k3-high", "kimi-k3-max", "kimi-low", "kimi--low", "KIMI-K3", "custom-kimi-k3", "kimi-k3.1-pro-none", "kimi-k3.1-pro-highspeed-max", "kimi-k3.1-pro-preview", "kimi-k3.1-pro-highspeed-vendor"} {
 		assert.False(t, IsKimiReasoningEffortModel(model), model)
 	}
 }
@@ -208,6 +224,37 @@ func TestParseKnownProviderModelSuffix(t *testing.T) {
 			model:     "gpt-4o-mini",
 			wantBase:  "gpt-4o-mini",
 			wantFound: false,
+		},
+		{
+			name:       "claude effort ignores thinking alias toggle",
+			model:      "claude-opus-4-8-high",
+			wantBase:   "claude-opus-4-8",
+			wantFound:  true,
+			wantMode:   ModeEnabled,
+			wantEffort: EffortHigh,
+		},
+		{
+			name:       "gemini effort ignores thinking alias toggle",
+			model:      "gemini-3.8-flash-low",
+			wantBase:   "gemini-3.8-flash",
+			wantFound:  true,
+			wantMode:   ModeEnabled,
+			wantEffort: EffortLow,
+		},
+		{
+			name:     "disabled claude thinking alias is opaque",
+			model:    "claude-3-7-sonnet-thinking",
+			wantBase: "claude-3-7-sonnet-thinking",
+		},
+		{
+			name:     "disabled gemini nothinking alias is opaque",
+			model:    "gemini-2.5-flash-nothinking",
+			wantBase: "gemini-2.5-flash-nothinking",
+		},
+		{
+			name:     "disabled malformed budget remains opaque",
+			model:    "gemini-2.5-flash-thinking-invalid",
+			wantBase: "gemini-2.5-flash-thinking-invalid",
 		},
 	}
 
