@@ -223,6 +223,7 @@ func TestGetOpenAIChatCapabilitiesGPT6Family(t *testing.T) {
 		{model: "gpt-6-sol", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
 		{model: "gpt-6-luna", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
 		{model: "gpt-6-sol-2026-09-23", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
+		{model: "gpt-6.1-terra", want: OpenAIChatCapabilities{UseMaxCompletionTokens: true, UseDeveloperRole: true}},
 		{model: "gpt-6-luna-pro", want: OpenAIChatCapabilities{SupportsTemperature: true, SupportsTopP: true, SupportsLogProbs: true}},
 	}
 

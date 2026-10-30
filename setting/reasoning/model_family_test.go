@@ -18,7 +18,7 @@ func TestModelFamilyDiscoveryKeepsExplicitAndOpaqueNames(t *testing.T) {
 }
 
 func TestGPT6StandardModelsExpandOnlySupportedAliases(t *testing.T) {
-	for _, base := range []string{"gpt-6-sol", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol", "gpt-6.1-luna"} {
+	for _, base := range []string{"gpt-6-sol", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol", "gpt-6.1-luna", "gpt-6.1-terra"} {
 		t.Run(base, func(t *testing.T) {
 			variants := ExpandOpenAIReasoningModels([]string{base})
 			require.Len(t, variants, 21)
@@ -33,7 +33,7 @@ func TestGPT6StandardModelsExpandOnlySupportedAliases(t *testing.T) {
 		})
 	}
 	assert.Equal(t, []string{"gpt-6-terra"}, ExpandOpenAIReasoningModels([]string{"gpt-6-terra"}))
-	for _, opaque := range []string{"gpt-6.1-terra", "gpt-6.1-preview", "gpt-6.1-20260923", "gpt-6.1-ultra"} {
+	for _, opaque := range []string{"gpt-6.1-preview", "gpt-6.1-20260923", "gpt-6.1-ultra"} {
 		assert.Equal(t, []string{opaque}, ExpandOpenAIReasoningModels([]string{opaque}))
 	}
 }

@@ -21,7 +21,7 @@ var (
 	legacyOpenAIModelPattern = regexp.MustCompile(`^(gpt-[a-z0-9][a-z0-9._-]*|o[1-9][a-z0-9._-]*)$`)
 	legacyClaudeModelPattern = regexp.MustCompile(`^claude-[a-z0-9][a-z0-9._-]*$`)
 	legacyGeminiModelPattern = regexp.MustCompile(`^gemini-[a-z0-9][a-z0-9._-]*$`)
-	standardGPT6ModelPattern = regexp.MustCompile(`^(gpt-6(?:-(?:sol|luna)|\.(?:0|[1-9][0-9]?)(?:-(?:sol|luna))?))(?:-(.*))?$`)
+	standardGPT6ModelPattern = regexp.MustCompile(`^(gpt-6(?:-(?:sol|luna)|\.(?:0|[1-9][0-9]?)(?:-(?:sol|luna|terra))?))(?:-(.*))?$`)
 )
 
 type ModelModifier struct {

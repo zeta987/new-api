@@ -346,7 +346,7 @@ func GetOpenAIChatCapabilities(modelName, reasoningEffort string) OpenAIChatCapa
 	}
 
 	isGPT5Model := IsOpenAIGPT5Model(modelName)
-	isGPT6Model := slices.ContainsFunc([]string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}, func(baseModel string) bool {
+	isGPT6Model := slices.ContainsFunc([]string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-terra"}, func(baseModel string) bool {
 		return isOpenAIModelSnapshot(modelName, baseModel)
 	})
 	if !isGPT5Model && !isGPT6Model {
@@ -362,6 +362,7 @@ func GetOpenAIChatCapabilities(modelName, reasoningEffort string) OpenAIChatCapa
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.4
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-luna
+	// https://developers.openai.com/api/docs/models/gpt-6.1-terra
 	supportsSampling := false
 	if reasoningEffort == "" || reasoningEffort == "none" {
 		for _, model := range []string{"gpt-5.1", "gpt-5.2", "gpt-5.4"} {

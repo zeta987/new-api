@@ -158,7 +158,7 @@ func TestReasoningFamilySelectorsAndMetadata(t *testing.T) {
 // covers GLM too, whose collapse lives in FormatMatchingModelName rather than
 // in the suffix normalizer.
 func TestExpandedVariantsRouteBackToRegisteredBase(t *testing.T) {
-	for _, base := range []string{"gpt-6-sol", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol", "gpt-6.1-luna"} {
+	for _, base := range []string{"gpt-6-sol", "gpt-6-luna", "gpt-6.1", "gpt-6.1-sol", "gpt-6.1-luna", "gpt-6.1-terra"} {
 		t.Run(base, func(t *testing.T) {
 			for _, variant := range reasoning.ExpandOpenAIReasoningModels([]string{base}) {
 				assert.Contains(t, model.ModelMatchCandidates(variant), base, variant)

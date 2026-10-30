@@ -32,6 +32,10 @@ var builtinBillingExpr = map[string]string{
 	// https://developers.openai.com/api/docs/models/gpt-6-luna
 	"gpt-6-sol":  `len <= 272000 ? tier("standard", p * 2 + c * 10 + cr * 0.2 + cc * 2.5) : tier("long_context", p * 4 + c * 15 + cr * 0.4 + cc * 5)`,
 	"gpt-6-luna": `len <= 272000 ? tier("standard", p * 0.1 + c * 0.5 + cr * 0.01 + cc * 0.125) : tier("long_context", p * 0.2 + c * 0.75 + cr * 0.02 + cc * 0.25)`,
+	// https://developers.openai.com/api/docs/models/gpt-6.1-terra
+	// cc is the 30m cache write and cc12h the 12h write. Above 272K input,
+	// input and cache rates double and output is 1.5x for the whole request.
+	"gpt-6.1-terra": `len <= 272000 ? tier("standard", p * 1 + c * 5 + cr * 0.05 + cc * 1.25 + cc12h * 2.5) : tier("long_context", p * 2 + c * 7.5 + cr * 0.1 + cc * 2.5 + cc12h * 5)`,
 	// https://platform.claude.com/docs/en/models/opus-5-5/overview
 	// Claude's 1M context uses the standard token rates throughout.
 	"claude-opus-5-5": `tier("standard", p * 4 + c * 20 + cr * 0.2 + cc * 5 + cc1h * 8)`,

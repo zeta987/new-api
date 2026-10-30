@@ -310,7 +310,7 @@ func TestConvertOpenAIResponsesRequestUsesOriginalModelSuffixAfterMapping(t *tes
 }
 
 func TestModelListIncludesGPT56Models(t *testing.T) {
-	for _, model := range []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-sol", "gpt-6-luna"} {
+	for _, model := range []string{"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-terra"} {
 		assert.Truef(t, slices.Contains(ModelList, model), "ModelList is missing %s", model)
 	}
 	assert.NotContains(t, ModelList, "gpt-6-terra")
