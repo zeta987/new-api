@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -346,10 +345,9 @@ func GetOpenAIChatCapabilities(modelName, reasoningEffort string) OpenAIChatCapa
 	}
 
 	isGPT5Model := IsOpenAIGPT5Model(modelName)
-	isGPT6Model := slices.ContainsFunc([]string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-terra"}, func(baseModel string) bool {
-		return isOpenAIModelSnapshot(modelName, baseModel)
-	})
-	if !isGPT5Model && !isGPT6Model {
+	isGPT6SolLuna := isOpenAIModelSnapshot(modelName, "gpt-6-sol") || isOpenAIModelSnapshot(modelName, "gpt-6-luna")
+	isGPT61Terra := isOpenAIModelSnapshot(modelName, "gpt-6.1-terra")
+	if !isGPT5Model && !isGPT6SolLuna && !isGPT61Terra && !isOpenAIModelSnapshot(modelName, "gpt-6-astra") && !isOpenAIModelSnapshot(modelName, "gpt-6.1-sol") {
 		return capabilities
 	}
 	capabilities.UseMaxCompletionTokens = true
@@ -357,14 +355,18 @@ func GetOpenAIChatCapabilities(modelName, reasoningEffort string) OpenAIChatCapa
 
 	// These standard GPT-5 models default to none and support sampling only
 	// without reasoning. Named variants (pro, codex, chat-latest, etc.) do not
-	// inherit this exception. GPT-6 models never support these parameters.
+	// inherit this exception. GPT-6 Sol and Luna follow the same rule. GPT-6
+	// Astra and GPT-6.1 Sol never support these parameters. GPT-6.1 Terra
+	// defaults to medium, so it keeps them only with an explicit none.
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.4
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra
 	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-luna
-	// https://developers.openai.com/api/docs/models/gpt-6.1-terra
+	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6.1-sol
+	// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6.1-terra
 	supportsSampling := false
 	if reasoningEffort == "" || reasoningEffort == "none" {
+		supportsSampling = isGPT6SolLuna || (isGPT61Terra && reasoningEffort == "none")
 		for _, model := range []string{"gpt-5.1", "gpt-5.2", "gpt-5.4"} {
 			if isOpenAIModelSnapshot(modelName, model) {
 				supportsSampling = true

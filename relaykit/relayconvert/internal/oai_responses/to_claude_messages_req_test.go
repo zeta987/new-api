@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestOpenAIResponsesRequestToClaudeMessagesUsesSonnet5AdaptiveEffort(t *testing.T) {
@@ -28,7 +28,7 @@ func TestOpenAIResponsesRequestToClaudeMessagesUsesSonnet5AdaptiveEffort(t *test
 	require.Equal(t, "adaptive", converted.Thinking.Type)
 	require.Equal(t, "summarized", converted.Thinking.Display)
 	require.Nil(t, converted.Thinking.BudgetTokens)
-	require.Equal(t, "xhigh", gjson.GetBytes(converted.OutputConfig, "effort").String())
+	require.Equal(t, "xhigh", ojson.GetBytes(converted.OutputConfig, "effort").String())
 	require.Nil(t, converted.Temperature)
 	require.Nil(t, converted.TopP)
 	require.Nil(t, converted.TopK)
@@ -45,7 +45,7 @@ func TestOpenAIResponsesRequestToClaudeMessagesUsesSonnet5EffortSuffix(t *testin
 	require.Equal(t, "claude-sonnet-5", converted.Model)
 	require.NotNil(t, converted.Thinking)
 	require.Equal(t, "adaptive", converted.Thinking.Type)
-	require.Equal(t, "max", gjson.GetBytes(converted.OutputConfig, "effort").String())
+	require.Equal(t, "max", ojson.GetBytes(converted.OutputConfig, "effort").String())
 }
 
 func TestOpenAIResponsesRequestToClaudeMessagesOmitsSamplingForSonnet5(t *testing.T) {

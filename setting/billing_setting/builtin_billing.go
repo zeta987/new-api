@@ -16,11 +16,13 @@ var builtinBillingExpr = map[string]string{
 	// Standard prices from December 1, 2026; implicit cache reads only.
 	// All input modalities share one rate, with no long-context surcharge.
 	"gemini-4-argon": `tier("standard", p * 4 + c * 20 + cr * 0.2)`,
-	// https://developers.openai.com/api/docs/pricing (Standard, 2026-09-09).
+	// https://developers.openai.com/api/docs/pricing (Standard, 2026-11-05).
 	// The Images API reports image output in output_tokens, normalized to c.
 	"gpt-image-2":            `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
 	"gpt-image-2.5-sunburst": `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
 	"gpt-image-2.5-flare":    `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
+	"gpt-image-2.6-sunburst": `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
+	"gpt-image-2.6-flare":    `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
 	// https://developers.openai.com/api/docs/models/gpt-6-astra
 	// https://developers.openai.com/api/docs/pricing (Standard, 2026-10-22):
 	// cc is the 30m cache write and cc12h the 12h write. The long-context

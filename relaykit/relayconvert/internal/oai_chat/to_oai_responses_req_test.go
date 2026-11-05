@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestChatCompletionsRequestToResponsesRequestInstructionsAndTools(t *testing.T) {
@@ -34,10 +34,10 @@ func TestChatCompletionsRequestToResponsesRequestInstructionsAndTools(t *testing
 
 	assert.Equal(t, "gpt-test", got.Model)
 	assert.Equal(t, `"system rules\n\ndeveloper rules"`, string(got.Instructions))
-	assert.Equal(t, "input_image", gjson.GetBytes(got.Input, "0.content.1.type").String())
-	assert.Equal(t, "function_call", gjson.GetBytes(got.Input, "2.type").String())
-	assert.Equal(t, "call_1", gjson.GetBytes(got.Input, "2.call_id").String())
-	assert.Equal(t, "function_call_output", gjson.GetBytes(got.Input, "3.type").String())
+	assert.Equal(t, "input_image", ojson.GetBytes(got.Input, "0.content.1.type").String())
+	assert.Equal(t, "function_call", ojson.GetBytes(got.Input, "2.type").String())
+	assert.Equal(t, "call_1", ojson.GetBytes(got.Input, "2.call_id").String())
+	assert.Equal(t, "function_call_output", ojson.GetBytes(got.Input, "3.type").String())
 }
 
 func TestChatCompletionsRequestToResponsesRequestPreservesBuiltInToolShape(t *testing.T) {
@@ -68,7 +68,7 @@ func TestChatCompletionsRequestToResponsesRequestPreservesBuiltInToolShape(t *te
 	out, err := ChatCompletionsRequestToResponsesRequest(context.Background(), &req)
 	require.NoError(t, err)
 
-	tools := gjson.ParseBytes(out.Tools)
+	tools := ojson.ParseBytes(out.Tools)
 	assert.Equal(t, "web_search_preview", tools.Get("0.type").String())
 	assert.False(t, tools.Get("0.function").Exists())
 	assert.Equal(t, "example.com", tools.Get("0.filters.allowed_domains.0").String())
@@ -93,13 +93,13 @@ func TestChatCompletionsRequestToResponsesRequestPreservesRequestOptions(t *test
 			encoded, err := kitutil.Marshal(got)
 			require.NoError(t, err)
 			if tc.name == "present" {
-				assert.Equal(t, `"flex"`, gjson.GetBytes(encoded, "service_tier").Raw)
-				assert.Equal(t, `"24h"`, gjson.GetBytes(encoded, "prompt_cache_retention").Raw)
-				assert.Equal(t, `"audit-user"`, gjson.GetBytes(encoded, "safety_identifier").Raw)
+				assert.Equal(t, `"flex"`, ojson.GetBytes(encoded, "service_tier").Raw)
+				assert.Equal(t, `"24h"`, ojson.GetBytes(encoded, "prompt_cache_retention").Raw)
+				assert.Equal(t, `"audit-user"`, ojson.GetBytes(encoded, "safety_identifier").Raw)
 			} else {
-				assert.False(t, gjson.GetBytes(encoded, "service_tier").Exists())
-				assert.False(t, gjson.GetBytes(encoded, "prompt_cache_retention").Exists())
-				assert.False(t, gjson.GetBytes(encoded, "safety_identifier").Exists())
+				assert.False(t, ojson.GetBytes(encoded, "service_tier").Exists())
+				assert.False(t, ojson.GetBytes(encoded, "prompt_cache_retention").Exists())
+				assert.False(t, ojson.GetBytes(encoded, "safety_identifier").Exists())
 			}
 		})
 	}
@@ -156,8 +156,8 @@ func TestChatCompletionsRequestToResponsesRequestImageDetail(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			assert.Equal(t, "input_image", gjson.GetBytes(got.Input, "0.content.0.type").String())
-			assert.Equal(t, tt.want, gjson.GetBytes(got.Input, "0.content.0.detail").String())
+			assert.Equal(t, "input_image", ojson.GetBytes(got.Input, "0.content.0.type").String())
+			assert.Equal(t, tt.want, ojson.GetBytes(got.Input, "0.content.0.detail").String())
 		})
 	}
 }
@@ -178,7 +178,7 @@ func TestChatCompletionsRequestToResponsesRequestPreservesPromptCacheKey(t *test
 
 		encoded, err := kitutil.Marshal(got)
 		require.NoError(t, err)
-		assert.Equal(t, key, gjson.GetBytes(encoded, "prompt_cache_key").String())
+		assert.Equal(t, key, ojson.GetBytes(encoded, "prompt_cache_key").String())
 	})
 
 	t.Run("absent", func(t *testing.T) {
@@ -190,7 +190,7 @@ func TestChatCompletionsRequestToResponsesRequestPreservesPromptCacheKey(t *test
 
 		encoded, err := kitutil.Marshal(got)
 		require.NoError(t, err)
-		assert.False(t, gjson.GetBytes(encoded, "prompt_cache_key").Exists())
+		assert.False(t, ojson.GetBytes(encoded, "prompt_cache_key").Exists())
 	})
 }
 
@@ -222,8 +222,8 @@ func TestChatCompletionsRequestToResponsesRequestPreservesQwenThinkingBudget(t *
 			encoded, err := kitutil.Marshal(got)
 			require.NoError(t, err)
 
-			assert.True(t, gjson.GetBytes(encoded, "enable_thinking").Bool())
-			value := gjson.GetBytes(encoded, "thinking_budget")
+			assert.True(t, ojson.GetBytes(encoded, "enable_thinking").Bool())
+			value := ojson.GetBytes(encoded, "thinking_budget")
 			assert.True(t, value.Exists())
 			assert.Equal(t, tt.want, value.Int())
 		})

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
@@ -14,7 +15,6 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestDeepSeekModelListIncludesCurrentLowSuffixes(t *testing.T) {
@@ -33,7 +33,7 @@ func TestApplyDeepSeekV4LowSuffixAcrossRelayFormats(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, "deepseek-v4-pro", request.Model)
-		assert.Equal(t, "enabled", gjson.GetBytes(request.THINKING, "type").String())
+		assert.Equal(t, "enabled", ojson.GetBytes(request.THINKING, "type").String())
 		assert.Equal(t, "low", request.ReasoningEffort)
 		assert.Equal(t, "deepseek-v4-pro", info.UpstreamModelName)
 		assert.Equal(t, "low", info.ReasoningEffort)
@@ -49,7 +49,7 @@ func TestApplyDeepSeekV4LowSuffixAcrossRelayFormats(t *testing.T) {
 		assert.Equal(t, "deepseek-v4-pro", request.Model)
 		require.NotNil(t, request.Thinking)
 		assert.Equal(t, "enabled", request.Thinking.Type)
-		assert.Equal(t, "low", gjson.GetBytes(request.OutputConfig, "effort").String())
+		assert.Equal(t, "low", ojson.GetBytes(request.OutputConfig, "effort").String())
 		assert.Equal(t, "deepseek-v4-pro", info.UpstreamModelName)
 		assert.Equal(t, "low", info.ReasoningEffort)
 	})
@@ -92,7 +92,7 @@ func TestApplyDeepSeekV4SuffixRecoversEffortAfterMapping(t *testing.T) {
 
 		require.NoError(t, applyDeepSeekV4OpenAIThinkingSuffix(info, request))
 		assert.Equal(t, "deepseek-v4-pro", request.Model)
-		assert.Equal(t, "enabled", gjson.GetBytes(request.THINKING, "type").String())
+		assert.Equal(t, "enabled", ojson.GetBytes(request.THINKING, "type").String())
 		assert.Equal(t, "low", request.ReasoningEffort)
 		assert.Equal(t, "low", info.ReasoningEffort)
 	})
@@ -105,7 +105,7 @@ func TestApplyDeepSeekV4SuffixRecoversEffortAfterMapping(t *testing.T) {
 		assert.Equal(t, "deepseek-v4-pro", request.Model)
 		require.NotNil(t, request.Thinking)
 		assert.Equal(t, "enabled", request.Thinking.Type)
-		assert.Equal(t, "low", gjson.GetBytes(request.OutputConfig, "effort").String())
+		assert.Equal(t, "low", ojson.GetBytes(request.OutputConfig, "effort").String())
 		assert.Equal(t, "low", info.ReasoningEffort)
 	})
 
@@ -196,7 +196,7 @@ func TestDeepSeekFlashEffortSuffixes(t *testing.T) {
 			info := deepSeekLowTestRelayInfo(tc.model)
 			require.NoError(t, applyDeepSeekV4OpenAIThinkingSuffix(info, chat))
 			assert.Equal(t, tc.base, chat.Model)
-			assert.Equal(t, tc.thinking, gjson.GetBytes(chat.THINKING, "type").String())
+			assert.Equal(t, tc.thinking, ojson.GetBytes(chat.THINKING, "type").String())
 			assert.Equal(t, tc.effort, chat.ReasoningEffort)
 
 			claude := &dto.ClaudeRequest{Model: tc.model, Thinking: &dto.Thinking{Type: "enabled"}, OutputConfig: []byte(`{"effort":"high"}`)}
@@ -205,7 +205,7 @@ func TestDeepSeekFlashEffortSuffixes(t *testing.T) {
 			assert.Equal(t, tc.base, claude.Model)
 			require.NotNil(t, claude.Thinking)
 			assert.Equal(t, tc.thinking, claude.Thinking.Type)
-			assert.Equal(t, tc.effort, gjson.GetBytes(claude.OutputConfig, "effort").String())
+			assert.Equal(t, tc.effort, ojson.GetBytes(claude.OutputConfig, "effort").String())
 
 			responses := &dto.OpenAIResponsesRequest{Model: tc.model, Reasoning: &dto.Reasoning{Effort: "high"}}
 			info = deepSeekLowTestRelayInfo(tc.model)
@@ -435,7 +435,7 @@ func TestModelModifiersUpstreamFields(t *testing.T) {
 					sent, err = common.Marshal(converted)
 					require.NoError(t, err)
 				}
-				wire := gjson.ParseBytes(sent)
+				wire := ojson.ParseBytes(sent)
 				wantModel := "deepseek-flash"
 				if strings.HasPrefix(tt.model, "deepseek-v4-pro") {
 					wantModel = "deepseek-v4-pro"
@@ -444,7 +444,7 @@ func TestModelModifiersUpstreamFields(t *testing.T) {
 				if tt.thinking == "" {
 					// No modifier: the client's reasoning fields go out as sent.
 					for _, member := range []string{"thinking", "reasoning_effort", "output_config", "reasoning"} {
-						assert.Equal(t, gjson.Get(body, member).Raw, wire.Get(member).Raw, "%s %s", format, member)
+						assert.Equal(t, ojson.Get(body, member).Raw, wire.Get(member).Raw, "%s %s", format, member)
 					}
 					continue
 				}
@@ -456,7 +456,7 @@ func TestModelModifiersUpstreamFields(t *testing.T) {
 				case types.RelayFormatClaude:
 					assert.JSONEq(t, `{"type":"`+tt.thinking+`"}`, wire.Get("thinking").Raw, format)
 					assert.Equal(t, tt.effort, wire.Get("output_config.effort").String(), format)
-					assert.Equal(t, gjson.Get(body, "output_config.format").Raw, wire.Get("output_config.format").Raw, format)
+					assert.Equal(t, ojson.Get(body, "output_config.format").Raw, wire.Get("output_config.format").Raw, format)
 					assert.Equal(t, int64(64), wire.Get("max_tokens").Int(), format)
 					wantTemperature := 0.7
 					if strings.Contains(tt.model, "@temperature:0.3") {

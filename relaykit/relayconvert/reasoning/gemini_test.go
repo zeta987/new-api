@@ -40,7 +40,28 @@ func TestGeminiArgonThinkingLevels(t *testing.T) {
 	assert.Equal(t, ModeEnabled, defaultIntent.Mode)
 	assert.Equal(t, EffortMedium, defaultIntent.Effort)
 
-	for _, model := range []string{"gemini-4-future", "gemini-4-argon-preview"} {
+	for _, tc := range []struct {
+		model string
+		want  Effort
+	}{
+		{model: "gemini-4-argon-preview", want: EffortMedium},
+		{model: "gemini-4-argon-cyber-permissive", want: EffortHigh},
+		{model: "gemini-4-argon-cyber-permissive-preview", want: EffortHigh},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			defaultIntent := ResolveGeminiDefault(tc.model, Intent{})
+			assert.Equal(t, ModeEnabled, defaultIntent.Mode)
+			assert.Equal(t, tc.want, defaultIntent.Effort)
+
+			rendered, err := RenderGemini(tc.model, Intent{Effort: EffortMinimal}, nil, 0)
+			require.NoError(t, err)
+			require.NotNil(t, rendered.Config)
+			assert.Equal(t, "low", rendered.Config.ThinkingLevel)
+			assert.Equal(t, EffortLow, rendered.EffectiveEffort)
+		})
+	}
+
+	for _, model := range []string{"gemini-4-future"} {
 		rendered, err := RenderGemini(model, Intent{Effort: EffortMedium}, nil, 0)
 		require.NoError(t, err)
 		assert.Nil(t, rendered.Config)
