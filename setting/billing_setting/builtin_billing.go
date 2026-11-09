@@ -47,6 +47,10 @@ var builtinBillingExpr = map[string]string{
 	// https://platform.claude.com/docs/en/about-claude/pricing
 	// The $2 / $10 launch price became Sonnet 5's standard price.
 	"claude-sonnet-5": `tier("standard", p * 2 + c * 10 + cr * 0.2 + cc * 2.5 + cc1h * 4)`,
+	// https://platform.claude.com/docs/en/models/fable-5-2/overview
+	// Mythos 5.2 shares Fable 5.2's specs and prices.
+	"claude-fable-5-2":  `tier("standard", p * 8 + c * 40 + cr * 0.2 + cc * 10 + cc1h * 16)`,
+	"claude-mythos-5-2": `tier("standard", p * 8 + c * 40 + cr * 0.2 + cc * 10 + cc1h * 16)`,
 	// https://platform.claude.com/docs/en/models/fable-5-1/overview
 	// Cache reads are 0.025x the base input price; Mythos 5.1 is priced the same.
 	"claude-fable-5-1":  `tier("standard", p * 10 + c * 50 + cr * 0.25 + cc * 12.5 + cc1h * 20)`,
