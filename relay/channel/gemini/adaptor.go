@@ -182,8 +182,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
-	if converted, ok := result.Value.(*dto.GeminiChatRequest); ok &&
-		(strings.HasPrefix(a.model, "gemini-3.") || strings.HasPrefix(a.model, "gemini-3-")) {
+	if converted, ok := result.Value.(*dto.GeminiChatRequest); ok && supportsGeminiToolCombination(a.model) {
 		a.toolContext = newGeminiToolContext(info, request, converted)
 		if c != nil {
 			c.Set(geminiContextKey, a.toolContext)

@@ -309,10 +309,22 @@ func geminiContextFor(c *gin.Context, info *relaycommon.RelayInfo) *geminiToolCo
 	return state
 }
 
+// supportsGeminiToolCombination reports whether the upstream model can mix
+// built-in tools with function calling and replay their server-side parts.
+// https://aistudio.google.com/docs/tool-combination lists Gemini 3 and 4.
+func supportsGeminiToolCombination(model string) bool {
+	for _, prefix := range []string{"gemini-3.", "gemini-3-", "gemini-4.", "gemini-4-"} {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // The hook sees tools inserted by parameter overrides. Raw JSON avoids dropping
 // provider fields that the gateway's typed DTOs do not yet know about.
 func (a *Adaptor) PreparePostOverrideRequest(body []byte) ([]byte, error) {
-	if !strings.HasPrefix(a.model, "gemini-3.") && !strings.HasPrefix(a.model, "gemini-3-") {
+	if !supportsGeminiToolCombination(a.model) {
 		return body, nil
 	}
 	var request map[string]json.RawMessage

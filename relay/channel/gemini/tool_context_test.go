@@ -23,11 +23,21 @@ import (
 )
 
 func TestGeminiToolCombinationPostOverride(t *testing.T) {
-	for _, mode := range []string{"AUTO", "NONE", "ANY", "VALIDATED", ""} {
-		t.Run(mode, func(t *testing.T) {
-			_, _, info := geminiContextFixture(false)
+	for _, test := range []struct{ model, mode string }{
+		{"gemini-3.8-flash", "AUTO"}, {"gemini-3.8-flash", "NONE"}, {"gemini-3.8-flash", "ANY"},
+		{"gemini-3.8-flash", "VALIDATED"}, {"gemini-3.8-flash", ""},
+		{"gemini-4-carbon", "AUTO"}, {"gemini-4-argon", ""},
+	} {
+		mode := test.mode
+		t.Run(test.model+"/"+mode, func(t *testing.T) {
+			isolateGeminiContexts(t)
+			c, _, info := geminiContextFixture(false)
+			info.UpstreamModelName = test.model
 			a := &Adaptor{}
 			a.Init(info)
+			_, err := a.ConvertOpenAIRequest(c, info, &dto.GeneralOpenAIRequest{Model: test.model, Messages: []dto.Message{{Role: "user", Content: "hello"}}})
+			require.NoError(t, err)
+			require.NotNil(t, a.toolContext, "supported models keep tool context for the next turn")
 			body := `{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generationConfig":{},"tools":[{"functionDeclarations":[{"name":"lookup"}]},{"codeExecution":{}}],"toolConfig":{"functionCallingConfig":{"mode":"` + mode + `","allowedFunctionNames":["lookup"]}},"futureField":{"keep":true}}`
 			got, err := a.PreparePostOverrideRequest([]byte(body))
 			require.NoError(t, err)
