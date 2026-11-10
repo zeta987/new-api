@@ -79,6 +79,10 @@ func TestEffortSuffixModelNames(t *testing.T) {
 			want: []string{"gemini-4-argon", "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"},
 		},
 		{
+			base: "gemini-4-carbon",
+			want: []string{"gemini-4-carbon", "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"},
+		},
+		{
 			base: "gemini-3.1-pro-preview",
 			want: []string{"gemini-3.1-pro-preview", "gemini-3.1-pro-preview-low", "gemini-3.1-pro-preview-medium", "gemini-3.1-pro-preview-high"},
 		},
@@ -207,10 +211,11 @@ func TestEffortSuffixModelNamesRejectsUnknownBases(t *testing.T) {
 func TestEffortSuffixVocabularyOmissions(t *testing.T) {
 	// The capability tables would admit these, the published vocabulary
 	// does not. See the comment on effortSuffixVocabulary.
-	for _, base := range []string{"gemini-3.7-flash", "gemini-3.8-flash", "gemini-4-argon"} {
+	for _, base := range []string{"gemini-3.7-flash", "gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-minimal")
 	}
 	assert.NotContains(t, EffortSuffixModelNames("gemini-4-argon"), "gemini-4-argon-none")
+	assert.NotContains(t, EffortSuffixModelNames("gemini-4-carbon"), "gemini-4-carbon-none")
 	for _, base := range []string{"claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1", "claude-mythos-5", "claude-mythos-5-1"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-none")
 	}

@@ -33,7 +33,7 @@ var ModelList = append([]string{
 	"veo-3.1-generate-preview", "veo-3.1-fast-generate-preview",
 	// other models
 	"aqa",
-}, reasoning.EffortSuffixModelNames("gemini-4-argon")...)
+}, append(reasoning.EffortSuffixModelNames("gemini-4-argon"), reasoning.EffortSuffixModelNames("gemini-4-carbon")...)...)
 
 var SafetySettingList = []string{
 	"HARM_CATEGORY_HARASSMENT",

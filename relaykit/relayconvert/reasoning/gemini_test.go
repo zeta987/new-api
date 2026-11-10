@@ -9,42 +9,45 @@ import (
 )
 
 func TestGeminiArgonThinkingLevels(t *testing.T) {
-	for _, level := range []string{"low", "medium", "high"} {
-		t.Run(level, func(t *testing.T) {
-			base, intent, found, err := ParseGeminiModelSuffix("gemini-4-argon-"+level, false)
-			require.NoError(t, err)
-			require.True(t, found)
-			assert.Equal(t, "gemini-4-argon", base)
-			rendered, err := RenderGemini(base, intent, nil, 0)
-			require.NoError(t, err)
-			require.NotNil(t, rendered.Config)
-			assert.Equal(t, level, rendered.Config.ThinkingLevel)
-			assert.Nil(t, rendered.Config.ThinkingBudget)
-			assert.Equal(t, Effort(level), rendered.EffectiveEffort)
-			assert.Empty(t, rendered.Diagnostics)
+	for _, family := range []string{"gemini-4-argon", "gemini-4-carbon"} {
+		for _, level := range []string{"low", "medium", "high"} {
+			t.Run(family+"-"+level, func(t *testing.T) {
+				base, intent, found, err := ParseGeminiModelSuffix(family+"-"+level, false)
+				require.NoError(t, err)
+				require.True(t, found)
+				assert.Equal(t, family, base)
+				rendered, err := RenderGemini(base, intent, nil, 0)
+				require.NoError(t, err)
+				require.NotNil(t, rendered.Config)
+				assert.Equal(t, level, rendered.Config.ThinkingLevel)
+				assert.Nil(t, rendered.Config.ThinkingBudget)
+				assert.Equal(t, Effort(level), rendered.EffectiveEffort)
+				assert.Empty(t, rendered.Diagnostics)
 
-			generation := &dto.GeminiChatGenerationConfig{ThinkingConfig: &dto.GeminiThinkingConfig{ThinkingLevel: level}}
-			effort, diagnostics, err := NormalizeGeminiThinkingConfig(base, generation)
-			require.NoError(t, err)
-			assert.Equal(t, level, generation.ThinkingConfig.ThinkingLevel)
-			assert.Equal(t, Effort(level), effort)
-			assert.Empty(t, diagnostics)
-		})
+				generation := &dto.GeminiChatGenerationConfig{ThinkingConfig: &dto.GeminiThinkingConfig{ThinkingLevel: level}}
+				effort, diagnostics, err := NormalizeGeminiThinkingConfig(base, generation)
+				require.NoError(t, err)
+				assert.Equal(t, level, generation.ThinkingConfig.ThinkingLevel)
+				assert.Equal(t, Effort(level), effort)
+				assert.Empty(t, diagnostics)
+			})
+		}
+
+		rendered, err := RenderGemini(family, Intent{}, nil, 0)
+		require.NoError(t, err)
+		assert.Nil(t, rendered.Config)
+		assert.Empty(t, rendered.EffectiveEffort)
+		defaultIntent := ResolveGeminiDefault(family, Intent{})
+		assert.Equal(t, ModeEnabled, defaultIntent.Mode)
+		assert.Equal(t, EffortMedium, defaultIntent.Effort)
 	}
-
-	rendered, err := RenderGemini("gemini-4-argon", Intent{}, nil, 0)
-	require.NoError(t, err)
-	assert.Nil(t, rendered.Config)
-	assert.Empty(t, rendered.EffectiveEffort)
-	defaultIntent := ResolveGeminiDefault("gemini-4-argon", Intent{})
-	assert.Equal(t, ModeEnabled, defaultIntent.Mode)
-	assert.Equal(t, EffortMedium, defaultIntent.Effort)
 
 	for _, tc := range []struct {
 		model string
 		want  Effort
 	}{
 		{model: "gemini-4-argon-preview", want: EffortMedium},
+		{model: "gemini-4-carbon", want: EffortMedium},
 		{model: "gemini-4-argon-cyber-permissive", want: EffortHigh},
 		{model: "gemini-4-argon-cyber-permissive-preview", want: EffortHigh},
 	} {
