@@ -212,7 +212,7 @@ func TestGeminiArgonBuiltinBillingAndOverrides(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
 	wantExpression := `tier("standard", p * 4 + c * 20 + cr * 0.2)`
 	wantQuota := 2620
-	for _, name := range []string{"gemini-4-argon", "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"} {
+	for _, name := range []string{"gemini-4-argon", "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high", "gemini-4-carbon", "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"} {
 		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(name))
 			expression, ok := billing_setting.GetBillingExpr(name)

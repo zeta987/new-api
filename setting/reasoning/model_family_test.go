@@ -50,6 +50,7 @@ func TestExpandEffortSuffixFamilies(t *testing.T) {
 		{base: "gemini-3.8-flash", want: []string{"gemini-3.8-flash", "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"}},
 		{base: "gemini-4-argon", want: []string{"gemini-4-argon", "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"}},
 		{base: "gemini-4-argon-preview", want: []string{"gemini-4-argon-preview"}},
+		{base: "gemini-4-carbon", want: []string{"gemini-4-carbon", "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"}},
 		{base: "gemini-4-future", want: []string{"gemini-4-future"}},
 		{base: "glm-5.3-flash", want: []string{"glm-5.3-flash", "glm-5.3-flash-low", "glm-5.3-flash-high", "glm-5.3-flash-max"}},
 		{base: "deepseek-v4-pro", want: []string{"deepseek-v4-pro", "deepseek-v4-pro-none", "deepseek-v4-pro-low", "deepseek-v4-pro-high", "deepseek-v4-pro-max"}},
