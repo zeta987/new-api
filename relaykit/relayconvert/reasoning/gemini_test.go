@@ -48,6 +48,8 @@ func TestGeminiArgonThinkingLevels(t *testing.T) {
 	}{
 		{model: "gemini-4-argon-preview", want: EffortMedium},
 		{model: "gemini-4-carbon", want: EffortMedium},
+		// https://aistudio.google.com/docs/thinking: low, medium, high; default medium.
+		{model: "gemini-3.8-flash", want: EffortMedium},
 		{model: "gemini-4-argon-cyber-permissive", want: EffortHigh},
 		{model: "gemini-4-argon-cyber-permissive-preview", want: EffortHigh},
 	} {
@@ -61,6 +63,11 @@ func TestGeminiArgonThinkingLevels(t *testing.T) {
 			require.NotNil(t, rendered.Config)
 			assert.Equal(t, "low", rendered.Config.ThinkingLevel)
 			assert.Equal(t, EffortLow, rendered.EffectiveEffort)
+
+			generation := &dto.GeminiChatGenerationConfig{ThinkingConfig: &dto.GeminiThinkingConfig{ThinkingLevel: "minimal"}}
+			_, _, err = NormalizeGeminiThinkingConfig(tc.model, generation)
+			require.NoError(t, err)
+			assert.Equal(t, "low", generation.ThinkingConfig.ThinkingLevel)
 		})
 	}
 
