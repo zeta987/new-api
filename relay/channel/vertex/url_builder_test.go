@@ -23,3 +23,21 @@ func TestBuildGoogleModelURLUsesTheLocationHost(t *testing.T) {
 		})
 	}
 }
+
+func TestGetModelRegionFallsBackToUpstreamBase(t *testing.T) {
+	regions := `{"default":"asia-east1","gemini-4-hydrogen":"global","gemini-4-hydrogen-low":"us"}`
+	tests := []struct {
+		origin, upstream, want string
+	}{
+		{"gemini-4-hydrogen-xhigh", "gemini-4-hydrogen", "global"},
+		{"gemini-4-hydrogen-low", "gemini-4-hydrogen", "us"},
+		{"gemini-2.5-pro", "gemini-2.5-pro", "asia-east1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.origin, func(t *testing.T) {
+			assert.Equal(t, tt.want, GetModelRegion(regions, tt.origin, tt.upstream))
+		})
+	}
+	assert.Equal(t, "global", GetModelRegion(`{"gemini-4-carbon":"us"}`, "gemini-4-argon", "gemini-4-argon"))
+	assert.Equal(t, "us-central1", GetModelRegion("us-central1", "gemini-4-argon", "gemini-4-argon"))
+}
