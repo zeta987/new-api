@@ -83,6 +83,10 @@ func TestEffortSuffixModelNames(t *testing.T) {
 			want: []string{"gemini-4-carbon", "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"},
 		},
 		{
+			base: "gemini-4-hydrogen",
+			want: []string{"gemini-4-hydrogen", "gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"},
+		},
+		{
 			base: "gemini-3.1-pro-preview",
 			want: []string{"gemini-3.1-pro-preview", "gemini-3.1-pro-preview-low", "gemini-3.1-pro-preview-medium", "gemini-3.1-pro-preview-high"},
 		},
@@ -211,6 +215,9 @@ func TestEffortSuffixModelNamesRejectsUnknownBases(t *testing.T) {
 func TestEffortSuffixVocabularyOmissions(t *testing.T) {
 	// The capability tables would admit these, the published vocabulary
 	// does not. See the comment on effortSuffixVocabulary.
+	for _, suffix := range []string{"-minimal", "-none", "-max"} {
+		assert.NotContains(t, EffortSuffixModelNames("gemini-4-hydrogen"), "gemini-4-hydrogen"+suffix)
+	}
 	for _, base := range []string{"gemini-3.7-flash", "gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon"} {
 		assert.NotContains(t, EffortSuffixModelNames(base), base+"-minimal")
 	}

@@ -52,6 +52,8 @@ func TestGeminiArgonThinkingLevels(t *testing.T) {
 		{model: "gemini-3.8-flash", want: EffortMedium},
 		{model: "gemini-4-argon-cyber-permissive", want: EffortHigh},
 		{model: "gemini-4-argon-cyber-permissive-preview", want: EffortHigh},
+		// https://aistudio.google.com/docs/thinking: low, medium, high, xhigh; default high.
+		{model: "gemini-4-hydrogen", want: EffortHigh},
 	} {
 		t.Run(tc.model, func(t *testing.T) {
 			defaultIntent := ResolveGeminiDefault(tc.model, Intent{})
@@ -70,6 +72,42 @@ func TestGeminiArgonThinkingLevels(t *testing.T) {
 			assert.Equal(t, "low", generation.ThinkingConfig.ThinkingLevel)
 		})
 	}
+
+	for _, tc := range []struct {
+		model      string
+		intent     Intent
+		wantLevel  string
+		wantAdjust bool
+	}{
+		{model: "gemini-4-hydrogen-xhigh", wantLevel: "xhigh"},
+		{model: "gemini-4-hydrogen-medium", wantLevel: "medium"},
+		{model: "gemini-4-hydrogen", intent: Intent{Effort: EffortMax}, wantLevel: "xhigh", wantAdjust: true},
+		{model: "gemini-4-hydrogen", intent: Intent{Mode: ModeDisabled, Effort: EffortNone}, wantLevel: "low", wantAdjust: true},
+		{model: "gemini-4-carbon", intent: Intent{Effort: EffortXHigh}, wantLevel: "high", wantAdjust: true},
+	} {
+		t.Run(tc.model+"/"+tc.wantLevel, func(t *testing.T) {
+			base, intent := tc.model, tc.intent
+			if parsed, suffixIntent, found, err := ParseGeminiModelSuffix(tc.model, false); found {
+				require.NoError(t, err)
+				base, intent = parsed, suffixIntent
+			}
+			rendered, err := RenderGemini(base, intent, nil, 0)
+			require.NoError(t, err)
+			require.NotNil(t, rendered.Config)
+			assert.Equal(t, tc.wantLevel, rendered.Config.ThinkingLevel)
+			assert.Equal(t, Effort(tc.wantLevel), rendered.EffectiveEffort)
+			assert.Equal(t, tc.wantAdjust, len(rendered.Diagnostics) > 0)
+		})
+	}
+	generation := &dto.GeminiChatGenerationConfig{ThinkingConfig: &dto.GeminiThinkingConfig{ThinkingLevel: "xhigh"}}
+	effort, diagnostics, err := NormalizeGeminiThinkingConfig("gemini-4-hydrogen", generation)
+	require.NoError(t, err)
+	assert.Equal(t, "xhigh", generation.ThinkingConfig.ThinkingLevel)
+	assert.Equal(t, EffortXHigh, effort)
+	assert.Empty(t, diagnostics)
+	rendered, err := RenderGemini("gemini-4-hydrogen", Intent{}, nil, 0)
+	require.NoError(t, err)
+	assert.Nil(t, rendered.Config, "no client effort leaves the upstream default (high) in place")
 
 	for _, model := range []string{"gemini-4-future"} {
 		rendered, err := RenderGemini(model, Intent{Effort: EffortMedium}, nil, 0)

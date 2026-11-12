@@ -130,7 +130,7 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) getRequestUrl(info *relaycommon.RelayInfo, modelName, suffix string) (string, error) {
-	region := GetModelRegion(info.ApiVersion, info.OriginModelName)
+	region := GetModelRegion(info.ApiVersion, info.OriginModelName, info.UpstreamModelName)
 	googleAPIVersion := DefaultAPIVersion
 	if info.ChannelOtherSettings.VertexAPIVersion != "" {
 		googleAPIVersion = info.ChannelOtherSettings.VertexAPIVersion

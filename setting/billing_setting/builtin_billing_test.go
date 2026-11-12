@@ -211,19 +211,36 @@ func TestGeminiArgonBuiltinBillingAndOverrides(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
 	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
 	wantExpression := `tier("standard", p * 4 + c * 20 + cr * 0.2)`
-	wantQuota := 2620
-	for _, name := range []string{"gemini-4-argon", "gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high", "gemini-4-carbon", "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"} {
-		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(name))
-			expression, ok := billing_setting.GetBillingExpr(name)
+	hydrogenExpression := `tier("standard", p * 1.5 + c * 7.5 + cr * 0.075)`
+	for _, tc := range []struct {
+		name       string
+		expression string
+		quota      int
+	}{
+		{"gemini-4-argon", wantExpression, 2620},
+		{"gemini-4-argon-low", wantExpression, 2620},
+		{"gemini-4-argon-medium", wantExpression, 2620},
+		{"gemini-4-argon-high", wantExpression, 2620},
+		{"gemini-4-carbon", wantExpression, 2620},
+		{"gemini-4-carbon-low", wantExpression, 2620},
+		{"gemini-4-carbon-medium", wantExpression, 2620},
+		{"gemini-4-carbon-high", wantExpression, 2620},
+		// 800*1.5 + 100*7.5 + 200*0.075 = 1965 USD per 1M tokens -> 982.5 quota.
+		{"gemini-4-hydrogen", hydrogenExpression, 983},
+		{"gemini-4-hydrogen-high", hydrogenExpression, 983},
+		{"gemini-4-hydrogen-xhigh", hydrogenExpression, 983},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(tc.name))
+			expression, ok := billing_setting.GetBillingExpr(tc.name)
 			require.True(t, ok)
-			assert.Equal(t, wantExpression, expression)
+			assert.Equal(t, tc.expression, expression)
 			usage := &dto.Usage{PromptTokens: 1000, CompletionTokens: 100, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200, AudioTokens: 300}}
 			result, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{
 				ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: 500000,
 			}, service.BuildTieredTokenParams(usage, false, billingexpr.UsedVars(expression)))
 			require.NoError(t, err)
-			assert.Equal(t, wantQuota, result.ActualQuotaAfterGroup)
+			assert.Equal(t, tc.quota, result.ActualQuotaAfterGroup)
 		})
 	}
 	assert.Equal(t, wantExpression, billing_setting.GetBuiltinBillingExprCopy()["gemini-4-argon"])

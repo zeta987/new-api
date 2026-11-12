@@ -6,6 +6,7 @@ var (
 	claudeEffortLevels      = []string{"low", "medium", "high", "xhigh", "max"}
 	geminiFullEffortLevels  = []string{"minimal", "low", "medium", "high"}
 	geminiCoreEffortLevels  = []string{"low", "medium", "high"}
+	geminiXHighEffortLevels = []string{"low", "medium", "high", "xhigh"}
 	glmEffortLevels         = []string{"low", "high", "max"}
 	kimiK31EffortLevels     = []string{"low", "high", "max"}
 	toggleEffortLevels      = []string{"none", "low", "high", "max"}
@@ -41,6 +42,7 @@ var effortSuffixVocabulary = map[string][]string{
 	"gemini-3.1-pro-preview": geminiCoreEffortLevels,
 	"gemini-4-argon":         geminiCoreEffortLevels,
 	"gemini-4-carbon":        geminiCoreEffortLevels,
+	"gemini-4-hydrogen":      geminiXHighEffortLevels,
 
 	// GLM publishes the 5.3 line only; 5.2 is deliberately absent.
 	"glm-5.3":        glmEffortLevels,
