@@ -9,8 +9,12 @@ func OpenAIReasoningBaseModel(name string) (string, bool) {
 	if base, _, ok := ParseQwenReasoningEffortSuffix(name); ok {
 		return base, true
 	}
-	if name == GPT6Astra || name == GPT6Astra+"-*" {
-		return GPT6Astra, true
+	if base, suffix, known := splitGPT6RequiredReasoningModel(name); known {
+		if name == base || suffix == "*" {
+			return base, true
+		}
+		base, _, _, ok := ParseGPT6RequiredReasoningModelSuffix(name)
+		return base, ok
 	}
 	if base, suffix, known := splitGPT56Model(name); known {
 		if suffix == "" || suffix == "*" {
@@ -26,8 +30,7 @@ func OpenAIReasoningBaseModel(name string) (string, bool) {
 		base, _, _, ok := ParseStandardGPT6ReasoningModelSuffix(name)
 		return base, ok
 	}
-	base, _, _, ok := ParseGPT6AstraReasoningModelSuffix(name)
-	return base, ok
+	return name, false
 }
 
 // OpenAIReasoningModelNames expands base and wildcard registrations. Explicit

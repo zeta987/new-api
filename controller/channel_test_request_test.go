@@ -148,6 +148,8 @@ func TestOpenAIChatSamplingCompatibility(t *testing.T) {
 		{name: "GPT6 sol default none keeps sampling", model: "gpt-6-sol", wantRole: "developer", wantParams: sampling},
 		{name: "GPT6 luna effort drops sampling", model: "gpt-6-luna-high", wantModel: "gpt-6-luna", wantEffort: "high", wantRole: "developer", wantParams: `{}`},
 		{name: "GPT6.1 sol drops sampling", model: "gpt-6.1-sol", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.2 Sol effort suffix", model: "gpt-6.2-sol-max", wantModel: "gpt-6.2-sol", wantEffort: "max", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.2 Astra effort suffix", model: "gpt-6.2-astra-xhigh", wantModel: "gpt-6.2-astra", wantEffort: "xhigh", wantRole: "developer", wantParams: `{}`},
 		{name: "GPT6.1 terra default drops sampling", model: "gpt-6.1-terra", wantRole: "developer", wantParams: `{}`},
 		{name: "GPT6.1 terra none keeps sampling", model: "gpt-6.1-terra", effort: "none", wantEffort: "none", wantRole: "developer", wantParams: sampling},
 		{name: "none effort suffix", model: "gpt-5.2-none", wantModel: "gpt-5.2", wantEffort: "none", wantRole: "developer", wantParams: sampling},

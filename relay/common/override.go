@@ -871,9 +871,9 @@ func applyOperations(doc *ojson.Doc, operations []ParamOperation, conditionConte
 	relayFormat, _ := context[paramOverrideContextRelayFormat].(types.RelayFormat)
 	originModel, _ := context["original_model"].(string)
 	upstreamModel, _ := context["upstream_model"].(string)
-	astraRequest := (relayFormat == types.RelayFormatOpenAI || relayFormat == types.RelayFormatOpenAIResponses) &&
-		(kitreasoning.IsGPT6AstraModel(kitreasoning.ParseModelModifiers(originModel).Base) ||
-			kitreasoning.IsGPT6AstraModel(kitreasoning.ParseModelModifiers(upstreamModel).Base))
+	requiresReasoning := (relayFormat == types.RelayFormatOpenAI || relayFormat == types.RelayFormatOpenAIResponses) &&
+		(kitreasoning.IsGPT6RequiredReasoningModel(kitreasoning.ParseModelModifiers(originModel).Base) ||
+			kitreasoning.IsGPT6RequiredReasoningModel(kitreasoning.ParseModelModifiers(upstreamModel).Base))
 	auditRecorder := getParamOverrideAuditRecorder(context)
 	contextJSON, err := marshalContextJSON(context)
 	if err != nil {
@@ -922,10 +922,10 @@ func applyOperations(doc *ojson.Doc, operations []ParamOperation, conditionConte
 				if op.KeepOrigin && doc.Get(path).Exists() {
 					continue
 				}
-				// Shared legacy defaults must not disable Astra reasoning. Leave
+				// Shared legacy defaults must not disable required reasoning. Leave
 				// effort absent so the upstream model chooses its own default.
 				// Explicit values and forced overrides still reach validation.
-				if astraRequest && op.KeepOrigin && op.Value == "none" &&
+				if requiresReasoning && op.KeepOrigin && op.Value == "none" &&
 					(path == "reasoning_effort" || path == "reasoning.effort") {
 					continue
 				}

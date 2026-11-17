@@ -12,6 +12,12 @@ const deepSeekFlashExpr = deepSeekPeak + ` ? tier("peak", p * 0.3 + cr * 0.006 +
 // Built-in token prices use actual USD per million tokens. Keep new model
 // defaults here instead of splitting them across the legacy ratio tables.
 var builtinBillingExpr = map[string]string{
+	// https://developers.openai.com/api/docs/models/gpt-6.2-astra
+	// https://developers.openai.com/api/docs/models/gpt-6.2-sol
+	// Standard rates, including 30m and 12h cache writes. Long-context
+	// rates apply to the full request above 272K input tokens.
+	"gpt-6.2-astra": `len <= 272000 ? tier("standard", p * 8 + c * 40 + cr * 0.4 + cc * 10 + cc12h * 20) : tier("long_context", p * 16 + c * 60 + cr * 0.8 + cc * 20 + cc12h * 40)`,
+	"gpt-6.2-sol":   `len <= 272000 ? tier("standard", p * 2 + c * 10 + cr * 0.1 + cc * 2.5 + cc12h * 5) : tier("long_context", p * 4 + c * 15 + cr * 0.2 + cc * 5 + cc12h * 10)`,
 	// https://aistudio.google.com/docs/pricing#gemini-4-argon
 	// Standard prices from December 1, 2026; implicit cache reads only.
 	// All input modalities share one rate, with no long-context surcharge.

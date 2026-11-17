@@ -9,39 +9,49 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAstraResponsesAliases(t *testing.T) {
-	for _, mode := range []string{"", "standard", "pro"} {
-		for _, effort := range []string{"", "low", "medium", "high", "xhigh", "max"} {
-			name := "gpt-6-astra"
-			if mode != "" {
-				name += "-" + mode
-			}
-			if effort != "" {
-				name += "-" + effort
-			}
-			t.Run(name, func(t *testing.T) {
-				req := &dto.OpenAIResponsesRequest{Model: name}
-				info := &relaycommon.RelayInfo{OriginModelName: name, Request: req, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeOpenAI, UpstreamModelName: name}}
-				require.NoError(t, helper.ApplyReasoningModelSuffix(nil, info, req))
-				converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, *req)
-				require.NoError(t, err)
-				got := converted.(dto.OpenAIResponsesRequest)
-				assert.Equal(t, "gpt-6-astra", got.Model)
-				if mode == "" && effort == "" {
-					assert.Nil(t, got.Reasoning)
-					return
-				}
-				require.NotNil(t, got.Reasoning)
-				assert.Equal(t, effort, got.Reasoning.Effort)
+func TestGPT6RequiredReasoningResponsesAliases(t *testing.T) {
+	for _, base := range []string{"gpt-6-astra", "gpt-6.2-astra", "gpt-6.2-sol"} {
+		var variants []string
+		for _, mode := range []string{"", "standard", "pro"} {
+			for _, effort := range []string{"", "low", "medium", "high", "xhigh", "max"} {
+				name := base
 				if mode != "" {
-					assert.JSONEq(t, `"`+mode+`"`, string(got.Reasoning.Mode))
+					name += "-" + mode
 				}
-				assert.Equal(t, effort, info.ReasoningEffort)
-			})
+				if effort != "" {
+					name += "-" + effort
+				}
+				variants = append(variants, name)
+				t.Run(name, func(t *testing.T) {
+					req := &dto.OpenAIResponsesRequest{Model: name}
+					info := &relaycommon.RelayInfo{OriginModelName: name, Request: req, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeOpenAI, UpstreamModelName: name}}
+					require.NoError(t, helper.ApplyReasoningModelSuffix(nil, info, req))
+					converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, *req)
+					require.NoError(t, err)
+					got := converted.(dto.OpenAIResponsesRequest)
+					assert.Equal(t, base, got.Model)
+					if mode == "" && effort == "" {
+						assert.Nil(t, got.Reasoning)
+						return
+					}
+					require.NotNil(t, got.Reasoning)
+					assert.Equal(t, effort, got.Reasoning.Effort)
+					if mode != "" {
+						assert.JSONEq(t, `"`+mode+`"`, string(got.Reasoning.Mode))
+					}
+					assert.Equal(t, effort, info.ReasoningEffort)
+				})
+			}
+		}
+		assert.ElementsMatch(t, variants, reasoning.ExpandOpenAIReasoningModels([]string{base}))
+		assert.ElementsMatch(t, variants[1:], reasoning.ExpandOpenAIReasoningModels([]string{base + "-*"}))
+		for _, invalid := range []string{"-none", "-minimal", "-pro-none", "-stanard-high", "-high-pro"} {
+			assert.Equal(t, base+invalid, reasoning.BaseModelName(base+invalid))
 		}
 	}
 }

@@ -255,7 +255,7 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		return nil, errors.New("request is nil")
 	}
 	capabilityModel := openAIReasoningCapabilityModel(info, request.Model)
-	if info.ChannelType == constant.ChannelTypeOpenAI && kitreasoning.IsGPT6AstraModel(capabilityModel) {
+	if info.ChannelType == constant.ChannelTypeOpenAI && kitreasoning.IsGPT6RequiredReasoningModel(capabilityModel) {
 		config := &dto.Reasoning{}
 		if len(request.Reasoning) > 0 {
 			if err := common.Unmarshal(request.Reasoning, config); err != nil {
@@ -265,15 +265,15 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		if request.ReasoningEffort != "" {
 			config.Effort = request.ReasoningEffort
 		}
-		_, mode, effort, _ := kitreasoning.ParseGPT6AstraReasoningModelSuffix(capabilityModel)
+		_, mode, effort, _ := kitreasoning.ParseGPT6RequiredReasoningModelSuffix(capabilityModel)
 		if effort != "" {
 			config.Effort = effort
 		}
-		if err := validateAstraReasoning(config); err != nil {
+		if err := validateRequiredReasoning(capabilityModel, config); err != nil {
 			return nil, kitreasoning.AsClientError(err)
 		}
 		if len(request.Tools) > 0 || len(request.Functions) > 0 || mode != "" || len(config.Mode) > 0 && string(config.Mode) != "null" {
-			return nil, kitreasoning.AsClientError(fmt.Errorf("gpt-6-astra tools and reasoning mode require the Responses API; use /v1/responses or enable Chat Completions to Responses conversion"))
+			return nil, kitreasoning.AsClientError(fmt.Errorf("%s tools and reasoning mode require the Responses API; use /v1/responses or enable Chat Completions to Responses conversion", capabilityModel))
 		}
 		request.Temperature = nil
 		request.TopP = nil
@@ -449,8 +449,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		applyOpenAIChatGLMReasoningEffort(info, request)
 	}
 	capabilities := dto.GetOpenAIChatCapabilities(info.UpstreamModelName, info.ReasoningEffort)
-	if kitreasoning.IsGPT6AstraModel(capabilityModel) {
-		capabilities = dto.GetOpenAIChatCapabilities(capabilityModel, info.ReasoningEffort)
+	if kitreasoning.IsGPT6RequiredReasoningModel(capabilityModel) {
+		base, _ := kitreasoning.OpenAIReasoningBaseModel(capabilityModel)
+		capabilities = dto.GetOpenAIChatCapabilities(base, info.ReasoningEffort)
 	}
 	if capabilities.UseMaxCompletionTokens {
 		if lo.FromPtrOr(request.MaxCompletionTokens, uint(0)) == 0 && lo.FromPtrOr(request.MaxTokens, uint(0)) != 0 {
@@ -818,7 +819,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 			}
 			info.SetReasoningEffort(rawEffort)
 		}
-		if err := normalizeAstraResponses(&request, capabilityModel); err != nil {
+		if err := normalizeRequiredReasoningResponses(&request, capabilityModel); err != nil {
 			return nil, kitreasoning.AsClientError(err)
 		}
 		return request, nil
@@ -869,7 +870,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 			info.SetReasoningEffort(string(canonicalEffort))
 		}
 	}
-	if err := normalizeAstraResponses(&request, capabilityModel); err != nil {
+	if err := normalizeRequiredReasoningResponses(&request, capabilityModel); err != nil {
 		return nil, kitreasoning.AsClientError(err)
 	}
 	return request, nil

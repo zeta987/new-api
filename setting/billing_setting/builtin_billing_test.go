@@ -145,6 +145,16 @@ func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
 	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
 
+	shortContext := dto.Usage{
+		PromptTokens: 272000, CompletionTokens: 1000,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 200000, CacheWriteTokens: 20000,
+			CacheWriteTokensDetails: &dto.CacheWriteTokenDetails{TTL30mTokens: 10000, TTL12hTokens: 10000},
+		},
+	}
+	longContext := shortContext
+	longContext.PromptTokens++
+
 	for _, tc := range []struct {
 		name         string
 		model, alias string
@@ -152,6 +162,10 @@ func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
 		claude       bool
 		wantQuota    int
 	}{
+		{"6.2 Astra at context boundary", "gpt-6.2-astra", "gpt-6.2-astra-pro-max", shortContext, false, 418000},
+		{"6.2 Astra above context boundary", "gpt-6.2-astra", "gpt-6.2-astra-*", longContext, false, 826008},
+		{"6.2 Sol at context boundary", "gpt-6.2-sol", "gpt-6.2-sol-standard-low", shortContext, false, 104500},
+		{"6.2 Sol above context boundary", "gpt-6.2-sol", "gpt-6.2-sol-max", longContext, false, 206502},
 		{"sol cache rates", "gpt-6-sol", "gpt-6-sol-pro-max", dto.Usage{PromptTokens: 1000, CompletionTokens: 100, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200, CacheWriteTokens: 100}}, false, 1345},
 		{"sol context boundary", "gpt-6-sol", "gpt-6-sol-high", dto.Usage{PromptTokens: 272000, CompletionTokens: 1000}, false, 277000},
 		{"sol long context", "gpt-6-sol", "gpt-6-sol-high", dto.Usage{PromptTokens: 272001, CompletionTokens: 1000}, false, 551502},
@@ -193,7 +207,7 @@ func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
 	defaultRatios, err := common.Marshal(ratio_setting.GetDefaultModelRatioMap())
 	require.NoError(t, err)
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(string(defaultRatios)))
-	for _, alias := range []string{"claude-sonnet-5", "claude-sonnet-5-high", "claude-fable-5", "claude-fable-5-max", "claude-mythos-5", "claude-mythos-5-1"} {
+	for _, alias := range []string{"gpt-6.2-astra", "gpt-6.2-sol", "claude-sonnet-5", "claude-sonnet-5-high", "claude-fable-5", "claude-fable-5-max", "claude-mythos-5", "claude-mythos-5-1"} {
 		assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(alias), alias)
 	}
 }

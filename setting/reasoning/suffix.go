@@ -29,6 +29,7 @@ var (
 	GPT56ReasoningWildcardModel           = kitreasoning.GPT56ReasoningWildcardModel
 	IsGPT56ReasoningWildcard              = kitreasoning.IsGPT56ReasoningWildcard
 	ParseGPT56ReasoningModelSuffix        = kitreasoning.ParseGPT56ReasoningModelSuffix
+	ParseGPT6RequiredReasoningModelSuffix = kitreasoning.ParseGPT6RequiredReasoningModelSuffix
 	ParseStandardGPT6ReasoningModelSuffix = kitreasoning.ParseStandardGPT6ReasoningModelSuffix
 	IsStandardClaudeFiveModel             = kitreasoning.IsStandardClaudeFiveModel
 	IsQwenReasoningModel                  = kitreasoning.IsQwenReasoningModel
@@ -121,7 +122,7 @@ func BaseModelName(modelName string) string {
 		return modelName
 	}
 	base := kitreasoning.ParseModelModifiers(modelName).Base
-	if normalized, _, _, ok := ParseGPT6AstraReasoningModelSuffix(base); ok {
+	if normalized, _, _, ok := ParseGPT6RequiredReasoningModelSuffix(base); ok {
 		return normalized
 	}
 	if model_setting.ShouldPreserveThinkingSuffix(base) {

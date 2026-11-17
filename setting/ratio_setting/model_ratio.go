@@ -803,7 +803,7 @@ func FormatMatchingModelName(name string) string {
 	if baseModel, _, _, ok := hostreasoning.ParseStandardGPT6ReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
-	if baseModel, _, _, ok := hostreasoning.ParseGPT6AstraReasoningModelSuffix(name); ok {
+	if baseModel, _, _, ok := hostreasoning.ParseGPT6RequiredReasoningModelSuffix(name); ok {
 		name = baseModel
 	}
 	if baseModel, _, ok := hostreasoning.ParseQwenReasoningEffortSuffix(name); ok {
