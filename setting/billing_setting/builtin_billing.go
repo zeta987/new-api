@@ -78,6 +78,9 @@ var builtinBillingExpr = map[string]string{
 	// Both models use flat prices, with separate 5m and 1h cache writes.
 	"kimi-k3.1-pro":           `tier("standard", p * 2 + c * 10 + cr * 0.2 + cc * 2 + cc1h * 4)`,
 	"kimi-k3.1-pro-highspeed": `tier("standard", p * 4 + c * 20 + cr * 0.2 + cc * 4 + cc1h * 8)`,
+	// https://www.alibabacloud.com/help/en/model-studio/model-pricing
+	// Singapore International rates, including 5m and 1h cache writes.
+	"qwen4-max": `tier("standard", p * 1.5 + c * 4.5 + cr * 0.075 + cc * 1.875 + cc1h * 3)`,
 	// https://api-docs.deepseek.com/quick_start/pricing (2026-10-17). Off-peak
 	// is half the peak price. deepseek-v4-flash and deepseek-v4-flash-vision-exp
 	// run on V4.1 Flash and bill at the Flash price. Images bill as input

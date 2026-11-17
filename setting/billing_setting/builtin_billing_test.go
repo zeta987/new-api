@@ -212,6 +212,38 @@ func TestNewOfficialModelsBuiltinBilling(t *testing.T) {
 	}
 }
 
+func TestQwen4MaxBuiltinBilling(t *testing.T) {
+	for _, tc := range []struct {
+		name, model, usageJSON string
+		wantQuota              int
+	}{
+		{"uncached long prompt", "qwen4-max", `{"prompt_tokens":800000,"completion_tokens":2000}`, 604500},
+		{"chat cache split", "qwen4-max-high", `{"prompt_tokens":10000,"completion_tokens":2000,"prompt_tokens_details":{"cached_tokens":2000,"cache_write_tokens":2000,"cache_creation_input_tokens":2000,"cache_creation":{"ephemeral_5m_input_tokens":1000,"ephemeral_1h_input_tokens":1000}}}`, 11513},
+		{"responses cache split", "qwen4-max-max", `{"input_tokens":10000,"output_tokens":2000,"input_tokens_details":{"cached_tokens":2000,"cache_write_tokens":2000,"cache_write_tokens_details":{"ttl_5m_tokens":1000,"ttl_1h_tokens":1000}}}`, 11513},
+		{"inconsistent cache split", "qwen4-max-low", `{"prompt_tokens":10000,"completion_tokens":2000,"prompt_tokens_details":{"cache_write_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":9000}}}`, 12750},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw dto.Usage
+			require.NoError(t, common.UnmarshalJsonStr(tc.usageJSON, &raw))
+			var usage dto.Usage
+			if raw.InputTokens != 0 {
+				service.ApplyResponsesUsage(&usage, &raw)
+			} else {
+				dto.MergeUsageNonZero(&usage, &raw)
+			}
+			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(tc.model))
+			expression, ok := billing_setting.GetBillingExpr(tc.model)
+			require.True(t, ok)
+			params := service.BuildTieredTokenParams(&usage, false, billingexpr.UsedVars(expression))
+			result, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{
+				ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: 500000,
+			}, params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantQuota, result.ActualQuotaAfterGroup)
+		})
+	}
+}
+
 func TestGeminiArgonBuiltinBillingAndOverrides(t *testing.T) {
 	settings := config.GlobalConfig.Get("billing_setting").(*billing_setting.BillingSetting)
 	saved := *settings

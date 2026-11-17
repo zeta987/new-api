@@ -906,6 +906,16 @@ func TestCalculateTextQuotaSummaryBillsCacheCreationInputTokens(t *testing.T) {
 		assert.Equal(t, 450, summary.Quota)
 	})
 
+	t.Run("dashscope one-hour writes retain their log split", func(t *testing.T) {
+		var usage dto.Usage
+		require.NoError(t, common.UnmarshalJsonStr(`{"prompt_tokens":1510,"completion_tokens":20,"prompt_tokens_details":{"cached_tokens":1200,"cache_write_tokens":300,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":200}}}`, &usage))
+		summary := calculateTextQuotaSummary(ctx, relayInfo, &usage)
+		assert.Equal(t, 100, summary.CacheCreationTokens5m)
+		assert.Equal(t, 200, summary.CacheCreationTokens1h)
+		assert.Equal(t, 300, cacheWriteTokensTotal(summary))
+		assert.Equal(t, 525, summary.Quota)
+	})
+
 	t.Run("cache write and creation scalar take the larger count", func(t *testing.T) {
 		var usage dto.Usage
 		require.NoError(t, common.Unmarshal([]byte(`{"prompt_tokens":1510,"completion_tokens":20,"total_tokens":1530,"prompt_tokens_details":{"cached_tokens":1200,"cache_write_tokens":100,"cache_creation_input_tokens":300}}`), &usage))

@@ -80,8 +80,9 @@ func TestExpandEffortSuffixFamilies(t *testing.T) {
 		{base: "grok-4.7-search", want: []string{"grok-4.7-search"}},
 		{base: "grok-4.7-reasoning", want: []string{"grok-4.7-reasoning"}},
 		{base: "grok-4.7-multi-agent", want: []string{"grok-4.7-multi-agent"}},
-		// The Qwen path is unchanged.
 		{base: "qwen3.8-max", want: []string{"qwen3.8-max", "qwen3.8-max-none", "qwen3.8-max-low", "qwen3.8-max-medium", "qwen3.8-max-xhigh"}},
+		{base: "qwen4-max", want: []string{"qwen4-max", "qwen4-max-none", "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh"}},
+		{base: "qwen4-max-preview", want: []string{"qwen4-max-preview"}},
 		// An explicit @ modifier names one configuration, not a family.
 		{base: "kimi-k3@thinking:on", want: []string{"kimi-k3@thinking:on"}},
 	}

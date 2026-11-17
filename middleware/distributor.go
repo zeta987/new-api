@@ -149,10 +149,19 @@ func Distribute() func(c *gin.Context) {
 
 func reasoningAllowedChannelTypes(requestPath, modelName string) ([]int, bool) {
 	isChat := requestPath == "/v1/chat/completions" || strings.HasPrefix(requestPath, "/pg/chat/completions")
-	if isChat && !model_setting.ShouldPreserveThinkingSuffix(modelName) {
+	if !model_setting.ShouldPreserveThinkingSuffix(modelName) {
 		base := kitreasoning.ParseModelModifiers(modelName).Base
-		if _, _, ok := reasoning.ParseQwenReasoningEffortSuffix(base); ok {
-			return []int{constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter}, true
+		if qwen, _, ok := reasoning.ParseQwenReasoningEffortSuffix(base); ok {
+			if kitreasoning.IsQwen4MaxModel(qwen) {
+				if isChat || requestPath == "/v1/responses" {
+					return []int{constant.ChannelTypeAli, constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter}, true
+				}
+				if requestPath == "/v1/messages" {
+					return []int{constant.ChannelTypeAli}, true
+				}
+			} else if isChat {
+				return []int{constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter}, true
+			}
 		}
 	}
 	if _, _, ok := reasoning.ParseGLMReasoningEffortSuffix(modelName); !ok {

@@ -348,6 +348,11 @@ func calculateTextQuotaSummaryWithToolSurcharge(ctx *gin.Context, relayInfo *rel
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
 	if !summary.IsClaudeUsageSemantic && !legacyClaudeDerived {
 		summary.CacheCreationTokens12h = usage.PromptTokensDetails.CacheWrite12hTokens()
+		if oneHour := usage.PromptTokensDetails.CacheWrite1hTokens(); oneHour > 0 && summary.CacheCreationTokens1h == 0 {
+			summary.CacheCreationTokens1h = oneHour
+			summary.CacheCreationTokens12h = min(summary.CacheCreationTokens12h, summary.CacheCreationTokens-oneHour)
+			summary.CacheCreationTokens5m = summary.CacheCreationTokens - oneHour - summary.CacheCreationTokens12h
+		}
 	}
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
 		relayInfo.ChannelType == constant.ChannelTypeOpenRouter &&

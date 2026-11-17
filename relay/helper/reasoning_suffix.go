@@ -39,15 +39,14 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 	if info.ChannelMeta != nil {
 		upstream = info.UpstreamModelName
 	}
-	parseQwenAlias := info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeOpenAI && info.RelayMode == relayconstant.RelayModeChatCompletions
-	originParsed, originHasQwenAlias, err := parseRequestModelName(origin, opts, parseQwenAlias)
+	originParsed, originHasQwenAlias, err := parseRequestModelName(origin, opts, info)
 	if err != nil {
 		return reasoning.AsClientError(err)
 	}
 	upstreamParsed := originParsed
 	upstreamHasQwenAlias := originHasQwenAlias
 	if upstream != origin {
-		upstreamParsed, upstreamHasQwenAlias, err = parseRequestModelName(upstream, opts, parseQwenAlias)
+		upstreamParsed, upstreamHasQwenAlias, err = parseRequestModelName(upstream, opts, info)
 		if err != nil {
 			return reasoning.AsClientError(err)
 		}
@@ -107,7 +106,11 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 			return reasoning.AsClientError(err)
 		}
 		if (originHasQwenAlias || upstreamHasQwenAlias) && selected.intent.Effort != "" && selected.intent.BudgetTokens == nil {
-			if qwenRequest, ok := outbound.(*dto.GeneralOpenAIRequest); ok {
+			switch qwenRequest := outbound.(type) {
+			case *dto.GeneralOpenAIRequest:
+				qwenRequest.EnableThinking = nil
+				qwenRequest.ThinkingBudget = nil
+			case *dto.OpenAIResponsesRequest:
 				qwenRequest.EnableThinking = nil
 				qwenRequest.ThinkingBudget = nil
 			}
@@ -131,7 +134,7 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 	return nil
 }
 
-func parseRequestModelName(name string, opts *convmeta.Options, parseQwenAlias bool) (parsedModelModifiers, bool, error) {
+func parseRequestModelName(name string, opts *convmeta.Options, info *relaycommon.RelayInfo) (parsedModelModifiers, bool, error) {
 	if opts.ShouldPreserveThinkingSuffix(name) {
 		return parsedModelModifiers{base: name}, false, nil
 	}
@@ -142,9 +145,9 @@ func parseRequestModelName(name string, opts *convmeta.Options, parseQwenAlias b
 	if opts.ShouldPreserveThinkingSuffix(parsed.base) {
 		return parsed, false, nil
 	}
-	if parseQwenAlias {
+	if info.ChannelMeta != nil {
 		qwenBase, rawEffort, found := hostreasoning.ParseQwenReasoningEffortSuffix(parsed.base)
-		if found {
+		if found && supportsQwenEffortSuffix(info, qwenBase) {
 			parsed.base = qwenBase
 			if !parsed.hasThinking {
 				effort, parseErr := reasoning.ParseEffort(rawEffort)
@@ -171,6 +174,25 @@ func parseRequestModelName(name string, opts *convmeta.Options, parseQwenAlias b
 		parsed.hasThinking = true
 	}
 	return parsed, false, nil
+}
+
+func supportsQwenEffortSuffix(info *relaycommon.RelayInfo, model string) bool {
+	isChat := info.RelayMode == relayconstant.RelayModeChatCompletions
+	if isChat && info.ChannelType == constant.ChannelTypeOpenAI {
+		return true
+	}
+	if !reasoning.IsQwen4MaxModel(model) {
+		return false
+	}
+	if info.RelayFormat == types.RelayFormatClaude {
+		return info.ChannelType == constant.ChannelTypeAli
+	}
+	switch info.ChannelType {
+	case constant.ChannelTypeAli, constant.ChannelTypeOpenAI, constant.ChannelTypeOpenRouter:
+		return isChat || info.RelayMode == relayconstant.RelayModeResponses
+	default:
+		return false
+	}
 }
 
 func overlayMappedModelModifiers(origin parsedModelModifiers, mapped parsedModelModifiers, diagnostics []types.ConversionDiagnostic) (parsedModelModifiers, []types.ConversionDiagnostic) {

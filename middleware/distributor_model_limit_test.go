@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTokenModelLimitAllowsCandidates(t *testing.T) {
@@ -134,6 +135,16 @@ func TestQwenChatAliasChannelPolicy(t *testing.T) {
 			} else {
 				assert.Nil(t, allowed)
 			}
+		})
+	}
+}
+
+func TestQwen4MaxAliasesAllowAlibaba(t *testing.T) {
+	for _, path := range []string{"/v1/chat/completions", "/pg/chat/completions", "/v1/responses", "/v1/messages"} {
+		t.Run(path, func(t *testing.T) {
+			allowed, restricted := reasoningAllowedChannelTypes(path, "qwen4-max-high")
+			require.True(t, restricted)
+			assert.Contains(t, allowed, constant.ChannelTypeAli)
 		})
 	}
 }

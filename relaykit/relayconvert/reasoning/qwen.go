@@ -5,9 +5,18 @@ import (
 	"strings"
 )
 
+// IsQwen4MaxModel matches the base ID, including within a provider namespace.
+func IsQwen4MaxModel(modelName string) bool {
+	_, bare := splitModelNamespace(modelName)
+	return bare == "qwen4-max"
+}
+
 // IsQwenReasoningModel reports whether modelName is a supported Qwen
 // reasoning base model. An opaque provider namespace is preserved.
 func IsQwenReasoningModel(modelName string) bool {
+	if IsQwen4MaxModel(modelName) {
+		return true
+	}
 	_, bare := splitModelNamespace(modelName)
 	if !strings.HasPrefix(bare, "qwen") {
 		return false
@@ -37,19 +46,30 @@ func IsQwenReasoningModel(modelName string) bool {
 	return isQwenSnapshot(snapshot)
 }
 
-// ParseQwenReasoningEffortSuffix recognizes only the effort aliases supported
-// by Qwen 3.8 and later max/flash model families.
+// ParseQwenReasoningEffortSuffix recognizes the effort aliases of supported
+// Qwen models and canonicalizes the equivalent Qwen4-Max levels.
 func ParseQwenReasoningEffortSuffix(modelName string) (baseModel string, effort string, ok bool) {
-	lastHyphen := strings.LastIndex(modelName, "-")
+	lastHyphen := strings.LastIndexByte(modelName, '-')
 	if lastHyphen < 0 {
 		return modelName, "", false
 	}
-	effort = modelName[lastHyphen+1:]
-	if !isQwenReasoningEffort(effort) {
-		return modelName, "", false
-	}
 	baseModel = modelName[:lastHyphen]
-	if !IsQwenReasoningModel(baseModel) {
+	effort = modelName[lastHyphen+1:]
+	if IsQwen4MaxModel(baseModel) {
+		switch effort {
+		case "none", "low", "high", "xhigh":
+			return baseModel, effort, true
+		case "minimal":
+			return baseModel, "low", true
+		case "medium":
+			return baseModel, "high", true
+		case "max":
+			return baseModel, "xhigh", true
+		default:
+			return modelName, "", false
+		}
+	}
+	if !isQwenReasoningEffort(effort) || !IsQwenReasoningModel(baseModel) {
 		return modelName, "", false
 	}
 	return baseModel, effort, true

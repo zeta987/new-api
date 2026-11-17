@@ -279,17 +279,37 @@ type InputTokenDetails struct {
 	// takes the larger of this value, CacheWriteTokens, and CachedCreationTokens,
 	// and does not add them.
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	// DashScope Chat Completions reports this subset in cache_creation.
+	// Keep the vendor-specific split internal to accounting.
+	cacheCreation1hTokens int
 }
 
-// CacheWriteTokenDetails is OpenAI's split of cache writes by lifetime. The
-// two counts do not overlap and sum to cache_write_tokens.
+func (d *InputTokenDetails) UnmarshalJSON(data []byte) error {
+	type fields InputTokenDetails
+	wire := struct {
+		*fields
+		CacheCreation *ClaudeCacheCreationUsage `json:"cache_creation,omitempty"`
+	}{fields: (*fields)(d)}
+	if err := kitutil.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.CacheCreation != nil {
+		d.cacheCreation1hTokens = wire.CacheCreation.Ephemeral1hInputTokens
+	}
+	return nil
+}
+
+// CacheWriteTokenDetails splits cache writes by lifetime. OpenAI reports 30m
+// and 12h counts, and DashScope Responses reports 5m and 1h counts.
 type CacheWriteTokenDetails struct {
 	TTL30mTokens int `json:"ttl_30m_tokens"`
 	TTL12hTokens int `json:"ttl_12h_tokens"`
+	TTL5mTokens  int `json:"ttl_5m_tokens,omitempty"`
+	TTL1hTokens  int `json:"ttl_1h_tokens,omitempty"`
 }
 
 func (d *CacheWriteTokenDetails) HasTokens() bool {
-	return d != nil && (d.TTL30mTokens != 0 || d.TTL12hTokens != 0)
+	return d != nil && (d.TTL30mTokens != 0 || d.TTL12hTokens != 0 || d.TTL5mTokens != 0 || d.TTL1hTokens != 0)
 }
 
 // CachedTokenDetails describes subsets of cached_tokens. Pointers distinguish
@@ -352,6 +372,15 @@ func (d InputTokenDetails) CacheWrite12hTokens() int {
 		return 0
 	}
 	return min(max(d.CacheWriteTokensDetails.TTL12hTokens, 0), d.CacheCreationTokensTotal())
+}
+
+// CacheWrite1hTokens returns the 1-hour subset of the reported cache writes.
+func (d InputTokenDetails) CacheWrite1hTokens() int {
+	count := d.cacheCreation1hTokens
+	if d.CacheWriteTokensDetails != nil {
+		count = max(count, d.CacheWriteTokensDetails.TTL1hTokens)
+	}
+	return min(max(count, 0), d.CacheCreationTokensTotal())
 }
 
 type OutputTokenDetails struct {

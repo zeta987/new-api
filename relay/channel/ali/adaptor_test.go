@@ -11,6 +11,7 @@ import (
 
 	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
+	hostconstant "github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
@@ -20,6 +21,66 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestQwen4MaxReasoningSuffix(t *testing.T) {
+	for _, tc := range []struct {
+		name, suffix, body, want string
+		format                   types.RelayFormat
+		mode                     int
+	}{
+		{"bare chat model", "", `{"reasoning_effort":"low","enable_thinking":true}`, `{"model":"qwen4-max","reasoning_effort":"low","enable_thinking":true}`, types.RelayFormatOpenAI, constant.RelayModeChatCompletions},
+		{"chat none", "-none", `{"reasoning_effort":"low","enable_thinking":true,"thinking_budget":4096}`, `{"model":"qwen4-max","reasoning_effort":"none"}`, types.RelayFormatOpenAI, constant.RelayModeChatCompletions},
+		{"chat minimal", "-minimal", `{}`, `{"model":"qwen4-max","reasoning_effort":"low"}`, types.RelayFormatOpenAI, constant.RelayModeChatCompletions},
+		{"chat high", "-high", `{}`, `{"model":"qwen4-max","reasoning_effort":"high"}`, types.RelayFormatOpenAI, constant.RelayModeChatCompletions},
+		{"chat max", "-max", `{}`, `{"model":"qwen4-max","reasoning_effort":"xhigh"}`, types.RelayFormatOpenAI, constant.RelayModeChatCompletions},
+		{"responses medium", "-medium", `{"enable_thinking":false,"thinking_budget":4096,"reasoning":{"summary":"auto","effort":"low"}}`, `{"model":"qwen4-max","reasoning":{"summary":"auto","effort":"high"}}`, types.RelayFormatOpenAIResponses, constant.RelayModeResponses},
+		{"responses none", "-none", `{}`, `{"model":"qwen4-max","reasoning":{"effort":"none"}}`, types.RelayFormatOpenAIResponses, constant.RelayModeResponses},
+		{"messages xhigh", "-xhigh", `{"output_config":{"effort":"low","format":{"type":"json_schema"}}}`, `{"model":"qwen4-max","output_config":{"effort":"xhigh","format":{"type":"json_schema"}}}`, types.RelayFormatClaude, 0},
+		{"messages none", "-none", `{"output_config":{"effort":"high"},"thinking":{"type":"enabled","budget_tokens":4096}}`, `{"model":"qwen4-max","thinking":{"type":"disabled"}}`, types.RelayFormatClaude, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(nil)
+			model := "qwen4-max" + tc.suffix
+			var request dto.Request
+			switch tc.format {
+			case types.RelayFormatOpenAI:
+				request = &dto.GeneralOpenAIRequest{}
+			case types.RelayFormatOpenAIResponses:
+				request = &dto.OpenAIResponsesRequest{}
+			case types.RelayFormatClaude:
+				request = &dto.ClaudeRequest{}
+			}
+			require.NoError(t, common.UnmarshalJsonStr(tc.body, request))
+			request.SetModelName(model)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: model, Request: request, RelayFormat: tc.format, RelayMode: tc.mode,
+				ChannelMeta: &relaycommon.ChannelMeta{ChannelType: hostconstant.ChannelTypeAli, UpstreamModelName: model},
+			}
+			require.NoError(t, relayhelper.ModelMappedHelper(c, info, request))
+			require.NoError(t, relayhelper.ApplyReasoningModelSuffix(c, info, request))
+			adaptor := &Adaptor{}
+			var converted any
+			var err error
+			switch req := request.(type) {
+			case *dto.GeneralOpenAIRequest:
+				converted, err = adaptor.ConvertOpenAIRequest(c, info, req)
+			case *dto.OpenAIResponsesRequest:
+				converted, err = adaptor.ConvertOpenAIResponsesRequest(c, info, *req)
+			case *dto.ClaudeRequest:
+				converted, err = adaptor.ConvertClaudeRequest(c, info, req)
+			}
+			require.NoError(t, err)
+			payload, err := common.Marshal(converted)
+			require.NoError(t, err)
+			var actual, expected map[string]any
+			require.NoError(t, common.Unmarshal(payload, &actual))
+			require.NoError(t, common.UnmarshalJsonStr(tc.want, &expected))
+			for _, field := range []string{"model", "reasoning_effort", "enable_thinking", "thinking_budget", "reasoning", "thinking", "output_config"} {
+				assert.Equal(t, expected[field], actual[field], field)
+			}
+		})
+	}
+}
 
 func TestConvertOpenAIRequestFiltersThinkingBudgetByUpstreamModel(t *testing.T) {
 	tests := []struct {

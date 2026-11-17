@@ -14,6 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 
@@ -53,6 +54,49 @@ func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, req *dto.ClaudeRequest) (any, error) {
 	if supportsAliAnthropicMessages(info.UpstreamModelName) {
+		if reasoning.IsQwen4MaxModel(info.UpstreamModelName) {
+			intent := reasoning.IntentFromState(info.ReasoningState())
+			if effort := intent.Effort; effort != "" {
+				var outputConfig map[string]common.RawMessage
+				if len(req.OutputConfig) > 0 {
+					if err := common.Unmarshal(req.OutputConfig, &outputConfig); err != nil {
+						return nil, reasoning.AsClientError(fmt.Errorf("invalid output_config: %w", err))
+					}
+				}
+				if effort == reasoning.EffortNone {
+					delete(outputConfig, "effort")
+					req.Thinking = &dto.Thinking{Type: "disabled"}
+				} else {
+					switch effort {
+					case reasoning.EffortMinimal:
+						effort = reasoning.EffortLow
+					case reasoning.EffortMedium:
+						effort = reasoning.EffortHigh
+					case reasoning.EffortMax:
+						effort = reasoning.EffortXHigh
+					}
+					encoded, err := common.Marshal(effort)
+					if err != nil {
+						return nil, err
+					}
+					if outputConfig == nil {
+						outputConfig = make(map[string]common.RawMessage)
+					}
+					outputConfig["effort"] = encoded
+					if original, ok := info.Request.(*dto.ClaudeRequest); ok && original.Thinking != nil && original.Thinking.Display != "" {
+						req.Thinking = &dto.Thinking{Type: "enabled", Display: original.Thinking.Display}
+					}
+				}
+				req.OutputConfig = nil
+				if len(outputConfig) > 0 {
+					encoded, err := common.Marshal(outputConfig)
+					if err != nil {
+						return nil, err
+					}
+					req.OutputConfig = encoded
+				}
+			}
+		}
 		ensureAnthropicWebSearchEntrypoint(req)
 		return req, nil
 	}

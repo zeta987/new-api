@@ -1422,6 +1422,8 @@ func TestBuildTieredTokenParams_UnpricedLongTTLCacheWrites(t *testing.T) {
 	}}
 	unsplit := openai
 	unsplit.PromptTokensDetails.CacheWriteTokensDetails = nil
+	dashScope := openai
+	dashScope.PromptTokensDetails.CacheWriteTokensDetails = &dto.CacheWriteTokenDetails{TTL5mTokens: 3000, TTL1hTokens: 4000}
 	claude := func(split5m, split1h int) dto.Usage {
 		return dto.Usage{PromptTokens: 100, UsageSemantic: "anthropic",
 			ClaudeCacheCreation5mTokens: split5m, ClaudeCacheCreation1hTokens: split1h,
@@ -1439,6 +1441,7 @@ func TestBuildTieredTokenParams_UnpricedLongTTLCacheWrites(t *testing.T) {
 		{"openai 30m stays in p", openai, `tier("base", p * 10 + cr * 1 + cc12h * 25)`, 4000, 0, 0, 4000, 144000},
 		{"openai 12h bills twice in p", openai, `tier("base", p * 10 + cr * 1)`, 12000, 0, 0, 0, 124000},
 		{"openai writes without a ttl split", unsplit, `tier("base", p * 10 + cr * 1 + cc * 12.5 + cc12h * 25)`, 1000, 7000, 0, 0, 101500},
+		{"dashscope 1h joins cc at 1.6x", dashScope, `tier("base", p * 1.5 + cr * 0.075 + cc * 1.875)`, 1000, 9400, 0, 0, 19425},
 		{"claude 1h joins cc at 1.6x", claude(0, 10000), `tier("base", p * 3 + c * 15 + cr * 0.3 + cc * 3.75)`, 100, 16000, 0, 0, 60300},
 		{"claude 5m bills as input", claude(10000, 0), `tier("base", p * 3 + c * 15)`, 10100, 0, 0, 0, 30300},
 		{"claude 5m bills as input beside priced 1h", claude(2000, 10000), `tier("base", p * 3 + cc1h * 6)`, 2100, 0, 10000, 0, 66300},

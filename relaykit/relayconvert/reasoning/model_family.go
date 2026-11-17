@@ -43,7 +43,11 @@ func OpenAIReasoningModelNames(name string) []string {
 	if IsQwenReasoningModel(name) {
 		names := make([]string, 0, 5)
 		names = append(names, base)
-		for _, effort := range []string{"none", "low", "medium", "xhigh"} {
+		efforts := []string{"none", "low", "medium", "xhigh"}
+		if IsQwen4MaxModel(name) {
+			efforts = []string{"none", "low", "high", "xhigh"}
+		}
+		for _, effort := range efforts {
 			names = append(names, base+"-"+effort)
 		}
 		return names

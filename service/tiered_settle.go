@@ -37,6 +37,7 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	cc1h := float64(0)
 	cc12h := float64(0)
 
+	cacheWrite1hMultiplier := hosttypes.ClaudeCacheCreation1hMultiplier
 	if usage.UsageSemantic == "anthropic" || usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0 {
 		// Upstreams may report the cache-write total without a full 5m/1h
 		// split; the unlabelled remainder is billed as 5m writes.
@@ -47,6 +48,11 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		)
 		cc = float64(split5m)
 		cc1h = float64(split1h)
+		// Kimi preserves its included-input 1h split in the Claude counters.
+		cacheWrite1hMultiplier = hosttypes.KimiCacheCreation1hMultiplier
+	} else {
+		cc1h = float64(usage.PromptTokensDetails.CacheWrite1hTokens())
+		cc -= cc1h
 	}
 
 	img := float64(usage.PromptTokensDetails.ImageTokens)
@@ -114,16 +120,14 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		// prompt_tokens counts every cache write once. A 12h write without
 		// its own price joins cc at twice its count; ccTokens keeps the real
 		// count that cc takes out of p, and an unpriced cc leaves p the extra.
-		cc12h = float64(usage.PromptTokensDetails.CacheWrite12hTokens())
+		cc12h = min(float64(usage.PromptTokensDetails.CacheWrite12hTokens()), cc)
 		cc -= cc12h
 		ccTokens := cc
 		if usedVars["cc1h"] {
 			p -= cc1h
 		} else {
-			// Kimi reports included-input 1h writes through the shared TTL
-			// counters. Preserve their surcharge when only cc (or p) is priced.
 			ccTokens += cc1h
-			cc += cc1h * hosttypes.KimiCacheCreation1hMultiplier
+			cc += cc1h * cacheWrite1hMultiplier
 			cc1h = 0
 		}
 		if usedVars["cc12h"] {

@@ -5,6 +5,7 @@ var ModelList = []string{
 	"qwen-plus",
 	"qwen-max",
 	"qwen-max-longcontext",
+	"qwen4-max",
 	"qwq-32b",
 	"qwen3-235b-a22b",
 	"text-embedding-v1",
