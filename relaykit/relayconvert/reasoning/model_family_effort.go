@@ -43,6 +43,7 @@ var effortSuffixVocabulary = map[string][]string{
 	"gemini-4-argon":         geminiCoreEffortLevels,
 	"gemini-4-carbon":        geminiCoreEffortLevels,
 	"gemini-4-hydrogen":      geminiXHighEffortLevels,
+	"gemini-4-neon":          geminiXHighEffortLevels,
 
 	// GLM publishes the 5.3 line only; 5.2 is deliberately absent.
 	"glm-5.3":        glmEffortLevels,

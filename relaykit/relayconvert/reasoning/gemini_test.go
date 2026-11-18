@@ -8,9 +8,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGeminiArgonThinkingLevels(t *testing.T) {
-	for _, family := range []string{"gemini-4-argon", "gemini-4-carbon"} {
-		for _, level := range []string{"low", "medium", "high"} {
+func TestGemini4ThinkingLevels(t *testing.T) {
+	for _, tc := range []struct {
+		family        string
+		levels        []string
+		defaultEffort Effort
+	}{
+		{"gemini-4-argon", []string{"low", "medium", "high"}, EffortMedium},
+		{"gemini-4-carbon", []string{"low", "medium", "high"}, EffortMedium},
+		{"gemini-4-hydrogen", []string{"low", "medium", "high", "xhigh"}, EffortHigh},
+		{"gemini-4-neon", []string{"low", "medium", "high", "xhigh"}, EffortHigh},
+	} {
+		family := tc.family
+		for _, level := range tc.levels {
 			t.Run(family+"-"+level, func(t *testing.T) {
 				base, intent, found, err := ParseGeminiModelSuffix(family+"-"+level, false)
 				require.NoError(t, err)
@@ -39,7 +49,7 @@ func TestGeminiArgonThinkingLevels(t *testing.T) {
 		assert.Empty(t, rendered.EffectiveEffort)
 		defaultIntent := ResolveGeminiDefault(family, Intent{})
 		assert.Equal(t, ModeEnabled, defaultIntent.Mode)
-		assert.Equal(t, EffortMedium, defaultIntent.Effort)
+		assert.Equal(t, tc.defaultEffort, defaultIntent.Effort, family)
 	}
 
 	for _, tc := range []struct {

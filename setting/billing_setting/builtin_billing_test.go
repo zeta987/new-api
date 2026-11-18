@@ -258,6 +258,7 @@ func TestGeminiArgonBuiltinBillingAndOverrides(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
 	wantExpression := `tier("standard", p * 4 + c * 20 + cr * 0.2)`
 	hydrogenExpression := `tier("standard", p * 1.5 + c * 7.5 + cr * 0.075)`
+	neonExpression := `tier("standard", p * 3 + c * 15 + cr * 0.15)`
 	for _, tc := range []struct {
 		name       string
 		expression string
@@ -275,6 +276,11 @@ func TestGeminiArgonBuiltinBillingAndOverrides(t *testing.T) {
 		{"gemini-4-hydrogen", hydrogenExpression, 983},
 		{"gemini-4-hydrogen-high", hydrogenExpression, 983},
 		{"gemini-4-hydrogen-xhigh", hydrogenExpression, 983},
+		{"gemini-4-neon", neonExpression, 1965},
+		{"gemini-4-neon-low", neonExpression, 1965},
+		{"gemini-4-neon-medium", neonExpression, 1965},
+		{"gemini-4-neon-high", neonExpression, 1965},
+		{"gemini-4-neon-xhigh", neonExpression, 1965},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(tc.name))

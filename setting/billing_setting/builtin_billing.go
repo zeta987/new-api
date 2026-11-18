@@ -28,6 +28,9 @@ var builtinBillingExpr = map[string]string{
 	// https://aistudio.google.com/docs/pricing#gemini-4-hydrogen
 	// Standard prices; implicit cache reads only, no long-context surcharge.
 	"gemini-4-hydrogen": `tier("standard", p * 1.5 + c * 7.5 + cr * 0.075)`,
+	// https://aistudio.google.com/docs/pricing#gemini-4-neon
+	// Standard prices with implicit cache reads.
+	"gemini-4-neon": `tier("standard", p * 3 + c * 15 + cr * 0.15)`,
 	// https://developers.openai.com/api/docs/pricing (Standard, 2026-11-05).
 	// The Images API reports image output in output_tokens, normalized to c.
 	"gpt-image-2":            `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,

@@ -57,7 +57,8 @@ func geminiCapabilitiesFor(model string) geminiCapabilities {
 	case strings.HasPrefix(model, "gemini-2.5-"):
 		return geminiCapabilities{kind: geminiThinkingBudget, supportsDisable: true, maxBudget: 24576}
 	case strings.HasPrefix(model, "gemini-3"), strings.HasPrefix(model, "gemini-4-argon"),
-		strings.HasPrefix(model, "gemini-4-carbon"), strings.HasPrefix(model, "gemini-4-hydrogen"):
+		strings.HasPrefix(model, "gemini-4-carbon"), strings.HasPrefix(model, "gemini-4-hydrogen"),
+		strings.HasPrefix(model, "gemini-4-neon"):
 		return geminiCapabilities{kind: geminiThinkingLevel}
 	default:
 		return geminiCapabilities{}
@@ -218,7 +219,7 @@ func geminiDefaultEffort(model string) Effort {
 	model = strings.ToLower(model)
 	switch {
 	case strings.HasPrefix(model, "gemini-4-argon-cyber-permissive"),
-		strings.HasPrefix(model, "gemini-4-hydrogen"):
+		strings.HasPrefix(model, "gemini-4-hydrogen"), strings.HasPrefix(model, "gemini-4-neon"):
 		return EffortHigh
 	case strings.HasPrefix(model, "gemini-4-argon"), strings.HasPrefix(model, "gemini-4-carbon"),
 		strings.HasPrefix(model, "gemini-3.8-flash"):
@@ -505,7 +506,7 @@ func gemini25BudgetForEffort(effort Effort, maxBudget int) int {
 func geminiLevelForEffort(model string, effort Effort) (string, error) {
 	model = strings.ToLower(model)
 	switch {
-	case strings.HasPrefix(model, "gemini-4-hydrogen"):
+	case strings.HasPrefix(model, "gemini-4-hydrogen"), strings.HasPrefix(model, "gemini-4-neon"):
 		// https://aistudio.google.com/docs/thinking: low, medium, high, xhigh.
 		switch effort {
 		case EffortMinimal:

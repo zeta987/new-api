@@ -41,6 +41,7 @@ var ModelList = append([]string{
 	reasoning.EffortSuffixModelNames("gemini-4-argon"),
 	reasoning.EffortSuffixModelNames("gemini-4-carbon"),
 	reasoning.EffortSuffixModelNames("gemini-4-hydrogen"),
+	reasoning.EffortSuffixModelNames("gemini-4-neon"),
 )...)
 
 var SafetySettingList = []string{
